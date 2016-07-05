@@ -1,0 +1,12 @@
+.settings/
+bin/
+logs/
+project/
+target/
+.cache-main
+.classpath
+.project
+win32ex/.settings/
+win32ex/bin/
+win32ex/.classpath
+win32ex/.project

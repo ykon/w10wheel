@@ -1,0 +1,14 @@
+Scala
+http://www.scala-lang.org/
+
+Java Native Access
+https://github.com/java-native-access/jna
+
+Logback
+http://logback.qos.ch/
+
+SLF4J
+http://www.slf4j.org/
+
+scala-logging
+https://github.com/typesafehub/scala-logging
