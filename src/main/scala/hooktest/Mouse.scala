@@ -45,6 +45,8 @@ case class RightTrigger () extends Trigger
 case class MiddleTrigger () extends Trigger
 case class X1Trigger () extends Trigger
 case class X2Trigger () extends Trigger
+case class LeftOnlyTrigger () extends Trigger
+case class RightOnlyTrigger () extends Trigger
 
 object Mouse {
 	def isXButton1(mouseData: Int) =
@@ -68,6 +70,8 @@ object Mouse {
 		case "Middle" | "MiddleTrigger" => MiddleTrigger()
 		case "X1" | "X1Trigger" => X1Trigger()
 		case "X2" | "X2Trigger" => X2Trigger()
+		case "LeftOnly" | "LeftOnlyTrigger" => LeftOnlyTrigger()
+		case "RightOnly" | "RightOnlyTrigger" => RightOnlyTrigger()
 	}
 	
 	def isSingleEvent(event: MouseEvent) = event match {

@@ -27,7 +27,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.1"
+	val PROGRAM_VERSION = "0.2"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
 	@volatile private var firstTrigger: Trigger = LRTrigger() // default
@@ -99,12 +99,15 @@ object Context {
 		Scroll.sy = info.pt.y
 		Scroll.mode = true
 		
-		if (cursorChange)
+		if (cursorChange && !isLROnlyTrigger)
 			Windows.changeCursor
 	}
 	
 	def isScrollMode =
 		Scroll.mode
+		
+	def isCursorChange =
+		cursorChange
 	
 	def exitScrollMode = {
 		Scroll.mode = false
@@ -174,8 +177,18 @@ object Context {
 	def isLRTrigger =
 		isTrigger(LRTrigger())
 		
+	def isTriggerLROnly(e: MouseEvent): Boolean = e match {
+		case LeftDown(_) | LeftUp(_) => isTrigger(LeftOnlyTrigger())
+		case RightDown(_) | RightUp(_) => isTrigger(RightOnlyTrigger())
+	}
+		
 	def isSingleTrigger = firstTrigger match {
 		case MiddleTrigger() | X1Trigger() | X2Trigger() => true
+		case _ => false
+	}
+	
+	def isLROnlyTrigger = firstTrigger match {
+		case LeftOnlyTrigger() | RightOnlyTrigger() => true
 		case _ => false
 	}
 	
@@ -272,6 +285,8 @@ object Context {
 		menu.add(createTriggerItem("Middle"))
 		menu.add(createTriggerItem("X1"))
 		menu.add(createTriggerItem("X2"))
+		menu.add(createTriggerItem("LeftOnly"))
+		menu.add(createTriggerItem("RightOnly"))
 		
 		ResetMenu.trigger = menu
 		
@@ -455,6 +470,7 @@ object Context {
 		val res = Mouse.getTrigger(s)
 		logger.debug("setTrigger: " + res.getClass.getSimpleName);
 		firstTrigger = res
+		//EventHandler.changeTrigger
 	}
 	
 	private def setTriggerOfProperty: Unit =

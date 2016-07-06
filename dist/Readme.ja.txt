@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.1
+        0.2
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,7 +11,8 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
-        2016-07-05: Version 0.1
+        2016-07-06: Version 0.2: LeftOnlyTriggerとRightOnlyTriggerを追加
+        2016-07-05: Version 0.1: 初公開
         
 対応環境:
         Java 8 のシステム要件項目 Windows を参照
@@ -96,6 +97,12 @@ URL:
                         X1を押すとトリガーになります。
                 X2Trigger:
                         X2を押すとトリガーになります。
+                LeftOnlyTrigger:
+                        左を押すとトリガーになります。
+                        固定はされません、ドラッグしないで離すと左クリックを送ります。
+                RightOnlyTrigger:
+                        右を押すとトリガーになります。
+                        固定はされません、ドラッグしないで離すと右クリックを送ります。
         
         pollTimeout: 150-500 (デフォルト: 300)
                 同時押しのイベント待ち時間(ミリ秒)  # WheelBall の 判定時間 

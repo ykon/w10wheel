@@ -5,6 +5,9 @@ package hooktest
  * Licensed under the MIT License.
  */
 
+import scala.concurrent._
+import ExecutionContext.Implicits.global
+
 import com.sun.jna.platform.win32.WinDef.LRESULT
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
@@ -247,6 +250,32 @@ object EventHandler {
 			None
 	}
 	
+	private def startScrollLROnly(me: MouseEvent): Option[LRESULT] = {
+		logger.debug(s"start scroll mode: ${me.name}");
+		ctx.startScrollMode(me.info)
+		
+		drag = dragLROnly
+		dragged = false
+			
+		suppress
+	}
+	
+	private def exitAndResendLROnly(me: MouseEvent): Option[LRESULT] = {
+		logger.debug(s"exit scroll mode: ${me.name}")
+		ctx.exitScrollMode
+		
+		if (!dragged) {
+			logger.debug(s"resend click: ${me.name}")
+			
+			me match {
+				case LeftUp(info) => Windows.resendClick(LeftClick(info))
+				case RightUp(info) => Windows.resendClick(RightClick(info))
+			}
+		}
+		
+		suppress
+	}
+	
 	private def passNotTrigger(me: MouseEvent): Option[LRESULT] = {
 		if (!ctx.isTrigger(me)) {
 			logger.debug(s"pass not trigger: ${me.name}")
@@ -258,6 +287,15 @@ object EventHandler {
 	
 	private def passNotTriggerLR(me: MouseEvent): Option[LRESULT] = {
 		if (!ctx.isLRTrigger && !ctx.isTrigger(me)) {
+			logger.debug(s"pass not trigger: ${me.name}")
+			callNextHook
+		}
+		else
+			None
+	}
+	
+	private def passNotTriggerLROnly(me: MouseEvent): Option[LRESULT] = {
+		if (!ctx.isTriggerLROnly(me)) {
 			logger.debug(s"pass not trigger: ${me.name}")
 			callNextHook
 		}
@@ -307,16 +345,6 @@ object EventHandler {
 		getResult(me, checkers)
 	}
 	
-	def leftDown(info: HookInfo): LRESULT = {
-		//logger.debug("leftDown")
-		lrDown(LeftDown(info))
-	}
-	
-	def rightDown(info: HookInfo): LRESULT = {
-		//logger.debug("rightDown")
-		lrDown(RightDown(info))
-	}
-	
 	private def lrUp(me: MouseEvent): LRESULT = {
 		val checkers: Checkers = Stream(
 				skipResendEvent,
@@ -334,14 +362,52 @@ object EventHandler {
 		getResult(me, checkers)
 	}
 	
+	def lrOnlyDown(me: MouseEvent): LRESULT = {
+		val checkers: Checkers = Stream(
+				skipResendEvent,
+				checkSameLastEvent,
+				passNotTriggerLROnly,
+				startScrollLROnly)
+		
+		getResult(me, checkers)
+	}
+	
+	def leftDown(info: HookInfo): LRESULT = {
+		//logger.debug("leftDown")
+		val ld = LeftDown(info)
+		if (ctx.isLROnlyTrigger) lrOnlyDown(ld) else lrDown(ld)
+	}
+	
+	def rightDown(info: HookInfo): LRESULT = {
+		//logger.debug("rightDown")
+		
+		val rd = RightDown(info)
+		if (ctx.isLROnlyTrigger) lrOnlyDown(rd) else lrDown(rd)
+	}
+	
+	def lrOnlyUp(me: MouseEvent): LRESULT = {
+		val checkers: Checkers = Stream(
+				skipResendEvent,
+				skipFirstUp,
+				skipFirstSingle,
+				checkSameLastEvent,
+				passNotTriggerLROnly,
+				exitAndResendLROnly)
+				
+		getResult(me, checkers)
+	}
+	
 	def leftUp(info: HookInfo): LRESULT = {
 		//logger.debug("leftUp");
-		lrUp(LeftUp(info))
+		
+		val lu = LeftUp(info)
+		if (ctx.isLROnlyTrigger) lrOnlyUp(lu) else lrUp(lu)
 	}
 	
 	def rightUp(info: HookInfo): LRESULT = {
 		//logger.debug("rightUp")
-		lrUp(RightUp(info))
+		val ru = RightUp(info)
+		if (ctx.isLROnlyTrigger) lrOnlyUp(ru) else lrUp(ru)
 	}
 	
 	private def singleDown(me: MouseEvent): LRESULT = {
@@ -389,8 +455,22 @@ object EventHandler {
 	    singleUp(evt)
 	}
 	
+	def dragDefault(info: HookInfo): Unit = {}
+	
+	private var drag: HookInfo => Unit = dragDefault
+	private var dragged = false
+
+	def dragLROnly(info: HookInfo): Unit = {
+		if (ctx.isCursorChange)
+			Windows.changeCursor
+		
+		drag = dragDefault
+		dragged = true
+	}
+	
 	def move(info: HookInfo): LRESULT = {		
 		if (ctx.isScrollMode) {
+			drag(info)
 			Windows.sendWheel(info.pt)
 			suppress.get
 		}
@@ -401,4 +481,11 @@ object EventHandler {
 		else
 			callNextHook.get
 	}
+	
+	/*
+	def changeTrigger: Unit = {
+		logger.debug("changeTrigger")
+		drag = if (ctx.isLROnlyTrigger) dragLROnly else dragDefault
+	}
+	*/
 }

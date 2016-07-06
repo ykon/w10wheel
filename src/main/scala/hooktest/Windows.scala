@@ -211,7 +211,9 @@ object Windows {
 	
 	private val CURSOR_ID = IDC_SIZENS
 	private val hCur = ex.LoadCursorW(null, new Pointer(CURSOR_ID));
-		
+	
+	//@volatile private var cursorChanged = false
+	
 	def changeCursor = {
 		//val id = if (is_horizontal) IDC_SIZEALL else IDC_SIZENS
 		//val id = IDC_SIZENS
@@ -224,10 +226,25 @@ object Windows {
 		ex.SetSystemCursor(copyCursor(hCur), OCR_NORMAL)
 		ex.SetSystemCursor(copyCursor(hCur), OCR_IBEAM)
 		ex.SetSystemCursor(copyCursor(hCur), OCR_HAND)
+		
+		//cursorChanged = true
+	}
+	 
+	//val SPIF_UPDATEINIFILE = 0x01;
+	//val SPIF_SENDCHANGE = 0x02;  
+	//val SPIF_SENDWININICHANGE = 0x02;  
+	
+	def restoreCursor = {
+		//val fWinIni = if (!sendChange) 0 else (SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE)
+		
+		ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
+		//cursorChanged = false
 	}
 	
-	def restoreCursor() =
-		ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
+	/*
+	def isCursorChanged =
+		cursorChanged
+	*/
 	
 	def getAsyncShiftState =
 		(ex.GetAsyncKeyState(VK_SHIFT) & 0xf000) != 0
