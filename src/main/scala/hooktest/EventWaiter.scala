@@ -25,28 +25,31 @@ object EventWaiter {
 		waiting
 	
 	private def fromTimeout(we: MouseEvent) {
-		we.resent = true
-		logger.debug(s"waitTrigger (${we.name} -->> Timeout): resend ${we.name}")
+		//we.resent = true
+		Context.LastFlags.setResent(we)
+		logger.debug(s"wait Trigger (${we.name} -->> Timeout): resend ${we.name}")
 		Windows.resendDown(we)
 	}
 	
 	private def fromMove(we: MouseEvent) {
-		we.resent = true
-		logger.debug(s"waitTrigger (${we.name} -->> Move): resend ${we.name}")
+		//we.resent = true
+		Context.LastFlags.setResent(we)
+		logger.debug(s"wait Trigger (${we.name} -->> Move): resend ${we.name}")
 		Windows.resendDown(we)
 	}
 	
 	private def fromUp(we: MouseEvent, res: MouseEvent) {
-		we.resent = true
-		res.resent = true
+		//we.resent = true
+		//res.resent = true
+		Context.LastFlags.setResent(we)
 		
 		def resendC(mc: MouseClick) = {
-			logger.debug(s"waitTrigger (${we.name} -->> ${res.name}): resend ${mc.name}")
+			logger.debug(s"wait Trigger (${we.name} -->> ${res.name}): resend ${mc.name}")
 			Windows.resendClick(mc)
 		}
 		
 		def resendUD = {
-			logger.debug(s"waitTrigger (${we.name} -->> ${res.name}): resend ${we.name}, ${res.name}")
+			logger.debug(s"wait Trigger (${we.name} -->> ${res.name}): resend ${we.name}, ${res.name}")
 			Windows.resendDown(we)
 			Windows.resendUp(res)
 		}
@@ -64,10 +67,12 @@ object EventWaiter {
 	}
 	
 	private def fromDown(we: MouseEvent, res: MouseEvent) {
-		we.suppressed = true
-		res.suppressed = true
+		//we.suppressed = true
+		//res.suppressed = true
+		Context.LastFlags.setSuppressed(we)
+		Context.LastFlags.setSuppressed(res)
 		
-		logger.debug(s"waitTrigger (${we.name} -->> ${res.name}): start scroll mode")
+		logger.debug(s"wait Trigger (${we.name} -->> ${res.name}): start scroll mode")
 		Context.startScrollMode(res.info)
 	}
 	

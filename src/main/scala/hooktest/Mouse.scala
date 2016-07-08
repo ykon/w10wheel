@@ -13,8 +13,6 @@ trait MouseEvent {
 	def name = Mouse.getSimpleName(this)
 	def isDown = Mouse.isDownEvent(this)
 	def isUp = Mouse.isUpEvent(this)
-	@volatile var resent: Boolean = false // re-sent
-	@volatile var suppressed: Boolean = false
 }
 case class LeftDown (info: HookInfo) extends MouseEvent
 case class LeftUp (info: HookInfo) extends MouseEvent
@@ -38,7 +36,9 @@ case class MiddleClick (info: HookInfo) extends MouseClick
 case class X1Click (info: HookInfo) extends MouseClick
 case class X2Click (info: HookInfo) extends MouseClick
 
-abstract class Trigger
+trait Trigger {
+	def name = Mouse.getSimpleName(this)
+}
 case class LRTrigger () extends Trigger
 case class LeftTrigger () extends Trigger
 case class RightTrigger () extends Trigger

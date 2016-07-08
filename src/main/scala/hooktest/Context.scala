@@ -27,7 +27,8 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.2"
+	val PROGRAM_VERSION = "0.2.1"
+	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
 	@volatile private var firstTrigger: Trigger = LRTrigger() // default
@@ -40,11 +41,18 @@ object Context {
 		@volatile var threshold = 0 // default
 	}
 	
+	def getVerticalAccel = Vertical.accel
+	def getVerticalThreshold = Vertical.threshold
+	
 	private object Horizontal {
 		@volatile var scroll = true // default
 		@volatile var accel = 0 // default
 		@volatile var threshold = 50 // default
 	}
+	
+	def isHorizontalScroll = Horizontal.scroll
+	def getHorizontalAccel = Horizontal.accel	
+	def getHorizontalThreshold = Horizontal.threshold
 	
 	/*
 	private object Skip {
@@ -58,12 +66,45 @@ object Context {
 	*/
 	
 	private object Scroll {
-		@volatile var mode = false
-		@volatile var stime = 0
-		@volatile var sx = 0
-		@volatile var sy = 0
+		@volatile private var mode = false
+		@volatile private var stime = 0
+		@volatile private var sx = 0
+		@volatile private var sy = 0
 		@volatile var locktime = 300 // default
+		
+		def start(info: HookInfo) {
+			stime = info.time
+			sx = info.pt.x
+			sy = info.pt.y
+			mode = true
+			
+			if (cursorChange && !isLROnlyTrigger)
+				Windows.changeCursor
+		}
+		
+		def exit = {
+			mode = false
+			
+			if (cursorChange)
+				Windows.restoreCursor
+		}
+		
+		def checkExit(time: Int) = {
+			val dt = time - stime
+			logger.debug(s"scroll time: $dt ms")
+			dt > locktime
+		}
+		
+		def isMode = mode
+		def getStartTime = stime
+		def getStartPoint = (sx, sy) 
 	}
+	
+	def startScrollMode(info: HookInfo) = Scroll.start(info)
+	def exitScrollMode = Scroll.exit
+	def isScrollMode = Scroll.isMode
+	def getScrollStartPoint = Scroll.getStartPoint
+	def checkExitScroll(time: Int) = Scroll.checkExit(time)
 	
 	private object ResetMenu {
 		var cursorChange: CheckboxMenuItem = null
@@ -72,58 +113,9 @@ object Context {
 		var number: Menu = null
 	}
 	
-	def getPollTimeout =
-		pollTimeout
-		
-	def getHorizontalScroll =
-		Horizontal.scroll
-		
-	def getVerticalAccel =
-		Vertical.accel
-		
-	def getHorizontalAccel =
-		Horizontal.accel
-		
-	def getVerticalThreshold =
-		Vertical.threshold
-		
-	def getHorizontalThreshold =
-		Horizontal.threshold
-	
-	def getScrollStartPoint =
-		(Scroll.sx, Scroll.sy)
-	
-	def startScrollMode(info: HookInfo) {
-		Scroll.stime = info.time
-		Scroll.sx = info.pt.x
-		Scroll.sy = info.pt.y
-		Scroll.mode = true
-		
-		if (cursorChange && !isLROnlyTrigger)
-			Windows.changeCursor
-	}
-	
-	def isScrollMode =
-		Scroll.mode
-		
-	def isCursorChange =
-		cursorChange
-	
-	def exitScrollMode = {
-		Scroll.mode = false
-		
-		if (cursorChange)
-			Windows.restoreCursor
-	}
-		
-	def checkTimeExitScroll(time: Int) = {
-		val dt = time - Scroll.stime
-		logger.debug(s"scroll time: $dt ms")
-		dt > Scroll.locktime
-	}
-	
-	def isPassMode =
-		passMode
+	def getPollTimeout = pollTimeout
+	def isCursorChange = cursorChange
+	def isPassMode = passMode
 		
 	/*
 	def checkSkip(me: MouseEvent): Boolean = {
@@ -167,6 +159,45 @@ object Context {
 		}
 	}
 	*/
+	
+	object LastFlags {
+		// R = Resent
+		@volatile private var ldR = false
+		@volatile private var rdR = false
+		
+		// S = Suppressed
+		@volatile private var ldS = false
+		@volatile private var rdS = false
+		@volatile private var sdS = false
+		
+		def setResent(down: MouseEvent) = down match {
+			case LeftDown(_) => ldR = true
+			case RightDown(_) => rdR = true
+		}
+		
+		def isDownResent(up: MouseEvent) = up match {
+			case LeftUp(_) => ldR
+			case RightUp(_) => rdR
+		}
+		
+		def setSuppressed(down: MouseEvent) = down match {
+			case LeftDown(_) => ldS = true 
+			case RightDown(_) => rdS = true 
+			case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = true
+		}
+		
+		def isDownSuppressed(up: MouseEvent) = up match {
+			case LeftUp(_) => ldS
+			case RightUp(_) => rdS
+			case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS
+		}
+		
+		def reset(down: MouseEvent) = down match {
+			case LeftDown(_) => ldR = false; ldS = false
+			case RightDown(_) => rdR = false; rdS = false
+			case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
+		}
+	}
 		
 	def isTrigger(e: Trigger) =
 		firstTrigger == e
@@ -405,7 +436,7 @@ object Context {
 	}
 	
 	def setSystemTray {
-		val stream = getClass.getClassLoader.getResourceAsStream("icon_016.png")
+		val stream = getClass.getClassLoader.getResourceAsStream(ICON_NAME)
 		val icon = new TrayIcon(ImageIO.read(stream), PROGRAM_NAME)
 		//icon.setImageAutoSize(true)
 		
@@ -468,7 +499,7 @@ object Context {
 	
 	private def setTrigger(s: String): Unit = {
 		val res = Mouse.getTrigger(s)
-		logger.debug("setTrigger: " + res.getClass.getSimpleName);
+		logger.debug("setTrigger: " + res.name);
 		firstTrigger = res
 		//EventHandler.changeTrigger
 	}
@@ -510,7 +541,7 @@ object Context {
 			prop.load(getPropertiesInput)
 			
 			val trigger = prop.getProperty("firstTrigger")
-			val r1 = trigger != firstTrigger.getClass.getSimpleName
+			val r1 = trigger != firstTrigger.name
 			
 			val cc = prop.getProperty("cursorChange")
 			val r2 = cc.toBoolean != cursorChange
@@ -561,7 +592,7 @@ object Context {
 			return
 		
 		try {			
-			prop.setProperty("firstTrigger", firstTrigger.getClass.getSimpleName)
+			prop.setProperty("firstTrigger", firstTrigger.name)
 			prop.setProperty("cursorChange", cursorChange.toString())
 			prop.setProperty("horizontalScroll", Horizontal.scroll.toString())
 			

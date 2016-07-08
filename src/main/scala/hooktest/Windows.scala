@@ -48,7 +48,7 @@ object Windows {
 	
 	private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
 	
-	def inputSender = Future {
+	private def inputSender = Future {
 		while (true) {
 			val msgs = inputQueue.take()
 			lib.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
@@ -71,13 +71,13 @@ object Windows {
 		lib.CallNextHookEx(hhk, nCode, wParam, new LPARAM(peer))
 	}
 	
-	def createInputArray(size: Int) =
+	private def createInputArray(size: Int) =
 		new INPUT().toArray(size).asInstanceOf[Array[INPUT]]
 	
 	private val rand = new Random
 	
 	// Not Zero
-	def createRandomNumber: Int = {
+	private def createRandomNumber: Int = {
 		var res: Int = 0
 		
 		while (res == 0)
@@ -90,7 +90,6 @@ object Windows {
 	
 	def isResendEvent(me: MouseEvent): Boolean = {
 		val ext = me.info.dwExtraInfo.intValue()
-		//(ext == resendTag) || ((ext & 0xffff) == (resendTag & 0xffff))
 		ext == resendTag
 	}
 	
@@ -128,7 +127,7 @@ object Windows {
 		}
 	}
 	
-	def addAccel(d: Int, a: Int) =
+	private def addAccel(d: Int, a: Int) =
 		if (d > 0) d + a else if (d < 0) d - a else 0
 	
 	def sendVerticalWheel(pt: POINT, d: Int) =
@@ -147,7 +146,7 @@ object Windows {
 		if (Math.abs(dy) > ctx.getVerticalThreshold)
 			sendVerticalWheel(spt, dy)
 		
-		if (ctx.getHorizontalScroll) {
+		if (ctx.isHorizontalScroll) {
 			if (Math.abs(dx) > ctx.getHorizontalThreshold)
 				sendHorizontalWheel(spt, dx)
 		}
@@ -178,13 +177,6 @@ object Windows {
 	}
 	
 	def resendDown(me: MouseEvent) = {
-		/*
-		val eh = (me.info.time & 0xffff) << 16
-		val el = (resendTag & 0xffff)
-		val ext = eh | el
-		
-		me.info.dwExtraInfo = new ULONG_PTR(ext)
-		*/
 		val ext = resendTag
 		//ctx.setSkip(me, true)
 		
@@ -206,7 +198,7 @@ object Windows {
 		}
 	}
 	
-	def copyCursor(hCur: HCURSOR): HCURSOR =
+	private def copyCursor(hCur: HCURSOR): HCURSOR =
 		new HCURSOR(ex.CopyIcon(new HICON(hCur.getPointer)).getPointer)
 	
 	private val CURSOR_ID = IDC_SIZENS

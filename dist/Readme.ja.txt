@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.2
+        0.2.1
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,8 +11,9 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
-        2016-07-06: Version 0.2: LeftOnlyTriggerとRightOnlyTriggerを追加
-        2016-07-05: Version 0.1: 初公開
+        2016-07-08: Version 0.2.1: 細かい改良
+        2016-07-06: Version 0.2.0: LeftOnlyTriggerとRightOnlyTriggerを追加
+        2016-07-05: Version 0.1.0: 初公開
         
 対応環境:
         Java 8 のシステム要件項目 Windows を参照

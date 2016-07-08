@@ -29,7 +29,7 @@ object W10Wheel {
 	private val logger = ctx.logger	
 	val unhook: Promise[Boolean] = Promise[Boolean]
 		
-	val eventDispatcher = new LowLevelMouseProc() {
+	private val eventDispatcher = new LowLevelMouseProc() {
 		override def callback(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
 			val eh = EventHandler
 			val callNextHook = () => Windows.callNextHook(nCode, wParam, info)
@@ -53,14 +53,14 @@ object W10Wheel {
 		}
 	}
 	
-	def processExit = {
+	private def processExit = {
 		logger.debug("unhook and exit")
 		Windows.unhook
 		ctx.storeProperties
 		PreventMultiInstance.unlock
 	}
 	
-	def messageDoubleLaunch =
+	private def messageDoubleLaunch =
 		JOptionPane.showMessageDialog(null, "Double Launch?", "Error", JOptionPane.ERROR_MESSAGE)
 	
 	def main(args: Array[String]) {
