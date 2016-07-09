@@ -111,7 +111,7 @@ object EventHandler {
 
 	private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
 		if (EventWaiter.isWaiting && EventWaiter.offer(me)) {
-			logger.debug(s"success to offer to the event waiter: ${me.name}")
+			logger.debug(s"success to offer: ${me.name}")
 			suppress
 		}
 		else
@@ -134,7 +134,7 @@ object EventHandler {
 		
 		if (resent) {
 			// waiter thread timing issue
-			logger.debug(s"forced to resendUp: ${up.name}")
+			logger.debug(s"forced to resend: ${up.name}")
 			Windows.resendUp(up)
 			suppress
 		}
@@ -254,11 +254,33 @@ object EventHandler {
 	
 	private def getResult(me: MouseEvent, cs: Checkers): LRESULT =
 		cs.flatMap(_.apply(me)).head
+		
+	private def getResultBranch(me: MouseEvent, cs: Checkers): Option[LRESULT] =
+		cs.map(_.apply(me)).find(_.isDefined).get
+		
+	private def branchLROnlyDown(me: MouseEvent): Option[LRESULT] = {
+		if (ctx.isLROnlyTrigger) {
+			logger.debug(s"branch LR only down: ${me.name}")
+			getResultBranch(me, Stream(passNotTriggerLROnly, startScrollLROnly))
+		}
+		else
+			None
+	}
+	
+	private def branchLROnlyUp(me: MouseEvent): Option[LRESULT] = {
+		if (ctx.isLROnlyTrigger) {
+			logger.debug(s"branch LR only up: ${me.name}")
+			getResultBranch(me, Stream(passNotTriggerLROnly, exitAndResendLROnly))
+		}
+		else
+			None
+	}
 
 	private def lrDown(me: MouseEvent): LRESULT = {		
-		val checkers: Checkers = Stream(
+		val cs: Checkers = Stream(
 				skipResendEvent,
 				checkSameLastEvent,
+				branchLROnlyDown,
 				resetLastFlags,
 				checkExitScrollDown,
 				passSingleTrigger,
@@ -266,14 +288,15 @@ object EventHandler {
 				checkTriggerWaitStart,
 				endNotTrigger)
 		
-		getResult(me, checkers)
+		getResult(me, cs)
 	}
 	
 	private def lrUp(me: MouseEvent): LRESULT = {
-		val checkers: Checkers = Stream(
+		val cs: Checkers = Stream(
 				skipResendEvent,
 				skipFirstUpOrSingle,
 				checkSameLastEvent,
+				branchLROnlyUp,
 				passSingleTrigger,
 				checkExitScrollUp,
 				passNotTriggerLR,
@@ -282,59 +305,57 @@ object EventHandler {
 				checkDownSuppressed,
 				endUnknownEvent)
 				
-		getResult(me, checkers)
+		getResult(me, cs)
 	}
 	
+	/*
 	private def lrOnlyDown(me: MouseEvent): LRESULT = {
-		val checkers: Checkers = Stream(
+		val cs: Checkers = Stream(
 				skipResendEvent,
 				checkSameLastEvent,
 				passNotTriggerLROnly,
 				startScrollLROnly)
 		
-		getResult(me, checkers)
+		getResult(me, cs)
 	}
 	
 	private def lrOnlyUp(me: MouseEvent): LRESULT = {
-		val checkers: Checkers = Stream(
+		val cs: Checkers = Stream(
 				skipResendEvent,
 				skipFirstUpOrSingle,
 				checkSameLastEvent,
 				passNotTriggerLROnly,
 				exitAndResendLROnly)
 				
-		getResult(me, checkers)
+		getResult(me, cs)
 	}
+	*/
+	
+	//@volatile private var lrDownFunc: (MouseEvent => LRESULT) = null
+	//@volatile private var lrUpFunc: (MouseEvent => LRESULT) = null
 	
 	def leftDown(info: HookInfo): LRESULT = {
 		//logger.debug("leftDown")
-		
-		val ld = LeftDown(info)
-		if (ctx.isLROnlyTrigger) lrOnlyDown(ld) else lrDown(ld)
+		lrDown(LeftDown(info))
 	}
 	
 	def rightDown(info: HookInfo): LRESULT = {
 		//logger.debug("rightDown")
-		
-		val rd = RightDown(info)
-		if (ctx.isLROnlyTrigger) lrOnlyDown(rd) else lrDown(rd)
+		lrDown(RightDown(info))
 	}
 	
 	def leftUp(info: HookInfo): LRESULT = {
 		//logger.debug("leftUp");
-		
-		val lu = LeftUp(info)
-		if (ctx.isLROnlyTrigger) lrOnlyUp(lu) else lrUp(lu)
+		lrUp(LeftUp(info))
 	}
 	
 	def rightUp(info: HookInfo): LRESULT = {
 		//logger.debug("rightUp")
-		val ru = RightUp(info)
-		if (ctx.isLROnlyTrigger) lrOnlyUp(ru) else lrUp(ru)
+		lrUp(RightUp(info))
 	}
 	
 	private def singleDown(me: MouseEvent): LRESULT = {
-		val checkers: Checkers = Stream(
+		val cs: Checkers = Stream(
 				skipResendEvent,
 				checkSameLastEvent,
 				resetLastFlags,
@@ -344,11 +365,11 @@ object EventHandler {
 				checkTriggerScrollStart,
 				endIllegalState)
 		
-		getResult(me, checkers)
+		getResult(me, cs)
 	}
 	
 	private def singleUp(me: MouseEvent): LRESULT = {
-		val checkers: Checkers = Stream(
+		val cs: Checkers = Stream(
 				skipResendEvent,
 				skipFirstUpOrLR,
 				checkSameLastEvent,
@@ -357,7 +378,7 @@ object EventHandler {
 				checkDownSuppressed,
 				endIllegalState)
 				
-		getResult(me, checkers)
+		getResult(me, cs)
 	}
 	
 	def middleDown(info: HookInfo): LRESULT = {			
@@ -408,7 +429,15 @@ object EventHandler {
 	/*
 	def changeTrigger: Unit = {
 		logger.debug("changeTrigger")
-		drag = if (ctx.isLROnlyTrigger) dragLROnly else dragDefault
+		
+		if (ctx.isLROnlyTrigger) {
+			lrDownFunc = lrOnlyDown
+			lrUpFunc = lrOnlyUp
+		}
+		else {
+			lrDownFunc = lrDown
+			lrUpFunc = lrUp
+		}
 	}
 	*/
 }

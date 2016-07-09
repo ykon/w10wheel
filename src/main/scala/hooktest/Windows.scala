@@ -198,23 +198,23 @@ object Windows {
 		}
 	}
 	
+	private val CURSOR_ID = IDC_SIZENS
+	
+	// https://github.com/java-native-access/jna/blob/master/contrib/platform/src/com/sun/jna/platform/win32/Kernel32Util.java
+	private def loadCursor(id: Int) = {
+		val id = new Pointer(CURSOR_ID)
+		//ex.LoadCursorW(null, id)
+		ex.LoadImageW(null, id, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED)
+	}
+	
+	private val hCur = new HCURSOR(loadCursor(IDC_SIZENS).getPointer)
+	
 	private def copyCursor(hCur: HCURSOR): HCURSOR =
 		new HCURSOR(ex.CopyIcon(new HICON(hCur.getPointer)).getPointer)
-	
-	private val CURSOR_ID = IDC_SIZENS
-	private val hCur = ex.LoadCursorW(null, new Pointer(CURSOR_ID));
 	
 	//@volatile private var cursorChanged = false
 	
 	def changeCursor = {
-		//val id = if (is_horizontal) IDC_SIZEALL else IDC_SIZENS
-		//val id = IDC_SIZENS
-		
-		// https://github.com/java-native-access/jna/blob/master/contrib/platform/src/com/sun/jna/platform/win32/Kernel32Util.java
-		
-		//val ptr = new Pointer(id)
-		//val hCur = new HCURSOR(ex.LoadImageW(null, ptr, IMAGE_CURSOR, 0, 0, LR_SHARED).getPointer)
-		
 		ex.SetSystemCursor(copyCursor(hCur), OCR_NORMAL)
 		ex.SetSystemCursor(copyCursor(hCur), OCR_IBEAM)
 		ex.SetSystemCursor(copyCursor(hCur), OCR_HAND)
@@ -227,8 +227,7 @@ object Windows {
 	//val SPIF_SENDWININICHANGE = 0x02;  
 	
 	def restoreCursor = {
-		//val fWinIni = if (!sendChange) 0 else (SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE)
-		
+		//val fWinIni = if (!sendChange) 0 else (SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE)	
 		ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
 		//cursorChanged = false
 	}
