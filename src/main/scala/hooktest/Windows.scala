@@ -129,12 +129,23 @@ object Windows {
 	
 	private def addAccel(d: Int, a: Int) =
 		if (d > 0) d + a else if (d < 0) d - a else 0
+		
+	private def setVScrollDirection(d: Int) =
+		if (ctx.isReverseScroll) d else d * -1
 	
-	def sendVerticalWheel(pt: POINT, d: Int) =
-		sendInput(pt, addAccel(d, ctx.getVerticalAccel) * -1,  MOUSEEVENTF_WHEEL, 0, 0)
+	def sendVerticalWheel(pt: POINT, d: Int) = {
+		val data = setVScrollDirection(addAccel(d, ctx.getVerticalAccel))
+		sendInput(pt, data,  MOUSEEVENTF_WHEEL, 0, 0)
+	}
 	
-	def sendHorizontalWheel(pt: POINT, d: Int) =
-		sendInput(pt, addAccel(d, ctx.getHorizontalAccel), MOUSEEVENTF_HWHEEL, 0, 0)
+	private def setHScrollDirection(d: Int) = {
+		if (ctx.isReverseScroll) d * -1 else d
+	}
+	
+	def sendHorizontalWheel(pt: POINT, d: Int) = {
+		val data = setHScrollDirection(addAccel(d, ctx.getHorizontalAccel))
+		sendInput(pt, data, MOUSEEVENTF_HWHEEL, 0, 0)
+	}
 	
 	def sendWheel(pt: POINT) {
 		val (sx, sy) = ctx.getScrollStartPoint

@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.3
+        0.3.1
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-10: Version 0.3.1: 逆スクロールを追加
         2016-07-10: Version 0.3.0: PopupMenuをAWTからSwingに変更、他
         2016-07-08: Version 0.2.1: 細かい改良
         2016-07-06: Version 0.2.0: LeftOnlyTriggerとRightOnlyTriggerを追加
@@ -78,6 +79,7 @@ URL:
         Reload Properties: 設定ファイルを再読込
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
+        Reverse Scroll: スクロールの方向を逆にする
         Pass Mode: 全てのメッセージをそのまま通す # WheelBall の制御停止
         Version: バージョン番号を表示
         Exit: 終了
@@ -115,7 +117,7 @@ URL:
                 スクロールモードのカーソル変更
         verticalAccel: 0-500 (デフォルト: 0)
                 垂直(通常)スクロールのアクセル値
-                スクロールが遅いと思ったら試してください。
+                スクロールが遅いと思ったら試してみてください。
         verticalThreshold: 0-500 (デフォルト: 0)
                 垂直(通常)スクロールの閾値
         horizontalScroll: bool (デフォルト: true)
@@ -126,6 +128,8 @@ URL:
         horizontalThreshold: 0-500 (デフォルト: 50)
                 水辺スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
+        reverseScroll: bool (デフォルト: false)
+                スクロールの方向を逆にする
 
 ライセンス:
         The MIT License

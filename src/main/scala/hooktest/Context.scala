@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.3"
+	val PROGRAM_VERSION = "0.3.1"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -68,6 +68,7 @@ object Context {
 		@volatile private var sy = 0
 		@volatile var locktime = 300 // default
 		@volatile var cursorChange = true // default
+		@volatile var reverse = false // default
 		
 		def start(info: HookInfo) {
 			stime = info.time
@@ -102,10 +103,12 @@ object Context {
 	def isScrollMode = Scroll.isMode
 	def getScrollStartPoint = Scroll.getStartPoint
 	def checkExitScroll(time: Int) = Scroll.checkExit(time)
+	def isReverseScroll = Scroll.reverse 
 	
 	private object ResetMenu {
 		var cursorChange: JCheckBoxMenuItem = null
 		var horizontalScroll: JCheckBoxMenuItem = null
+		var reverseScroll: JCheckBoxMenuItem = null
 		var trigger: JMenu = null
 		var number: JMenu = null
 	}
@@ -228,22 +231,9 @@ object Context {
 	private def isSelected(e: ItemEvent) =
 		e.getStateChange == ItemEvent.SELECTED
 		
-	private def setCursorChange(e: ItemEvent) = {
+	private def setBooleanOfEvent(name: String, e: ItemEvent) = {
 		val b = isSelected(e)
-		logger.debug(s"setCursorChange: $b")
-		Scroll.cursorChange = b
-	}
-		
-	private def setHorizontalScroll(e: ItemEvent) = {
-		val b = isSelected(e)
-		logger.debug(s"setHorizontalScroll: $b")
-		Horizontal.scroll = b
-	}
-
-	private def setPassMode(e: ItemEvent) = {
-		val b = isSelected(e)
-		logger.debug(s"setPassMode: $b")
-		passMode = b
+		setBooleanOfName(name, b)
 	}
 		
 	private def resetTriggerItems: Unit = {
@@ -266,6 +256,7 @@ object Context {
 	private def resetMenuItem: Unit = {
 		ResetMenu.cursorChange.setState(Scroll.cursorChange)
 		ResetMenu.horizontalScroll.setState(Horizontal.scroll)
+		ResetMenu.reverseScroll.setState(Scroll.reverse)
 		resetTriggerItems
 		resetNumberItems
 	}
@@ -409,20 +400,27 @@ object Context {
 	private def createCursorChangeMenuItem = {
 		val item = new JCheckBoxMenuItem("Cursor Change", Scroll.cursorChange)
 		ResetMenu.cursorChange = item
-		item.addItemListener(setCursorChange _)
+		item.addItemListener(setBooleanOfEvent("cursorChange", _: ItemEvent))
 		item
 	}
 	
 	private def createHorizontalScrollMenuItem = {
 		val item = new JCheckBoxMenuItem("Horizontal Scroll", Horizontal.scroll)
 		ResetMenu.horizontalScroll = item
-		item.addItemListener(setHorizontalScroll _)
+		item.addItemListener(setBooleanOfEvent("horizontalScroll", _: ItemEvent))
+		item
+	}
+	
+	private def createReverseScrollMenuItem = {
+		val item = new JCheckBoxMenuItem("Reverse Scroll", Scroll.reverse)
+		ResetMenu.reverseScroll = item
+		item.addItemListener(setBooleanOfEvent("reverseScroll", _: ItemEvent))
 		item
 	}
 	
 	private def createPassModeMenuItem = {
 		val item = new JCheckBoxMenuItem("Pass Mode")
-		item.addItemListener(setPassMode _)
+		item.addItemListener(setBooleanOfEvent("passMode", _: ItemEvent))
 		item
 	}
 	
@@ -448,6 +446,7 @@ object Context {
 		
 		menu.add(createCursorChangeMenuItem)
 		menu.add(createHorizontalScrollMenuItem)
+		menu.add(createReverseScrollMenuItem)
 		menu.add(createPassModeMenuItem)
 		menu.add(createVersionMenuItem)
 		menu.add(createExitMenuItem)
@@ -530,10 +529,16 @@ object Context {
 	
 	private def setBooleanOfProperty(name: String) {
 		val b = prop.getProperty(name).toBoolean
-		
+		setBooleanOfName(name, b)
+	}
+	
+	private def setBooleanOfName(name: String, b: Boolean) = {
+		logger.debug(s"setBoolean: $name = ${b.toString}") 
 		name match {
 			case "cursorChange" => Scroll.cursorChange = b
 			case "horizontalScroll" => Horizontal.scroll = b
+			case "reverseScroll" => Scroll.reverse = b
+			case "passMode" => passMode = b
 			case _ => throw new IllegalArgumentException()
 		}
 	}
@@ -560,6 +565,7 @@ object Context {
 			
 			setBooleanOfProperty("cursorChange")
 			setBooleanOfProperty("horizontalScroll")
+			setBooleanOfProperty("reverseScroll")
 			
 			setNumberOfProperty("pollTimeout", 50, 500)
 			setNumberOfProperty("scrollLocktime", 150, 500)
@@ -590,7 +596,10 @@ object Context {
 			val hs = prop.getProperty("horizontalScroll")
 			val r3 = hs.toBoolean != Horizontal.scroll
 			
-			Array(r1, r2, r3).contains(true) ||
+			val rs = prop.getProperty("reverseScroll")
+			val r4 = rs.toBoolean != Scroll.reverse
+			
+			Array(r1, r2, r3, r4).contains(true) ||
 				getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
 		}
 		catch {
@@ -636,6 +645,7 @@ object Context {
 			prop.setProperty("firstTrigger", firstTrigger.name)
 			prop.setProperty("cursorChange", Scroll.cursorChange.toString())
 			prop.setProperty("horizontalScroll", Horizontal.scroll.toString())
+			prop.setProperty("reverseScroll", Scroll.reverse.toString())
 			
 			val names = getNumberNames					
 			names.foreach(n => prop.setProperty(n, getNumberOfName(n).toString))
