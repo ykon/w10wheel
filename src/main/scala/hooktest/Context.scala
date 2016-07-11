@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.4"
+	val PROGRAM_VERSION = "0.4.1"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -569,16 +569,28 @@ object Context {
 		prop.getProperty(name).toInt
 	
 	private def setNumberOfProperty(name: String, lowlimit: Int, uplimit: Int): Unit = {
-		val n = getNumberOfProperty(name)
-		if (n < lowlimit || n > uplimit)
-			throw new IllegalArgumentException(n.toString())
+		try {
+			val n = getNumberOfProperty(name)
+			if (n < lowlimit || n > uplimit)
+				throw new IllegalArgumentException(n.toString())
 		
-		setNumberOfName(name, n)
+			setNumberOfName(name, n)
+		}
+		catch {
+			case e: scala.MatchError  => logger.warn(s"setNumberOfProperty: ${e.getMessage}")
+			case e: IllegalArgumentException => logger.warn(s"setNumberOfProperty ${e.getMessage}")
+		}
 	}
 	
 	private def setBooleanOfProperty(name: String) {
-		val b = prop.getProperty(name).toBoolean
-		setBooleanOfName(name, b)
+		try {
+			val b = prop.getProperty(name).toBoolean
+			setBooleanOfName(name, b)
+		}
+		catch {
+			case e: scala.MatchError => logger.warn(s"setBooleanOfProperty: ${e.getMessage}")
+			case e: NullPointerException => logger.warn(s"setBooleanOfProperty: ${e.getMessage}")
+		}
 	}
 	
 	private def setBooleanOfName(name: String, b: Boolean) = {
@@ -599,11 +611,26 @@ object Context {
 		//EventHandler.changeTrigger
 	}
 	
-	private def setTriggerOfProperty: Unit =
-		setTrigger(prop.getProperty("firstTrigger"))
+	private def setTriggerOfProperty: Unit = {
+		try {
+			setTrigger(prop.getProperty("firstTrigger"))
+		}
+		catch {
+			case e: scala.MatchError => logger.warn(s"setTriggerOfProperty: ${e.getMessage}")
+		}
+	}
 		
-	private def setPriorityOfProperty: Unit =
-		setPriority(prop.getProperty("processPriority"))
+	private def setPriorityOfProperty: Unit = {
+		try {
+			setPriority(prop.getProperty("processPriority"))
+		}
+		catch {
+			case e: scala.MatchError => {
+				logger.warn(s"setPriority: ${e.getMessage}")
+				Windows.setPriority(processPriority) // default
+			}
+		}
+	}
 	
 	private val prop = new Properties
 	
@@ -628,7 +655,7 @@ object Context {
 			setNumberOfProperty("horizontalThreshold", 0, 500)
 		}
 		catch {
-			case e: Exception => logger.warn(e.toString())
+			case e: Exception => logger.warn(e.toString)
 		}
 		finally {
 			if (input != null)
