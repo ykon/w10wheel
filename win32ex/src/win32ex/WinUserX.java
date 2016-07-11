@@ -13,6 +13,7 @@ import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
 import com.sun.jna.platform.win32.BaseTSD.ULONG_PTR;
 import com.sun.jna.platform.win32.User32;
+import com.sun.jna.platform.win32.Kernel32;
 import com.sun.jna.platform.win32.WinUser;
 
 public interface WinUserX extends WinUser
@@ -118,11 +119,23 @@ public interface WinUserX extends WinUser
     	
     	public short GetKeyState(int vKey);
     	public short GetAsyncKeyState(int vKey);
+    
+    	// https://msdn.microsoft.com/library/windows/desktop/aa383751.aspx
+    	public Pointer LoadImageW(HINSTANCE hinst, Pointer ptr, int type, int xDesired, int yDesired, int load);
+    	public Pointer LoadCursorW(HINSTANCE hInstance, Pointer lpCursorName);
+    	public boolean SystemParametersInfoW(int uiAction, int uiParam, Pointer pvParam, int fWinIni);
+    	public boolean SetSystemCursor(Pointer hcur, int id);
+    	public Pointer CopyIcon(Pointer hIcon);
+    }
+    
+    // https://msdn.microsoft.com/library/windows/desktop/ms686219.aspx
+    public int ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000;
+    public int HIGH_PRIORITY_CLASS = 0x00000080;
+    public int NORMAL_PRIORITY_CLASS = 0x00000020;
+    
+    public interface Kernel32ex extends Kernel32 {
+    	Kernel32ex INSTANCE = (Kernel32ex)Native.loadLibrary("kernel32", Kernel32ex.class);
     	
-    	public HANDLE LoadImageW(HINSTANCE hinst, Pointer ptr, int type, int xDesired, int yDesired, int load);
-    	public HCURSOR LoadCursorW(HINSTANCE hInstance, Pointer lpCursorName);
-    	public BOOL SystemParametersInfoW(int uiAction, int uiParam, Pointer pvParam, int fWinIni);
-    	public BOOL SetSystemCursor(HCURSOR hcur, int id);
-    	public HICON CopyIcon(HICON hIcon);
+    	public boolean SetPriorityClass(HANDLE hProcess, int dwPriorityClass);
     }
 }

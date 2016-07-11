@@ -24,13 +24,14 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.3.1"
+	val PROGRAM_VERSION = "0.4"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
 	@volatile private var firstTrigger: Trigger = LRTrigger() // default
 	@volatile private var pollTimeout = 300 // default
 	@volatile private var passMode = false
+	@volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
 	
 	private object Vertical {
 		@volatile var accel = 0  // default
@@ -110,6 +111,7 @@ object Context {
 		var horizontalScroll: JCheckBoxMenuItem = null
 		var reverseScroll: JCheckBoxMenuItem = null
 		var trigger: JMenu = null
+		var priority: JMenu = null
 		var number: JMenu = null
 	}
 	
@@ -236,9 +238,14 @@ object Context {
 		setBooleanOfName(name, b)
 	}
 		
-	private def resetTriggerItems: Unit = {
+	private def resetTriggerItem: Unit = {
 		val items = getRadioButtonMenuItems(ResetMenu.trigger)
 		items.find(i => isTrigger(Mouse.getTrigger(textToName(i.getText)))).get.setSelected(true)
+	}
+	
+	private def resetPriorityItem: Unit = {
+		val items = getRadioButtonMenuItems(ResetMenu.priority)
+		items.find(i => getPriority(i.getText) == processPriority).get.setSelected(true)
 	}
 	
 	private def getNumberItems =
@@ -257,7 +264,8 @@ object Context {
 		ResetMenu.cursorChange.setState(Scroll.cursorChange)
 		ResetMenu.horizontalScroll.setState(Horizontal.scroll)
 		ResetMenu.reverseScroll.setState(Scroll.reverse)
-		resetTriggerItems
+		resetTriggerItem
+		resetPriorityItem
 		resetNumberItems
 	}
 	
@@ -360,6 +368,46 @@ object Context {
 		mi
 	}
 	
+	private def getPriority(name: String) = {
+		name match {
+			case "High" => Windows.High()
+			case "AboveNormal" | "Above Normal" => Windows.AboveNormal()
+			case "Normal" => Windows.Normal()
+		}
+	}
+	
+	private def setPriority(name: String) = {
+		val priority = getPriority(name)
+		logger.debug(s"setPriority: ${priority.name}")
+		processPriority = priority
+		Windows.setPriority(priority)
+	}
+	
+	private def setPriority(e: ItemEvent): Unit = {
+		if (isSelected(e))
+			setPriority(getItemText(e)) 
+	}
+	
+	private def createPriorityItem(name: String): JRadioButtonMenuItem = {
+	    val item = new JRadioButtonMenuItem(name)
+	    item.addItemListener(setPriority _)
+	    item
+	}
+	
+	private def createPriorityMenu: JMenu = {
+		val menu = new JMenu("Priority")
+		menu.add(createPriorityItem("High"))
+		menu.add(createPriorityItem("Above Normal"))
+		menu.add(createPriorityItem("Normal"))
+
+		val group = new ButtonGroup
+		getMenuItems(menu).foreach(group.add)
+		
+		ResetMenu.priority = menu
+		
+		menu
+	}
+	
 	private def createSetNumberMenu: JMenu = {
 		val menu = new JMenu("Set Number")
 		
@@ -440,6 +488,7 @@ object Context {
 		val menu = new JPopupMenu()
 		
 		menu.add(createTriggerMenu)
+		menu.add(createPriorityMenu)
 		menu.add(createSetNumberMenu)
 		menu.add(createReloadPropertiesMenuItem)
 		menu.addSeparator()
@@ -552,6 +601,9 @@ object Context {
 	
 	private def setTriggerOfProperty: Unit =
 		setTrigger(prop.getProperty("firstTrigger"))
+		
+	private def setPriorityOfProperty: Unit =
+		setPriority(prop.getProperty("processPriority"))
 	
 	private val prop = new Properties
 	
@@ -562,6 +614,7 @@ object Context {
 			prop.load(input)
 			
 			setTriggerOfProperty
+			setPriorityOfProperty
 			
 			setBooleanOfProperty("cursorChange")
 			setBooleanOfProperty("horizontalScroll")
@@ -590,16 +643,19 @@ object Context {
 			val trigger = prop.getProperty("firstTrigger")
 			val r1 = trigger != firstTrigger.name
 			
+			val priority = prop.getProperty("processPriority")
+			val r2 = priority != processPriority.name
+			
 			val cc = prop.getProperty("cursorChange")
-			val r2 = cc.toBoolean != Scroll.cursorChange
+			val r3 = cc.toBoolean != Scroll.cursorChange
 			
 			val hs = prop.getProperty("horizontalScroll")
-			val r3 = hs.toBoolean != Horizontal.scroll
+			val r4 = hs.toBoolean != Horizontal.scroll
 			
 			val rs = prop.getProperty("reverseScroll")
-			val r4 = rs.toBoolean != Scroll.reverse
+			val r5 = rs.toBoolean != Scroll.reverse
 			
-			Array(r1, r2, r3, r4).contains(true) ||
+			Array(r1, r2, r3, r4, r5).contains(true) ||
 				getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
 		}
 		catch {
@@ -638,11 +694,14 @@ object Context {
 	}
 	
 	def storeProperties: Unit = {
-		if (!isChangedProperties)
+		if (!isChangedProperties) {
+			logger.debug("Not Changed Properties")
 			return
+		}
 		
 		try {			
 			prop.setProperty("firstTrigger", firstTrigger.name)
+			prop.setProperty("processPriority", processPriority.name)
 			prop.setProperty("cursorChange", Scroll.cursorChange.toString())
 			prop.setProperty("horizontalScroll", Horizontal.scroll.toString())
 			prop.setProperty("reverseScroll", Scroll.reverse.toString())

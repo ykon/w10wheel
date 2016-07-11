@@ -23,15 +23,17 @@ import java.util.Random
 object Windows {
 	private val ctx = Context
 	private val logger = ctx.logger
-	private val lib = User32.INSTANCE
-	private val ex = User32ex.INSTANCE
+	private val u32 = User32.INSTANCE
+	private val u32ex = User32ex.INSTANCE
+	private val k32 = Kernel32.INSTANCE
+	private val k32ex = Kernel32ex.INSTANCE
 	private var hhk: HHOOK = null
 	
 	def messageLoop: Unit = {
 		val msg = new MSG()
 		
 		while (true) {
-			lib.GetMessage(msg, null, 0, 0) match {
+			u32.GetMessage(msg, null, 0, 0) match {
 				case 0 => return
 				case -1 => {
 					logger.debug("error in get message")
@@ -39,8 +41,8 @@ object Windows {
 				}
 				case _ => {
 					logger.debug("got message")
-					lib.TranslateMessage(msg)
-					lib.DispatchMessage(msg)
+					u32.TranslateMessage(msg)
+					u32.DispatchMessage(msg)
 				}
 			}
 		}
@@ -51,24 +53,24 @@ object Windows {
 	private def inputSender = Future {
 		while (true) {
 			val msgs = inputQueue.take()
-			lib.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
+			u32.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
 		}
 	}
 	
 	inputSender // start
 	
 	def unhook =
-		lib.UnhookWindowsHookEx(hhk)
+		u32.UnhookWindowsHookEx(hhk)
 	
 	def setHook(proc: LowLevelMouseProc) = {
 		val hMod = Kernel32.INSTANCE.GetModuleHandle(null)
-		hhk = lib.SetWindowsHookEx(WH_MOUSE_LL, proc, hMod, 0)
+		hhk = u32.SetWindowsHookEx(WH_MOUSE_LL, proc, hMod, 0)
 	}
 	
 	def callNextHook(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
 		val ptr = info.getPointer
 		val peer = Pointer.nativeValue(ptr)
-		lib.CallNextHookEx(hhk, nCode, wParam, new LPARAM(peer))
+		u32.CallNextHookEx(hhk, nCode, wParam, new LPARAM(peer))
 	}
 	
 	private def createInputArray(size: Int) =
@@ -215,20 +217,20 @@ object Windows {
 	private def loadCursor(id: Int) = {
 		val id = new Pointer(CURSOR_ID)
 		//ex.LoadCursorW(null, id)
-		ex.LoadImageW(null, id, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED)
+		u32ex.LoadImageW(null, id, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED)
 	}
 	
-	private val hCur = new HCURSOR(loadCursor(IDC_SIZENS).getPointer)
+	private val hCur = loadCursor(IDC_SIZENS)
 	
-	private def copyCursor(hCur: HCURSOR): HCURSOR =
-		new HCURSOR(ex.CopyIcon(new HICON(hCur.getPointer)).getPointer)
+	private def copyCursor(hCur: Pointer) =
+		u32ex.CopyIcon(hCur)
 	
 	//@volatile private var cursorChanged = false
 	
 	def changeCursor = {
-		ex.SetSystemCursor(copyCursor(hCur), OCR_NORMAL)
-		ex.SetSystemCursor(copyCursor(hCur), OCR_IBEAM)
-		ex.SetSystemCursor(copyCursor(hCur), OCR_HAND)
+		u32ex.SetSystemCursor(copyCursor(hCur), OCR_NORMAL)
+		u32ex.SetSystemCursor(copyCursor(hCur), OCR_IBEAM)
+		u32ex.SetSystemCursor(copyCursor(hCur), OCR_HAND)
 		
 		//cursorChanged = true
 	}
@@ -239,7 +241,7 @@ object Windows {
 	
 	def restoreCursor = {
 		//val fWinIni = if (!sendChange) 0 else (SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE)	
-		ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
+		u32ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
 		//cursorChanged = false
 	}
 	
@@ -249,11 +251,29 @@ object Windows {
 	*/
 	
 	def getAsyncShiftState =
-		(ex.GetAsyncKeyState(VK_SHIFT) & 0xf000) != 0
+		(u32ex.GetAsyncKeyState(VK_SHIFT) & 0xf000) != 0
 	
 	def getAsyncCtrlState =
-		(ex.GetAsyncKeyState(VK_CONTROL) & 0xf000) != 0
+		(u32ex.GetAsyncKeyState(VK_CONTROL) & 0xf000) != 0
 	
 	def getAsyncAltState =
-		(ex.GetAsyncKeyState(VK_MENU) & 0xf000) != 0
+		(u32ex.GetAsyncKeyState(VK_MENU) & 0xf000) != 0
+		
+	trait Priority {
+		def name = this.getClass.getSimpleName
+	}
+	case class Normal() extends Priority
+	case class AboveNormal() extends Priority
+	case class High() extends Priority
+	
+	def setPriority(p: Priority) = {
+		val process = k32.GetCurrentProcess()
+		def setPriorityClass(pc: Int) = k32ex.SetPriorityClass(process, pc)
+			
+		p match {
+			case Normal() => setPriorityClass(NORMAL_PRIORITY_CLASS)
+			case AboveNormal() => setPriorityClass(ABOVE_NORMAL_PRIORITY_CLASS)
+			case High() => setPriorityClass(HIGH_PRIORITY_CLASS)
+		}
+	}
 }

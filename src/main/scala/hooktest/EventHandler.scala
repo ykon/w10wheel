@@ -6,6 +6,7 @@ package hooktest
  */
 
 import scala.concurrent._
+import scala.collection.Iterator
 import ExecutionContext.Implicits.global
 
 import com.sun.jna.platform.win32.WinDef.LRESULT
@@ -250,18 +251,39 @@ object EventHandler {
 		suppress
 	}
 	
-	type Checkers = Stream[MouseEvent => Option[LRESULT]]
+	//type Checkers = Stream[MouseEvent => Option[LRESULT]]
+	type LCheckers = List[MouseEvent => Option[LRESULT]]
 	
-	private def getResult(me: MouseEvent, cs: Checkers): LRESULT =
+	/*
+	private def getResult(cs: Checkers, me: MouseEvent): LRESULT =
 		cs.flatMap(_.apply(me)).head
+	*/
+	
+	import scala.annotation.tailrec
+	
+	@tailrec
+	private def getResultL(lcs: LCheckers, me: MouseEvent): Option[LRESULT] = lcs match {
+		case f :: fs => {
+			val res = f(me)
+			if (res.isDefined) res else getResultL(fs, me)
+		}
+		case _ => throw new IllegalArgumentException()
+	}
 		
-	private def getResultBranch(me: MouseEvent, cs: Checkers): Option[LRESULT] =
+	/*
+	private def getResultBranch(cs: Checkers, me: MouseEvent): Option[LRESULT] =
 		cs.map(_.apply(me)).find(_.isDefined).get
+	*/
 		
 	private def branchLROnlyDown(me: MouseEvent): Option[LRESULT] = {
 		if (ctx.isLROnlyTrigger) {
 			logger.debug(s"branch LR only down: ${me.name}")
-			getResultBranch(me, Stream(passNotTriggerLROnly, startScrollLROnly))
+			//val cs: Checkers = Stream(
+			val lcs: LCheckers = List(
+					passNotTriggerLROnly, startScrollLROnly)
+					
+			//getResultBranch(cs, me)
+			getResultL(lcs, me)
 		}
 		else
 			None
@@ -270,14 +292,21 @@ object EventHandler {
 	private def branchLROnlyUp(me: MouseEvent): Option[LRESULT] = {
 		if (ctx.isLROnlyTrigger) {
 			logger.debug(s"branch LR only up: ${me.name}")
-			getResultBranch(me, Stream(passNotTriggerLROnly, exitAndResendLROnly))
+			//val cs: Checkers = Stream(
+			val lcs: LCheckers = List(
+					passNotTriggerLROnly, exitAndResendLROnly)
+						
+			//getResultBranch(cs, me)
+			getResultL(lcs, me)
 		}
 		else
 			None
 	}
 
-	private def lrDown(me: MouseEvent): LRESULT = {		
-		val cs: Checkers = Stream(
+	private def lrDown(me: MouseEvent): LRESULT = {
+		//val start = System.nanoTime()
+		//val cs: Checkers = Stream(
+		val lcs: LCheckers = List( 
 				skipResendEvent,
 				checkSameLastEvent,
 				branchLROnlyDown,
@@ -288,11 +317,16 @@ object EventHandler {
 				checkTriggerWaitStart,
 				endNotTrigger)
 		
-		getResult(me, cs)
+		//val res = getResult(cs, me)
+		val res = getResultL(lcs, me).get
+		//logger.debug(s"lrDown: ${(System.nanoTime() - start) / 1000} us")
+		res
 	}
 	
 	private def lrUp(me: MouseEvent): LRESULT = {
-		val cs: Checkers = Stream(
+		//val start = System.nanoTime
+		//val cs: Checkers = Stream(
+		val lcs: LCheckers = List(
 				skipResendEvent,
 				skipFirstUpOrSingle,
 				checkSameLastEvent,
@@ -305,7 +339,10 @@ object EventHandler {
 				checkDownSuppressed,
 				endUnknownEvent)
 				
-		getResult(me, cs)
+		//val res = getResult(cs, me)
+		val res = getResultL(lcs, me).get
+		//logger.debug(s"lrUp: ${(System.nanoTime() - start) / 1000} us")
+		res
 	}
 	
 	/*
@@ -355,7 +392,8 @@ object EventHandler {
 	}
 	
 	private def singleDown(me: MouseEvent): LRESULT = {
-		val cs: Checkers = Stream(
+		//val cs: Checkers = Stream(
+		val lcs: LCheckers = List(
 				skipResendEvent,
 				checkSameLastEvent,
 				resetLastFlags,
@@ -365,11 +403,13 @@ object EventHandler {
 				checkTriggerScrollStart,
 				endIllegalState)
 		
-		getResult(me, cs)
+		//getResult(cs, me)
+		getResultL(lcs, me).get
 	}
 	
 	private def singleUp(me: MouseEvent): LRESULT = {
-		val cs: Checkers = Stream(
+		//val cs: Checkers = Stream(
+		val lcs: LCheckers = List(
 				skipResendEvent,
 				skipFirstUpOrLR,
 				checkSameLastEvent,
@@ -378,7 +418,8 @@ object EventHandler {
 				checkDownSuppressed,
 				endIllegalState)
 				
-		getResult(me, cs)
+		//getResult(cs, me)
+		getResultL(lcs, me).get
 	}
 	
 	def middleDown(info: HookInfo): LRESULT = {			

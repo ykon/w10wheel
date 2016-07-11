@@ -1,9 +1,11 @@
 lazy val root = (project in file(".")).
   settings(
     name := "W10Wheel",
-    version := "0.3.1",
+    version := "0.4",
     scalaVersion := "2.11.8"
   )
+ 
+scalacOptions += "-target:jvm-1.8"
  
 // http://stackoverflow.com/questions/29696288/how-to-set-class-path-in-manifest-mf-to-custom-classpath
 val classPath = Seq(

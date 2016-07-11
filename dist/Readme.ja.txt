@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.3.1
+        0.4
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-11: Version 0.4.0: プロセスの優先度変更を追加、最適化
         2016-07-10: Version 0.3.1: 逆スクロールを追加
         2016-07-10: Version 0.3.0: PopupMenuをAWTからSwingに変更、他
         2016-07-08: Version 0.2.1: 細かい改良
@@ -74,8 +75,9 @@ URL:
         右クリックメニューから Exit を選択してください。
         
 メニュー項目:
-        Trigger: 設定項目を参照
-        SetNumber: 設定項目を参照
+        Trigger: トリガーを変更 (設定項目を参照)
+        Priority: プロセスの優先度を変更
+        SetNumber: 数値をセット (設定項目を参照)
         Reload Properties: 設定ファイルを再読込
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -85,7 +87,7 @@ URL:
         Exit: 終了
         
 設定項目:
-        firstTrigger:
+        firstTrigger: (デフォルト: LRTrigger)
                 LRTrigger:
                         左から右か、右から左を押すとトリガーになります。 # 同時押し
                         左、右クリックともに次のイベントを待つために遅延します。
@@ -108,6 +110,11 @@ URL:
                         右を押すとトリガーになります。
                         固定はされません、ドラッグしないで離すと右クリックを送ります。
         
+        processPriority:  (デフォルト: AboveNormal)
+                High: 高
+                AboveNormal: 通常以上
+                Normal: 通常
+                
         pollTimeout: 150-500 (デフォルト: 300)
                 同時押しのイベント待ち時間(ミリ秒)  # WheelBall の 判定時間 
         scrollLocktime: 150-500 (デフォルト: 300)
