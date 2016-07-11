@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.4.1"
+	val PROGRAM_VERSION = "0.4.2"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -577,8 +577,8 @@ object Context {
 			setNumberOfName(name, n)
 		}
 		catch {
-			case e: scala.MatchError  => logger.warn(s"setNumberOfProperty: ${e.getMessage}")
-			case e: IllegalArgumentException => logger.warn(s"setNumberOfProperty ${e.getMessage}")
+			case _: scala.MatchError  => logger.warn(s"setNumberOfProperty: $name")
+			case _: IllegalArgumentException => logger.warn(s"setNumberOfProperty $name")
 		}
 	}
 	
@@ -588,8 +588,8 @@ object Context {
 			setBooleanOfName(name, b)
 		}
 		catch {
-			case e: scala.MatchError => logger.warn(s"setBooleanOfProperty: ${e.getMessage}")
-			case e: NullPointerException => logger.warn(s"setBooleanOfProperty: ${e.getMessage}")
+			case _: IllegalArgumentException => logger.warn(s"setBooleanOfProperty: $name")
+			case _: scala.MatchError => logger.warn(s"setBooleanOfProperty: $name")
 		}
 	}
 	
@@ -600,7 +600,6 @@ object Context {
 			case "horizontalScroll" => Horizontal.scroll = b
 			case "reverseScroll" => Scroll.reverse = b
 			case "passMode" => passMode = b
-			case _ => throw new IllegalArgumentException()
 		}
 	}
 	
@@ -626,7 +625,7 @@ object Context {
 		}
 		catch {
 			case e: scala.MatchError => {
-				logger.warn(s"setPriority: ${e.getMessage}")
+				logger.warn(s"setPriorityOfProperty: ${e.getMessage}")
 				Windows.setPriority(processPriority) // default
 			}
 		}
