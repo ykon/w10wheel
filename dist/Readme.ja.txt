@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.5
+        0.6
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-12: Version 0.6.0: RealWheelModeを追加
         2016-07-12: Version 0.5.0: 追加: MiddleDrag, X1Drag, X2Drag 改名: LeftDrag, RightDrag
         2016-07-12: Version 0.4.2: 0.4.1の修正を一部修正
         2016-07-12: Version 0.4.1: 設定ファイルの読み取り(エラーハンドリング)を修正
@@ -82,6 +83,7 @@ URL:
         Priority: プロセスの優先度を変更
         SetNumber: 数値をセット (設定項目を参照)
         Reload Properties: 設定ファイルを再読込
+        Real Wheel Mode: 実際のホイールに近いスクロール
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
         Reverse Scroll: スクロールの方向を逆にする
@@ -132,6 +134,9 @@ URL:
         scrollLocktime: 150-500 (デフォルト: 300)
                 トリガーを離してスクロールモードに固定する時間(ミリ秒)
                 この時間以内にトリガーを離すとスクロールモードに固定します。
+        realWheelMode: bool (デフォルト: false)
+                実際のホイールに近いスクロール
+                こちらのモードではAccel値は使われません。
         cursorChange: bool (デフォルト: true)
                 スクロールモードのカーソル変更
         verticalAccel: 0-500 (デフォルト: 0)
@@ -149,7 +154,13 @@ URL:
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (デフォルト: false)
                 スクロールの方向を逆にする
-
+        wheelDelta: 10-500 (デフォルト: 120) # RealWheelMode
+                RealWheelModeでの一回分のホイール値
+                通常のマウスのホイール値は120です。
+        vWheelMove: 10-500 (デフォルト: 150) # RealWheelMode
+                垂直(通常)スクロール、一回分のホイールに変換する移動量
+        hWheelMove: 10-500 (デフォルト: 100) # RealWheelMode
+                水平スクロール、一回分のホイールに変換する移動量
 ライセンス:
         The MIT License
         詳しくは License.txt を参照

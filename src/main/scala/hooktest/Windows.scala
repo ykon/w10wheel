@@ -129,15 +129,51 @@ object Windows {
 		}
 	}
 	
+	private var vw_count = 0
+	private var hw_count = 0
+	
+	def setStartWheelCount = {
+		vw_count = ctx.getVWheelMove / 2
+		hw_count = ctx.getVWheelMove / 2
+	}
+	
 	private def addAccel(d: Int, a: Int) =
 		if (d > 0) d + a else if (d < 0) d - a else 0
 		
 	private def setVScrollDirection(d: Int) =
 		if (ctx.isReverseScroll) d else d * -1
+		
+	private def getVWheelDelta(input: Int) = {
+		val delta = ctx.getWheelDelta
+		
+		if (ctx.isReverseScroll)
+			if (input >= 0) delta else delta * -1
+		else
+			if (input >= 0) delta * -1 else delta
+	}
+	
+	private def getHWheelDelta(input: Int) = {
+		val delta = ctx.getWheelDelta
+		
+		if (ctx.isReverseScroll)
+			if (input >= 0) delta * -1 else delta
+		else
+			if (input >= 0) delta else delta * -1
+	}
 	
 	def sendVerticalWheel(pt: POINT, d: Int) = {
-		val data = setVScrollDirection(addAccel(d, ctx.getVerticalAccel))
-		sendInput(pt, data,  MOUSEEVENTF_WHEEL, 0, 0)
+		if (ctx.isRealWheelMode) {
+			vw_count += Math.abs(d)
+			
+			if (vw_count >= ctx.getVWheelMove) {
+				sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
+				vw_count = 0
+			}
+		}
+		else {
+			val data = setVScrollDirection(addAccel(d, ctx.getVerticalAccel))
+			sendInput(pt, data,  MOUSEEVENTF_WHEEL, 0, 0)
+		}
 	}
 	
 	private def setHScrollDirection(d: Int) = {
@@ -145,8 +181,18 @@ object Windows {
 	}
 	
 	def sendHorizontalWheel(pt: POINT, d: Int) = {
-		val data = setHScrollDirection(addAccel(d, ctx.getHorizontalAccel))
-		sendInput(pt, data, MOUSEEVENTF_HWHEEL, 0, 0)
+		if (ctx.isRealWheelMode) {
+			hw_count += Math.abs(d)
+			
+			if (hw_count >= ctx.getHWheelMove) {
+				sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
+				hw_count = 0
+			}
+		}
+		else {
+			val data = setHScrollDirection(addAccel(d, ctx.getHorizontalAccel))
+			sendInput(pt, data, MOUSEEVENTF_HWHEEL, 0, 0)
+		}
 	}
 	
 	def sendWheel(pt: POINT) {
@@ -156,8 +202,10 @@ object Windows {
 		
 		val spt = new POINT(sx, sy)
 		
-		if (Math.abs(dy) > ctx.getVerticalThreshold)
+		if (Math.abs(dy) > ctx.getVerticalThreshold) {
+			//logger.debug(s"dy: $dy")
 			sendVerticalWheel(spt, dy)
+		}
 		
 		if (ctx.isHorizontalScroll) {
 			if (Math.abs(dx) > ctx.getHorizontalThreshold)

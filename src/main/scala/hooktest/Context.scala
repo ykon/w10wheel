@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.5"
+	val PROGRAM_VERSION = "0.6"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -32,6 +32,16 @@ object Context {
 	@volatile private var pollTimeout = 300 // default
 	@volatile private var passMode = false
 	@volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
+	
+	@volatile private var wheelDelta = 120 // default
+	@volatile private var realWheelMode = false // default
+	@volatile private var vWheelMove = 150 // default
+	@volatile private var hWheelMove = 100 // default
+	
+	def getWheelDelta = wheelDelta
+	def isRealWheelMode = realWheelMode
+	def getVWheelMove = vWheelMove
+	def getHWheelMove = hWheelMove
 	
 	private object Vertical {
 		@volatile var accel = 0  // default
@@ -72,6 +82,9 @@ object Context {
 		@volatile var reverse = false // default
 		
 		def start(info: HookInfo) {
+			if (realWheelMode)
+				Windows.setStartWheelCount
+			
 			stime = info.time
 			sx = info.pt.x
 			sy = info.pt.y
@@ -107,6 +120,7 @@ object Context {
 	def isReverseScroll = Scroll.reverse 
 	
 	private object ResetMenu {
+		var realWheelMode: JCheckBoxMenuItem = null
 		var cursorChange: JCheckBoxMenuItem = null
 		var horizontalScroll: JCheckBoxMenuItem = null
 		var reverseScroll: JCheckBoxMenuItem = null
@@ -258,6 +272,7 @@ object Context {
 	}
 		
 	private def resetMenuItem: Unit = {
+		ResetMenu.realWheelMode.setState(realWheelMode)
 		ResetMenu.cursorChange.setState(Scroll.cursorChange)
 		ResetMenu.horizontalScroll.setState(Horizontal.scroll)
 		ResetMenu.reverseScroll.setState(Scroll.reverse)
@@ -312,7 +327,8 @@ object Context {
 		menu.add(createTriggerItem("Middle"))
 		menu.add(createTriggerItem("X1"))
 		menu.add(createTriggerItem("X2"))
-		menu.addSeparator()
+		menu.addSeparator
+		
 		menu.add(createTriggerItem("LeftDrag"))
 		menu.add(createTriggerItem("RightDrag"))
 		menu.add(createTriggerItem("MiddleDrag"))
@@ -422,6 +438,11 @@ object Context {
 		
 		menu.add(createNumberMenuItem("horizontalAccel", 0, 500))
 		menu.add(createNumberMenuItem("horizontalThreshold", 0, 500))
+		menu.addSeparator
+		
+		menu.add(createNumberMenuItem("wheelDelta", 10, 500))
+		menu.add(createNumberMenuItem("vWheelMove", 10, 500))
+		menu.add(createNumberMenuItem("hWheelMove", 10, 500))
 		
 		ResetMenu.number = menu
 		menu
@@ -443,6 +464,13 @@ object Context {
 	private def createReloadPropertiesMenuItem = {
 		val item = new JMenuItem("Reload Properties")
 		item.addActionListener(reloadProperties _)
+		item
+	}
+	
+	private def createRealWheelModeMenuItem = {
+		val item = new JCheckBoxMenuItem("Real Wheel Mode", realWheelMode)
+		ResetMenu.realWheelMode = item
+		item.addItemListener(setBooleanOfEvent("realWheelMode", _: ItemEvent))
 		item
 	}
 	
@@ -494,6 +522,7 @@ object Context {
 		menu.add(createReloadPropertiesMenuItem)
 		menu.addSeparator()
 		
+		menu.add(createRealWheelModeMenuItem)
 		menu.add(createCursorChangeMenuItem)
 		menu.add(createHorizontalScrollMenuItem)
 		menu.add(createReverseScrollMenuItem)
@@ -589,14 +618,15 @@ object Context {
 			setBooleanOfName(name, b)
 		}
 		catch {
-			case _: IllegalArgumentException => logger.warn(s"setBooleanOfProperty: $name")
 			case _: scala.MatchError => logger.warn(s"setBooleanOfProperty: $name")
+			case _: IllegalArgumentException => logger.warn(s"setBooleanOfProperty: $name")
 		}
 	}
 	
 	private def setBooleanOfName(name: String, b: Boolean) = {
 		logger.debug(s"setBoolean: $name = ${b.toString}") 
 		name match {
+			case "realWheelMode" => realWheelMode = b
 			case "cursorChange" => Scroll.cursorChange = b
 			case "horizontalScroll" => Horizontal.scroll = b
 			case "reverseScroll" => Scroll.reverse = b
@@ -643,6 +673,7 @@ object Context {
 			setTriggerOfProperty
 			setPriorityOfProperty
 			
+			setBooleanOfProperty("realWheelMode")
 			setBooleanOfProperty("cursorChange")
 			setBooleanOfProperty("horizontalScroll")
 			setBooleanOfProperty("reverseScroll")
@@ -653,6 +684,10 @@ object Context {
 			setNumberOfProperty("verticalThreshold" , 0, 500)
 			setNumberOfProperty("horizontalAccel", 0, 500)
 			setNumberOfProperty("horizontalThreshold", 0, 500)
+			
+			setNumberOfProperty("wheelDelta", 10, 500)
+			setNumberOfProperty("vWheelMove", 10, 500)
+			setNumberOfProperty("hWheelMove", 10, 500)
 		}
 		catch {
 			case e: Exception => logger.warn(e.toString)
@@ -673,16 +708,19 @@ object Context {
 			val priority = prop.getProperty("processPriority")
 			val r2 = priority != processPriority.name
 			
+			val rwm = prop.getProperty("realWheelMode")
+			val r3 = rwm.toBoolean != realWheelMode
+			
 			val cc = prop.getProperty("cursorChange")
-			val r3 = cc.toBoolean != Scroll.cursorChange
+			val r4 = cc.toBoolean != Scroll.cursorChange
 			
 			val hs = prop.getProperty("horizontalScroll")
-			val r4 = hs.toBoolean != Horizontal.scroll
+			val r5 = hs.toBoolean != Horizontal.scroll
 			
 			val rs = prop.getProperty("reverseScroll")
-			val r5 = rs.toBoolean != Scroll.reverse
+			val r6 = rs.toBoolean != Scroll.reverse
 			
-			Array(r1, r2, r3, r4, r5).contains(true) ||
+			Array(r1, r2, r3, r4, r5, r6).contains(true) ||
 				getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
 		}
 		catch {
@@ -694,7 +732,8 @@ object Context {
 	private def getNumberNames: Array[String] = {
 		Array("pollTimeout", "scrollLocktime", 
 			  "verticalAccel", "verticalThreshold",
-			  "horizontalAccel", "horizontalThreshold")
+			  "horizontalAccel", "horizontalThreshold",
+			  "wheelDelta", "vWheelMove", "hWheelMove")
 	}
 	
 	private def setNumberOfName(name: String, n: Int): Unit = {
@@ -707,6 +746,9 @@ object Context {
     		case "verticalThreshold" => Vertical.threshold = n
     		case "horizontalAccel" => Horizontal.accel = n
     		case "horizontalThreshold" => Horizontal.threshold = n
+    		case "wheelDelta" => wheelDelta = n
+    		case "vWheelMove" => vWheelMove = n
+    		case "hWheelMove" => hWheelMove = n
 	    }
 	}
 	
@@ -717,7 +759,9 @@ object Context {
 		case "verticalThreshold" => Vertical.threshold
 		case "horizontalAccel" => Horizontal.accel
 		case "horizontalThreshold" => Horizontal.threshold
-		case e => throw new IllegalArgumentException(e)
+		case "wheelDelta" => wheelDelta
+		case "vWheelMove" => vWheelMove
+		case "hWheelMove" => hWheelMove
 	}
 	
 	def storeProperties: Unit = {
@@ -729,6 +773,7 @@ object Context {
 		try {			
 			prop.setProperty("firstTrigger", firstTrigger.name)
 			prop.setProperty("processPriority", processPriority.name)
+			prop.setProperty("realWheelMode", realWheelMode.toString())
 			prop.setProperty("cursorChange", Scroll.cursorChange.toString())
 			prop.setProperty("horizontalScroll", Horizontal.scroll.toString())
 			prop.setProperty("reverseScroll", Scroll.reverse.toString())

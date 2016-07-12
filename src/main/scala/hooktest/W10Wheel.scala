@@ -48,7 +48,10 @@ object W10Wheel {
 				case WM_MBUTTONUP => eh.middleUp(info)
 				case WM_XBUTTONDOWN => eh.xDown(info)
 				case WM_XBUTTONUP => eh.xUp(info)
-				case WM_MOUSEWHEEL | WM_MOUSEHWHEEL => callNextHook()
+				case WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
+					//logger.debug(s"mouseData: ${info.mouseData}")
+					callNextHook()
+				}
 			}
 		}
 	}
