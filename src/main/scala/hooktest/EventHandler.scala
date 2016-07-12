@@ -144,7 +144,7 @@ object EventHandler {
 	}
 	
 	private def checkTriggerWaitStart(me: MouseEvent): Option[LRESULT] = {
-		if (ctx.isLRTrigger || ctx.isTrigger(me)) {
+		if (ctx.isLRTrigger || ctx.isTriggerEvent(me)) {
 			logger.debug(s"start wait trigger: ${me.name}")
 			EventWaiter.start(me)
 			suppress
@@ -165,7 +165,7 @@ object EventHandler {
 	}
 	
 	private def checkTriggerScrollStart(me: MouseEvent): Option[LRESULT] = {
-		if (ctx.isTrigger(me)) {
+		if (ctx.isTriggerEvent(me)) {
 			logger.debug(s"start scroll mode: ${me.name}");
 			ctx.startScrollMode(me.info)
 			suppress
@@ -174,17 +174,26 @@ object EventHandler {
 			None
 	}
 	
-	private def startScrollLROnly(me: MouseEvent): Option[LRESULT] = {
+	private def passNotDragTrigger(me: MouseEvent): Option[LRESULT] = {
+		if (!ctx.isDragTriggerEvent(me)) {
+			logger.debug(s"pass not trigger: ${me.name}")
+			callNextHook
+		}
+		else
+			None
+	}
+	
+	private def startScrollDrag(me: MouseEvent): Option[LRESULT] = {
 		logger.debug(s"start scroll mode: ${me.name}");
 		ctx.startScrollMode(me.info)
 		
-		drag = dragLROnly
+		drag = dragStart
 		dragged = false
 			
 		suppress
 	}
 	
-	private def exitAndResendLROnly(me: MouseEvent): Option[LRESULT] = {
+	private def exitAndResendDrag(me: MouseEvent): Option[LRESULT] = {
 		logger.debug(s"exit scroll mode: ${me.name}")
 		ctx.exitScrollMode
 		
@@ -194,6 +203,9 @@ object EventHandler {
 			me match {
 				case LeftUp(info) => Windows.resendClick(LeftClick(info))
 				case RightUp(info) => Windows.resendClick(RightClick(info))
+				case MiddleUp(info) => Windows.resendClick(MiddleClick(info))
+				case X1Up(info) => Windows.resendClick(X1Click(info))
+				case X2Up(info) => Windows.resendClick(X2Click(info))
 			}
 		}
 		
@@ -201,7 +213,7 @@ object EventHandler {
 	}
 	
 	private def passNotTrigger(me: MouseEvent): Option[LRESULT] = {
-		if (!ctx.isTrigger(me)) {
+		if (!ctx.isTriggerEvent(me)) {
 			logger.debug(s"pass not trigger: ${me.name}")
 			callNextHook
 		}
@@ -210,16 +222,7 @@ object EventHandler {
 	}
 	
 	private def passNotTriggerLR(me: MouseEvent): Option[LRESULT] = {
-		if (!ctx.isLRTrigger && !ctx.isTrigger(me)) {
-			logger.debug(s"pass not trigger: ${me.name}")
-			callNextHook
-		}
-		else
-			None
-	}
-	
-	private def passNotTriggerLROnly(me: MouseEvent): Option[LRESULT] = {
-		if (!ctx.isTriggerLROnly(me)) {
+		if (!ctx.isLRTrigger && !ctx.isTriggerEvent(me)) {
 			logger.debug(s"pass not trigger: ${me.name}")
 			callNextHook
 		}
@@ -274,13 +277,13 @@ object EventHandler {
 	private def getResultBranch(cs: Checkers, me: MouseEvent): Option[LRESULT] =
 		cs.map(_.apply(me)).find(_.isDefined).get
 	*/
-		
-	private def branchLROnlyDown(me: MouseEvent): Option[LRESULT] = {
-		if (ctx.isLROnlyTrigger) {
-			logger.debug(s"branch LR only down: ${me.name}")
+	
+	private def branchDragDown(me: MouseEvent): Option[LRESULT] = {
+		if (ctx.isDragTrigger) {
+			logger.debug(s"branch drag down: ${me.name}")
 			//val cs: Checkers = Stream(
 			val lcs: LCheckers = List(
-					passNotTriggerLROnly, startScrollLROnly)
+					passNotDragTrigger, startScrollDrag)
 					
 			//getResultBranch(cs, me)
 			getResultL(lcs, me)
@@ -289,12 +292,12 @@ object EventHandler {
 			None
 	}
 	
-	private def branchLROnlyUp(me: MouseEvent): Option[LRESULT] = {
-		if (ctx.isLROnlyTrigger) {
-			logger.debug(s"branch LR only up: ${me.name}")
+	private def branchDragUp(me: MouseEvent): Option[LRESULT] = {
+		if (ctx.isDragTrigger) {
+			logger.debug(s"branch drag up: ${me.name}")
 			//val cs: Checkers = Stream(
 			val lcs: LCheckers = List(
-					passNotTriggerLROnly, exitAndResendLROnly)
+					passNotDragTrigger, exitAndResendDrag)
 						
 			//getResultBranch(cs, me)
 			getResultL(lcs, me)
@@ -309,7 +312,7 @@ object EventHandler {
 		val lcs: LCheckers = List( 
 				skipResendEvent,
 				checkSameLastEvent,
-				branchLROnlyDown,
+				branchDragDown,
 				resetLastFlags,
 				checkExitScrollDown,
 				passSingleTrigger,
@@ -330,7 +333,7 @@ object EventHandler {
 				skipResendEvent,
 				skipFirstUpOrSingle,
 				checkSameLastEvent,
-				branchLROnlyUp,
+				branchDragUp,
 				passSingleTrigger,
 				checkExitScrollUp,
 				passNotTriggerLR,
@@ -396,6 +399,7 @@ object EventHandler {
 		val lcs: LCheckers = List(
 				skipResendEvent,
 				checkSameLastEvent,
+				branchDragDown,
 				resetLastFlags,
 				checkExitScrollDown,
 				passNotTrigger,
@@ -413,6 +417,7 @@ object EventHandler {
 				skipResendEvent,
 				skipFirstUpOrLR,
 				checkSameLastEvent,
+				branchDragUp,
 				passNotTrigger,
 				checkExitScrollUp,
 				checkDownSuppressed,
@@ -445,7 +450,7 @@ object EventHandler {
 	private var drag: HookInfo => Unit = dragDefault
 	private var dragged = false
 
-	private def dragLROnly(info: HookInfo): Unit = {
+	private def dragStart(info: HookInfo): Unit = {
 		if (ctx.isCursorChange)
 			Windows.changeCursor
 		

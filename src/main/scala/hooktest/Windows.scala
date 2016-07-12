@@ -167,19 +167,18 @@ object Windows {
 	
 	def createClick(mc: MouseClick, extra: Int) = {
 		val input = createInputArray(2)
+		
+		def set(info: HookInfo, mouseData: Int, down: Int, up: Int) {
+			setInput(input(0), info.pt, mouseData, down, 0, extra)
+			setInput(input(1), info.pt, mouseData, up, 0, extra)
+		}
+		
 		mc match {
-			case LeftClick(info) => {
-				setInput(input(0), info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, extra)
-				setInput(input(1), info.pt, 0, MOUSEEVENTF_LEFTUP, 0, extra)
-			}
-			case RightClick(info) => {
-				setInput(input(0), info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, extra)
-				setInput(input(1), info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, extra)
-			}
-			case MiddleClick(info) => {
-				setInput(input(0), info.pt, 0, MOUSEEVENTF_MIDDLEDOWN, 0, extra)
-				setInput(input(1), info.pt, 0, MOUSEEVENTF_MIDDLEUP, 0, extra)
-			}
+			case LeftClick(info) => set(info, 0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
+			case RightClick(info) => set(info, 0, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)
+			case MiddleClick(info) => set(info, 0, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP)
+			case X1Click(info) => set(info, XBUTTON1, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP)
+			case X2Click(info) => set(info, XBUTTON2, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP)
 		}
 		input
 	}

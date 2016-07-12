@@ -19,8 +19,11 @@ Properties file is stored in the user directory.
 * MiddleTrigger: Press Middle.
 * X1Trigger: Press X1.
 * X2Trigger: Press X2.
-* LeftOnlyTrigger: Press Left and Drag.
-* RightOnlyTrigger: Press Right and Drag.
+* LeftDragTrigger: Press Left and Drag. (lock-free)
+* RightDragTrigger: Press Right and Drag. (lock-free)
+* MiddleDragTrigger: Press Middle and Drag. (lock-free)
+* X1DragTrigger: Press X1 and Drag. (lock-free)
+* X2DragTrigger: Press X2 and Drag. (lock-free)
 
 ## License
 The MIT License

@@ -38,6 +38,8 @@ case class X2Click (info: HookInfo) extends MouseClick
 
 trait Trigger {
 	def name = Mouse.getSimpleName(this)
+	def isSingle = Mouse.isSingleTrigger(this)
+	def isDrag = Mouse.isDragTrigger(this) 
 }
 case class LRTrigger () extends Trigger
 case class LeftTrigger () extends Trigger
@@ -45,8 +47,12 @@ case class RightTrigger () extends Trigger
 case class MiddleTrigger () extends Trigger
 case class X1Trigger () extends Trigger
 case class X2Trigger () extends Trigger
-case class LeftOnlyTrigger () extends Trigger
-case class RightOnlyTrigger () extends Trigger
+
+case class LeftDragTrigger () extends Trigger
+case class RightDragTrigger () extends Trigger
+case class MiddleDragTrigger () extends Trigger
+case class X1DragTrigger () extends Trigger
+case class X2DragTrigger () extends Trigger
 
 object Mouse {
 	def isXButton1(mouseData: Int) =
@@ -70,8 +76,21 @@ object Mouse {
 		case "Middle" | "MiddleTrigger" => MiddleTrigger()
 		case "X1" | "X1Trigger" => X1Trigger()
 		case "X2" | "X2Trigger" => X2Trigger()
-		case "LeftOnly" | "LeftOnlyTrigger" => LeftOnlyTrigger()
-		case "RightOnly" | "RightOnlyTrigger" => RightOnlyTrigger()
+		case "LeftDrag" | "LeftDragTrigger" => LeftDragTrigger()
+		case "RightDrag" | "RightDragTrigger" => RightDragTrigger()
+		case "MiddleDrag" | "MiddleDragTrigger" => MiddleDragTrigger()
+		case "X1Drag" | "X1DragTrigger" => X1DragTrigger()
+		case "X2Drag" | "X2DragTrigger" => X2DragTrigger()
+	}
+	
+	def isSingleTrigger(t: Trigger) = t match {
+		case MiddleTrigger() | X1Trigger() | X2Trigger() => true
+		case _ => false
+	}
+	
+	def isDragTrigger(t: Trigger) = t match {
+		case LeftDragTrigger() | RightDragTrigger() | MiddleDragTrigger() | X1DragTrigger() | X2DragTrigger() => true
+		case _ => false
 	}
 	
 	def isSingleEvent(event: MouseEvent) = event match {

@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.4.2"
+	val PROGRAM_VERSION = "0.5"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -77,7 +77,7 @@ object Context {
 			sy = info.pt.y
 			mode = true
 			
-			if (cursorChange && !isLROnlyTrigger)
+			if (cursorChange && !firstTrigger.isDrag)
 				Windows.changeCursor
 		}
 		
@@ -203,23 +203,20 @@ object Context {
 	
 	//def getFirstTrigger = firstTrigger
 	def isTrigger(e: Trigger) = firstTrigger == e
-	def isTrigger(e: MouseEvent): Boolean = isTrigger(Mouse.getTrigger(e))
 	def isLRTrigger = isTrigger(LRTrigger())
 		
-	def isTriggerLROnly(e: MouseEvent): Boolean = e match {
-		case LeftDown(_) | LeftUp(_) => isTrigger(LeftOnlyTrigger())
-		case RightDown(_) | RightUp(_) => isTrigger(RightOnlyTrigger())
-	}
-		
-	def isSingleTrigger = firstTrigger match {
-		case MiddleTrigger() | X1Trigger() | X2Trigger() => true
-		case _ => false
+	def isTriggerEvent(e: MouseEvent): Boolean = isTrigger(Mouse.getTrigger(e))
+	
+	def isDragTriggerEvent(e: MouseEvent): Boolean = e match {
+		case LeftDown(_) | LeftUp(_) => isTrigger(LeftDragTrigger())
+		case RightDown(_) | RightUp(_) => isTrigger(RightDragTrigger())
+		case MiddleDown(_) | MiddleUp(_) => isTrigger(MiddleDragTrigger())
+		case X1Down(_) | X1Up(_) => isTrigger(X1DragTrigger())
+		case X2Down(_) | X2Up(_) => isTrigger(X2DragTrigger())
 	}
 	
-	def isLROnlyTrigger = firstTrigger match {
-		case LeftOnlyTrigger() | RightOnlyTrigger() => true
-		case _ => false
-	}
+	def isSingleTrigger = firstTrigger.isSingle
+	def isDragTrigger = firstTrigger.isDrag
 	
 	// http://stackoverflow.com/questions/3239106/scala-actionlistener-anonymous-function-type-mismatch
 	implicit def toActionListener(f: ActionEvent => Unit) = new ActionListener {
@@ -315,8 +312,12 @@ object Context {
 		menu.add(createTriggerItem("Middle"))
 		menu.add(createTriggerItem("X1"))
 		menu.add(createTriggerItem("X2"))
-		menu.add(createTriggerItem("LeftOnly"))
-		menu.add(createTriggerItem("RightOnly"))
+		menu.addSeparator()
+		menu.add(createTriggerItem("LeftDrag"))
+		menu.add(createTriggerItem("RightDrag"))
+		menu.add(createTriggerItem("MiddleDrag"))
+		menu.add(createTriggerItem("X1Drag"))
+		menu.add(createTriggerItem("X2Drag"))
 		
 		val group = new ButtonGroup
 		getMenuItems(menu).foreach(group.add)
