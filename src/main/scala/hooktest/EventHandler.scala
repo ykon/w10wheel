@@ -37,7 +37,7 @@ object EventHandler {
 	}
 	
 	private def skipFirstUpOrSingle(me: MouseEvent): Option[LRESULT] = {
-		if (lastEvent == null || Mouse.isSingleEvent(lastEvent)) {
+		if (lastEvent == null || lastEvent.isSingle) {
 			logger.debug(s"skip first Up or Single: ${me.name}")
 			callNextHook
 		}
@@ -46,7 +46,7 @@ object EventHandler {
 	}
 	
 	private def skipFirstUpOrLR(me: MouseEvent): Option[LRESULT] = {
-		if (lastEvent == null || !Mouse.isSingleEvent(lastEvent)) {
+		if (lastEvent == null || !lastEvent.isSingle) {
 			logger.debug(s"skip first Up or LR: ${me.name}")
 			callNextHook
 		}
@@ -61,7 +61,7 @@ object EventHandler {
 	}
 	
 	private def checkSameLastEvent(me: MouseEvent): Option[LRESULT] = {
-		if (Mouse.sameEvent(me, lastEvent)) {
+		if (me.same(lastEvent)) {
 			logger.warn(s"same last event: ${me.name}")
 			callNextHook
 			

@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.6
+        0.6.1
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-13: Version 0.6.1: hwCountの初期値を修正、デフォルト値の変更
         2016-07-12: Version 0.6.0: RealWheelModeを追加
         2016-07-12: Version 0.5.0: 追加: MiddleDrag, X1Drag, X2Drag 改名: LeftDrag, RightDrag
         2016-07-12: Version 0.4.2: 0.4.1の修正を一部修正
@@ -157,7 +158,7 @@ URL:
         wheelDelta: 10-500 (デフォルト: 120) # RealWheelMode
                 RealWheelModeでの一回分のホイール値
                 通常のマウスのホイール値は120です。
-        vWheelMove: 10-500 (デフォルト: 150) # RealWheelMode
+        vWheelMove: 10-500 (デフォルト: 140) # RealWheelMode
                 垂直(通常)スクロール、一回分のホイールに変換する移動量
         hWheelMove: 10-500 (デフォルト: 100) # RealWheelMode
                 水平スクロール、一回分のホイールに変換する移動量

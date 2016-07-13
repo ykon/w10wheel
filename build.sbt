@@ -1,7 +1,7 @@
 lazy val root = (project in file(".")).
   settings(
     name := "W10Wheel",
-    version := "0.6",
+    version := "0.6.1",
     scalaVersion := "2.11.8"
   )
  

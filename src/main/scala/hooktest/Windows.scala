@@ -129,12 +129,12 @@ object Windows {
 		}
 	}
 	
-	private var vw_count = 0
-	private var hw_count = 0
+	private var vwCount = 0
+	private var hwCount = 0
 	
-	def setStartWheelCount = {
-		vw_count = ctx.getVWheelMove / 2
-		hw_count = ctx.getVWheelMove / 2
+	def startWheelCount = {
+		vwCount = ctx.getVWheelMove / 2
+		hwCount = ctx.getHWheelMove / 2
 	}
 	
 	private def addAccel(d: Int, a: Int) =
@@ -153,21 +153,16 @@ object Windows {
 	}
 	
 	private def getHWheelDelta(input: Int) = {
-		val delta = ctx.getWheelDelta
-		
-		if (ctx.isReverseScroll)
-			if (input >= 0) delta * -1 else delta
-		else
-			if (input >= 0) delta else delta * -1
+		getVWheelDelta(input) * -1
 	}
 	
 	def sendVerticalWheel(pt: POINT, d: Int) = {
 		if (ctx.isRealWheelMode) {
-			vw_count += Math.abs(d)
+			vwCount += Math.abs(d)
 			
-			if (vw_count >= ctx.getVWheelMove) {
+			if (vwCount >= ctx.getVWheelMove) {
 				sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
-				vw_count = 0
+				vwCount = 0
 			}
 		}
 		else {
@@ -182,11 +177,11 @@ object Windows {
 	
 	def sendHorizontalWheel(pt: POINT, d: Int) = {
 		if (ctx.isRealWheelMode) {
-			hw_count += Math.abs(d)
+			hwCount += Math.abs(d)
 			
-			if (hw_count >= ctx.getHWheelMove) {
+			if (hwCount >= ctx.getHWheelMove) {
 				sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
-				hw_count = 0
+				hwCount = 0
 			}
 		}
 		else {
@@ -216,17 +211,17 @@ object Windows {
 	def createClick(mc: MouseClick, extra: Int) = {
 		val input = createInputArray(2)
 		
-		def set(info: HookInfo, mouseData: Int, down: Int, up: Int) {
-			setInput(input(0), info.pt, mouseData, down, 0, extra)
-			setInput(input(1), info.pt, mouseData, up, 0, extra)
+		def set(mouseData: Int, down: Int, up: Int) {
+			setInput(input(0), mc.info.pt, mouseData, down, 0, extra)
+			setInput(input(1), mc.info.pt, mouseData, up, 0, extra)
 		}
 		
 		mc match {
-			case LeftClick(info) => set(info, 0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
-			case RightClick(info) => set(info, 0, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)
-			case MiddleClick(info) => set(info, 0, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP)
-			case X1Click(info) => set(info, XBUTTON1, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP)
-			case X2Click(info) => set(info, XBUTTON2, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP)
+			case LeftClick(_) => set(0, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP)
+			case RightClick(_) => set(0, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP)
+			case MiddleClick(_) => set(0, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP)
+			case X1Click(_) => set(XBUTTON1, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP)
+			case X2Click(_) => set(XBUTTON2, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP)
 		}
 		input
 	}

@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.6"
+	val PROGRAM_VERSION = "0.6.1"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -33,13 +33,13 @@ object Context {
 	@volatile private var passMode = false
 	@volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
 	
-	@volatile private var wheelDelta = 120 // default
 	@volatile private var realWheelMode = false // default
-	@volatile private var vWheelMove = 150 // default
+	@volatile private var wheelDelta = 120 // default
+	@volatile private var vWheelMove = 140 // default
 	@volatile private var hWheelMove = 100 // default
 	
-	def getWheelDelta = wheelDelta
 	def isRealWheelMode = realWheelMode
+	def getWheelDelta = wheelDelta
 	def getVWheelMove = vWheelMove
 	def getHWheelMove = hWheelMove
 	
@@ -83,7 +83,7 @@ object Context {
 		
 		def start(info: HookInfo) {
 			if (realWheelMode)
-				Windows.setStartWheelCount
+				Windows.startWheelCount
 			
 			stime = info.time
 			sx = info.pt.x

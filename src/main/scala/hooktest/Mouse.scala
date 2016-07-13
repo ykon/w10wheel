@@ -13,6 +13,8 @@ trait MouseEvent {
 	def name = Mouse.getSimpleName(this)
 	def isDown = Mouse.isDownEvent(this)
 	def isUp = Mouse.isUpEvent(this)
+	def isSingle = Mouse.isSingleEvent(this)
+	def same(me2: MouseEvent) = Mouse.sameEvent(this, me2) 
 }
 case class LeftDown (info: HookInfo) extends MouseEvent
 case class LeftUp (info: HookInfo) extends MouseEvent
