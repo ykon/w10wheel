@@ -132,58 +132,90 @@ object Windows {
 	private var vwCount = 0
 	private var hwCount = 0
 	
+	abstract class MoveDirection
+	case class Plus() extends MoveDirection
+	case class Minus() extends MoveDirection
+	
+	private var vLastMove: MoveDirection = null
+	private var hLastMove: MoveDirection = null
+	
 	def startWheelCount = {
-		vwCount = ctx.getVWheelMove / 2
-		hwCount = ctx.getHWheelMove / 2
+		vwCount = ctx.getVWheelMove
+		hwCount = ctx.getHWheelMove
+		vLastMove = null
+		hLastMove = null
 	}
 	
 	private def addAccel(d: Int, a: Int) =
-		if (d > 0) d + a else if (d < 0) d - a else 0
+		if (d > 0) d + a else d - a
 		
 	private def setVScrollDirection(d: Int) =
-		if (ctx.isReverseScroll) d else d * -1
+		if (ctx.isReverseScroll) d else -d
 		
 	private def getVWheelDelta(input: Int) = {
 		val delta = ctx.getWheelDelta
 		
 		if (ctx.isReverseScroll)
-			if (input >= 0) delta else delta * -1
+			if (input > 0) delta else -delta
 		else
-			if (input >= 0) delta * -1 else delta
+			if (input > 0) -delta else delta
 	}
 	
 	private def getHWheelDelta(input: Int) = {
-		getVWheelDelta(input) * -1
+		-(getVWheelDelta(input))
 	}
 	
-	def sendVerticalWheel(pt: POINT, d: Int) = {
-		if (ctx.isRealWheelMode) {
-			vwCount += Math.abs(d)
-			
-			if (vwCount >= ctx.getVWheelMove) {
-				sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
-				vwCount = 0
-			}
+	private def isTurnMove(last: MoveDirection, d: Int) = last match {
+		case null => false
+		case Plus() => d < 0
+		case Minus() => d > 0
+	}
+	
+	private def sendRealVWheel(pt: POINT, d: Int) {
+		def send = sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
+		vwCount += Math.abs(d)
+		
+		if (isTurnMove(vLastMove, d))
+			send
+		else if (vwCount >= ctx.getVWheelMove) {
+			send
+			vwCount -= ctx.getVWheelMove
 		}
+		
+		vLastMove = if (d > 0) Plus() else Minus() 
+	}
+	
+	def sendVerticalWheel(pt: POINT, d: Int) {
+		if (ctx.isRealWheelMode)
+			sendRealVWheel(pt, d)
 		else {
+			//logger.debug(s"d = $d")
 			val data = setVScrollDirection(addAccel(d, ctx.getVerticalAccel))
 			sendInput(pt, data,  MOUSEEVENTF_WHEEL, 0, 0)
 		}
 	}
 	
 	private def setHScrollDirection(d: Int) = {
-		if (ctx.isReverseScroll) d * -1 else d
+		if (ctx.isReverseScroll) -d else d
 	}
 	
-	def sendHorizontalWheel(pt: POINT, d: Int) = {
-		if (ctx.isRealWheelMode) {
-			hwCount += Math.abs(d)
-			
-			if (hwCount >= ctx.getHWheelMove) {
-				sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
-				hwCount = 0
-			}
+	private def sendRealHWheel(pt: POINT, d: Int) {
+		def send = sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
+		hwCount += Math.abs(d)
+		
+		if (isTurnMove(hLastMove, d))
+			send
+		else if (hwCount >= ctx.getHWheelMove) {
+			send
+			hwCount -= ctx.getHWheelMove
 		}
+		
+		hLastMove = if (d > 0) Plus() else Minus() 
+	}
+	
+	def sendHorizontalWheel(pt: POINT, d: Int) {
+		if (ctx.isRealWheelMode)
+			sendRealHWheel(pt, d)
 		else {
 			val data = setHScrollDirection(addAccel(d, ctx.getHorizontalAccel))
 			sendInput(pt, data, MOUSEEVENTF_HWHEEL, 0, 0)

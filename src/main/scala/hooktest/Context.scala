@@ -24,7 +24,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.6.1"
+	val PROGRAM_VERSION = "0.6.2"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	
@@ -36,7 +36,7 @@ object Context {
 	@volatile private var realWheelMode = false // default
 	@volatile private var wheelDelta = 120 // default
 	@volatile private var vWheelMove = 140 // default
-	@volatile private var hWheelMove = 100 // default
+	@volatile private var hWheelMove = 120 // default
 	
 	def isRealWheelMode = realWheelMode
 	def getWheelDelta = wheelDelta
