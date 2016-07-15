@@ -8,25 +8,31 @@ package hooktest
 import com.typesafe.scalalogging.Logger
 import org.slf4j.LoggerFactory
 
+// SWT
+import org.eclipse.swt.SWT
+import org.eclipse.swt.widgets._
+import org.eclipse.swt.events._
+import org.eclipse.swt.graphics.Image
+import org.eclipse.swt.graphics.Point
+import org.eclipse.swt.layout.GridData
+import org.eclipse.swt.layout.GridLayout
+
 //implicit
 import scala.language.implicitConversions
 
 import java.util.Properties
 import java.io.{ File, FileInputStream, FileOutputStream }
-import java.awt._
-import java.awt.event._
-import javax.swing._
-import javax.swing.event._
-import javax.imageio.ImageIO
 
 import com.sun.jna.platform.win32.WinDef.HCURSOR
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.6.2"
+	val PROGRAM_VERSION = "0.7"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
+	lazy val systemShell = W10Wheel.shell
+	//val shell = new Shell()
 	
 	@volatile private var firstTrigger: Trigger = LRTrigger() // default
 	@volatile private var pollTimeout = 300 // default
@@ -118,16 +124,6 @@ object Context {
 	def getScrollStartPoint = Scroll.getStartPoint
 	def checkExitScroll(time: Int) = Scroll.checkExit(time)
 	def isReverseScroll = Scroll.reverse 
-	
-	private object ResetMenu {
-		var realWheelMode: JCheckBoxMenuItem = null
-		var cursorChange: JCheckBoxMenuItem = null
-		var horizontalScroll: JCheckBoxMenuItem = null
-		var reverseScroll: JCheckBoxMenuItem = null
-		var trigger: JMenu = null
-		var priority: JMenu = null
-		var number: JMenu = null
-	}
 	
 	def getPollTimeout = pollTimeout
 	def isCursorChange = Scroll.cursorChange
@@ -233,6 +229,7 @@ object Context {
 	def isDragTrigger = firstTrigger.isDrag
 	
 	// http://stackoverflow.com/questions/3239106/scala-actionlistener-anonymous-function-type-mismatch
+	/*
 	implicit def toActionListener(f: ActionEvent => Unit) = new ActionListener {
 		override def actionPerformed(e: ActionEvent) { f(e) }
 	}
@@ -240,30 +237,34 @@ object Context {
 	implicit def toItemListener(f: ItemEvent => Unit) = new ItemListener {
 		override def itemStateChanged(e: ItemEvent) { f(e) }
 	}
+	*/
 	
-	private def isSelected(e: ItemEvent) =
-		e.getStateChange == ItemEvent.SELECTED
-		
-	private def setBooleanOfEvent(name: String, e: ItemEvent) = {
-		val b = isSelected(e)
-		setBooleanOfName(name, b)
+	implicit def toListener(f: Event => Unit) = new Listener {
+		override def handleEvent(e: Event) { f(e) }
 	}
-		
+	
+	implicit def toSelectionAdapter(f: SelectionEvent => Unit) = new SelectionAdapter {
+		override def widgetSelected(e: SelectionEvent) { f(e) }
+	}
+	
 	private def resetTriggerItem: Unit = {
-		val items = getRadioButtonMenuItems(ResetMenu.trigger)
-		items.find(i => isTrigger(Mouse.getTrigger(textToName(i.getText)))).get.setSelected(true)
+		val items = triggerMenu.getItems.filter(i => i.getText != "")
+		items.foreach(i => {
+			if (isTrigger(Mouse.getTrigger(textToName(i.getText))))
+				i.setSelection(true)
+		})
 	}
 	
 	private def resetPriorityItem: Unit = {
-		val items = getRadioButtonMenuItems(ResetMenu.priority)
-		items.find(i => getPriority(i.getText) == processPriority).get.setSelected(true)
+		val items = priorityMenu.getItems
+		items.foreach(i => {
+			if (getPriority(i.getText) == processPriority)
+				i.setSelection(true)
+		})
 	}
 	
-	private def getNumberItems =
-	    getMenuItems(ResetMenu.number).map(_.asInstanceOf[JMenuItem])
-	
 	private def resetNumberItems: Unit = {
-	    val items = getNumberItems
+	    val items = numberMenu.getItems.filter(i => i.getText != "")
 	    items.foreach(i => {
 	        val name = textToName(i.getText)
 	        val n = getNumberOfName(name)
@@ -272,119 +273,177 @@ object Context {
 	}
 		
 	private def resetMenuItem: Unit = {
-		ResetMenu.realWheelMode.setState(realWheelMode)
-		ResetMenu.cursorChange.setState(Scroll.cursorChange)
-		ResetMenu.horizontalScroll.setState(Horizontal.scroll)
-		ResetMenu.reverseScroll.setState(Scroll.reverse)
+		realWheelModeMenuItem.setSelection(realWheelMode)
+		cursorChangeMenuItem.setSelection(Scroll.cursorChange)
+		horizontalScrollMenuItem.setSelection(Horizontal.scroll)
+		reverseScrollMenuItem.setSelection(Scroll.reverse)
 		resetTriggerItem
 		resetPriorityItem
 		resetNumberItems
 	}
 	
-	private def getMenuItems(m: JMenu): Seq[JMenuItem]  =
-	    (0 until m.getItemCount).map(m.getItem).filter(_ != null)
-		//m.getSubElements
-	
-	private def getRadioButtonMenuItems(m: JMenu): Seq[JRadioButtonMenuItem] =
-	    getMenuItems(m).map(_.asInstanceOf[JRadioButtonMenuItem])
-	    
-	private def getItemText(e: ItemEvent) = {
-		e.getItem.asInstanceOf[JMenuItem].getText	
-	}
-	
-	/*
-	private def disableOtherItem(e: ItemEvent): Unit = {
-		val text = getItemText(e)
-		val items = getCheckBoxMenuItems(ResetMenu.trigger)
-	    items.filter(_.getText != text).foreach(_.setState(false))
-	}
-	*/
-	
 	private def textToName(s: String): String =
 		s.split(" ")(0)
-	
-	private def setTrigger(e: ItemEvent): Unit = {
-		if (isSelected(e)) {
-			//disableOtherItem(e)
-			val text = getItemText(e) 
-			val name = textToName(text)
-			setTrigger(name)
-		}
+		
+	private def unselectOtherTrigger(text: String) {
+		triggerMenu.getItems().foreach(i => {
+			if (i.getText != text)
+				i.setSelection(false)
+		})
 	}
 	
-	private def createTriggerItem(text: String): JRadioButtonMenuItem = {
-	    val item = new JRadioButtonMenuItem(text)
-	    item.addItemListener(setTrigger _)
-	    item
-	}
-	
-	private def createTriggerMenu: JMenu = {
-		val menu = new JMenu("Trigger")
-		
-		menu.add(createTriggerItem("LRTrigger (Left <<-->> Right)"))
-		menu.add(createTriggerItem("Left (Left -->> Right)"))
-		menu.add(createTriggerItem("Right (Right -->> Left)"))
-		menu.add(createTriggerItem("Middle"))
-		menu.add(createTriggerItem("X1"))
-		menu.add(createTriggerItem("X2"))
-		menu.addSeparator
-		
-		menu.add(createTriggerItem("LeftDrag"))
-		menu.add(createTriggerItem("RightDrag"))
-		menu.add(createTriggerItem("MiddleDrag"))
-		menu.add(createTriggerItem("X1Drag"))
-		menu.add(createTriggerItem("X2Drag"))
-		
-		val group = new ButtonGroup
-		getMenuItems(menu).foreach(group.add)
-		
-		ResetMenu.trigger = menu
-		
-		menu
-	}
-	
-	// http://stackoverflow.com/questions/10107422/jspinner-in-joptionpane
-	// http://tomorrowscode.blogspot.com/2010/02/javaswingjspinner.html
-	// http://www.javadrive.jp/tutorial/jspinner/index21.html
-	
-	private def setDigitOnly(js: JSpinner) {
-		val jtf = js.getEditor().getComponents()(0).asInstanceOf[JFormattedTextField]
-		jtf.addKeyListener(new KeyAdapter() {
-			override def keyTyped(e: KeyEvent) {
-				if (!Character.isDigit(e.getKeyChar))
-					e.consume 
+	private def createTriggerMenuItem(menu: Menu, text: String) {
+		val item = new MenuItem(menu, SWT.RADIO)
+		item.setText(text)
+		item.addSelectionListener((e: SelectionEvent) => {
+			if (item.getSelection) {
+				val text = item.getText()
+				unselectOtherTrigger(text)
+				
+				val name = textToName(text)
+				setTrigger(name)
 			}
 		})
 	}
 	
-	private def makeNumberText(name: String, n: Int) =
-	    s"$name = $n"
+	private def addSeparator(menu: Menu) {
+		new MenuItem(menu, SWT.SEPARATOR)
+	}
 	
-	private def setNumberOfSpinner(e: ActionEvent, mi: JMenuItem, lowLimit: Int, upLimit: Int): Unit = {
-	    val name = textToName(mi.getText)
-		val sModel = new SpinnerNumberModel(getNumberOfName(name), lowLimit, upLimit, 1);
-		val spinner = new JSpinner(sModel);
-		setDigitOnly(spinner)
-		
-		val title = s"$name ($lowLimit - $upLimit)"
-		val option = JOptionPane.showOptionDialog(null, spinner, title, JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, null, null);
+	private lazy val triggerMenu: Menu = {
+		val menu = new Menu(systemShell, SWT.DROP_DOWN)
+		def add(text: String) = createTriggerMenuItem(menu, text)
 
-		if (option == JOptionPane.OK_OPTION) {
-			val n = sModel.getNumber.intValue
+		add("LRTrigger (Left <<-->> Right)")
+		add("Left (Left -->> Right)")
+		add("Right (Right -->> Left)")
+		add("Middle")
+		add("X1")
+		add("X2")
+		addSeparator(menu)
+
+		add("LeftDrag")
+		add("RightDrag")
+		add("MiddleDrag")
+		add("X1Drag")
+		add("X2Drag")
+		
+		menu
+	}
+	
+	private class NumberInputDialog(name: String, low: Int, up: Int) extends Dialog(systemShell) {
+		private def createSpinner(shell: Shell) = {
+			val spinner = new Spinner(shell, SWT.BORDER)
+			spinner.setMinimum(low)
+			spinner.setMaximum(up)
+			spinner.setSelection(getNumberOfName(name))
+			spinner
+		}
+		
+		private def createShell = {
+			val shell = new Shell(getParent, SWT.TITLE | SWT.BORDER | SWT.APPLICATION_MODAL | SWT.ON_TOP)
+			shell.setText("Set Number")
+			shell.setLayout(new GridLayout(2, false))
+			shell
+		}
+		
+		private def createLabel(shell: Shell) = {
+			val label = new Label(shell, SWT.NULL)
+			label.setText(s"$name ($low - $up): ")
+			label
+		}
+		
+		private def createButton(shell: Shell, text: String, gridData: GridData) = {
+			val button = new Button(shell, SWT.PUSH)
+			button.setText(text)
+			button.setLayoutData(gridData)
+			button
+		}
+		
+		private def makeKeyAdapter(ok: Button, cancel: Button) = {
+			new KeyAdapter {
+				override def keyReleased(e: KeyEvent) {
+					if (e.character == SWT.CR)
+						ok.notifyListeners(SWT.Selection, null)
+					else if (e.keyCode == SWT.ESC)
+						cancel.notifyListeners(SWT.Selection, null)
+				}
+			}
+		}
+		
+		private def messageLoop(shell: Shell) = {
+			val display = getParent.getDisplay
+			while (!shell.isDisposed) {
+				if (!display.readAndDispatch)
+					display.sleep
+			}			
+		}
+		
+		private def setLocation(shell: Shell) {
+			val pt = Display.getDefault.getCursorLocation
+			shell.setLocation(pt.x - (shell.getBounds.width / 2), pt.y - (shell.getBounds.height / 2))				
+		}
+		
+		private def makeButtonGridData = {
+			val gridData = new GridData(GridData.HORIZONTAL_ALIGN_END)
+			gridData.widthHint = 70
+			gridData
+		}
+		
+		private def isValidNumber(res: Int) =
+			res >= low && res <= up
 			
-	    	setNumberOfName(name, n)
-	    	mi.setText(makeNumberText(name, n))
+		private def errorMessage(input: Int) {
+			val mb = new MessageBox(systemShell, SWT.OK | SWT.ICON_ERROR)
+			mb.setText("Error")
+			mb.setMessage(s"Invalid Number: $input")
+			mb.open()
+		}
+		
+		def open: Option[Int] = {
+			val shell = createShell
+			val label = createLabel(shell)
+			val spinner = createSpinner(shell)
+			
+			val gridData = makeButtonGridData
+			val okButton = createButton(shell, "OK", gridData)
+			val cancelButton = createButton(shell, "Cancel", gridData)
+			
+			spinner.addKeyListener(makeKeyAdapter(okButton, cancelButton))
+			
+			var res: Option[Int] = None
+			okButton.addListener(SWT.Selection, (e: Event) => {
+				val input = spinner.getSelection
+				
+				if (!isValidNumber(input))
+					errorMessage(input)
+				else {
+					res = Some(input)
+					shell.dispose
+				}
+			})
+			
+			cancelButton.addListener(SWT.Selection, (e: Event) => shell.dispose)
+			shell.addListener(SWT.Traverse, (e: Event) => if (e.detail == SWT.TRAVERSE_ESCAPE) e.doit = false)
+
+			shell.pack
+			setLocation(shell)	
+			shell.open
+			
+			messageLoop(shell)
+			res
 		}
 	}
 	
-	private def createNumberMenuItem(name: String, lowLimit: Int, upLimit: Int): JMenuItem = {
-	    val n = getNumberOfName(name)
-		val mi = new JMenuItem(makeNumberText(name, n))
-		val action = setNumberOfSpinner(_: ActionEvent, mi, lowLimit, upLimit)
-		mi.addActionListener(action)
-		mi
+	// http://www.java2s.com/Code/Java/SWT-JFace-Eclipse/NumberInputDialog.htm
+	private def openNumberInputDialog(name: String, low: Int, up: Int) = {
+		val dialog = new NumberInputDialog(name, low, up)
+		dialog.open
 	}
 	
+	private def makeNumberText(name: String, n: Int) =
+	    s"$name = $n"
+	    
 	private def getPriority(name: String) = {
 		name match {
 			case "High" => Windows.High()
@@ -400,184 +459,199 @@ object Context {
 		Windows.setPriority(priority)
 	}
 	
-	private def setPriority(e: ItemEvent): Unit = {
-		if (isSelected(e))
-			setPriority(getItemText(e)) 
-	}
-	
-	private def createPriorityItem(name: String): JRadioButtonMenuItem = {
-	    val item = new JRadioButtonMenuItem(name)
-	    item.addItemListener(setPriority _)
-	    item
-	}
-	
-	private def createPriorityMenu: JMenu = {
-		val menu = new JMenu("Priority")
-		menu.add(createPriorityItem("High"))
-		menu.add(createPriorityItem("Above Normal"))
-		menu.add(createPriorityItem("Normal"))
-
-		val group = new ButtonGroup
-		getMenuItems(menu).foreach(group.add)
-		
-		ResetMenu.priority = menu
-		
-		menu
-	}
-	
-	private def createSetNumberMenu: JMenu = {
-		val menu = new JMenu("Set Number")
-		
-		menu.add(createNumberMenuItem("pollTimeout", 150, 500))
-		menu.add(createNumberMenuItem("scrollLocktime", 150, 500))
-		menu.addSeparator
-		
-		menu.add(createNumberMenuItem("verticalAccel", 0, 500))
-		menu.add(createNumberMenuItem("verticalThreshold", 0, 500))
-		menu.addSeparator
-		
-		menu.add(createNumberMenuItem("horizontalAccel", 0, 500))
-		menu.add(createNumberMenuItem("horizontalThreshold", 0, 500))
-		menu.addSeparator
-		
-		menu.add(createNumberMenuItem("wheelDelta", 10, 500))
-		menu.add(createNumberMenuItem("vWheelMove", 10, 500))
-		menu.add(createNumberMenuItem("hWheelMove", 10, 500))
-		
-		ResetMenu.number = menu
-		menu
-	}
-	
-	private def setUnhook(e: ActionEvent): Unit =
-		W10Wheel.unhook.success(true)
-	
-	private def showVersion(e: ActionEvent): Unit = {
-		val msg = s"Name: $PROGRAM_NAME / Version: $PROGRAM_VERSION"
-		JOptionPane.showMessageDialog(null, msg, "Info", JOptionPane.INFORMATION_MESSAGE)
-	}
-	
-	private def reloadProperties(e: ActionEvent): Unit = {
-		loadProperties
-		resetMenuItem
-	}
-	
-	private def createReloadPropertiesMenuItem = {
-		val item = new JMenuItem("Reload Properties")
-		item.addActionListener(reloadProperties _)
-		item
-	}
-	
-	private def createRealWheelModeMenuItem = {
-		val item = new JCheckBoxMenuItem("Real Wheel Mode", realWheelMode)
-		ResetMenu.realWheelMode = item
-		item.addItemListener(setBooleanOfEvent("realWheelMode", _: ItemEvent))
-		item
-	}
-	
-	private def createCursorChangeMenuItem = {
-		val item = new JCheckBoxMenuItem("Cursor Change", Scroll.cursorChange)
-		ResetMenu.cursorChange = item
-		item.addItemListener(setBooleanOfEvent("cursorChange", _: ItemEvent))
-		item
-	}
-	
-	private def createHorizontalScrollMenuItem = {
-		val item = new JCheckBoxMenuItem("Horizontal Scroll", Horizontal.scroll)
-		ResetMenu.horizontalScroll = item
-		item.addItemListener(setBooleanOfEvent("horizontalScroll", _: ItemEvent))
-		item
-	}
-	
-	private def createReverseScrollMenuItem = {
-		val item = new JCheckBoxMenuItem("Reverse Scroll", Scroll.reverse)
-		ResetMenu.reverseScroll = item
-		item.addItemListener(setBooleanOfEvent("reverseScroll", _: ItemEvent))
-		item
-	}
-	
-	private def createPassModeMenuItem = {
-		val item = new JCheckBoxMenuItem("Pass Mode")
-		item.addItemListener(setBooleanOfEvent("passMode", _: ItemEvent))
-		item
-	}
-	
-	private def createVersionMenuItem = {
-		val item = new JMenuItem("Version")
-		item.addActionListener(showVersion _)
-		item
-	}
-	
-	private def createExitMenuItem = {
-		val item = new JMenuItem("Exit")
-		item.addActionListener(setUnhook _)
-		item
-	}
-	
-	private def createPopupMenu: JPopupMenu = {
-		val menu = new JPopupMenu()
-		
-		menu.add(createTriggerMenu)
-		menu.add(createPriorityMenu)
-		menu.add(createSetNumberMenu)
-		menu.add(createReloadPropertiesMenuItem)
-		menu.addSeparator()
-		
-		menu.add(createRealWheelModeMenuItem)
-		menu.add(createCursorChangeMenuItem)
-		menu.add(createHorizontalScrollMenuItem)
-		menu.add(createReverseScrollMenuItem)
-		menu.add(createPassModeMenuItem)
-		menu.add(createVersionMenuItem)
-		menu.add(createExitMenuItem)
-		
-		menu
-	}	
-	
-	private def createHiddenDialog: JDialog = {
-		val dialog = new JDialog
-		dialog.setUndecorated(true)
-		/*
-		dialog.addWindowFocusListener(new WindowFocusListener {
-			override def windowLostFocus(we: WindowEvent) = dialog.setVisible(false)
-			override def windowGainedFocus(we: WindowEvent) {}
+	private def createPriorityMenuItem(menu: Menu, text: String) {
+		val item = new MenuItem(menu, SWT.RADIO)
+		item.setText(text)
+		item.addSelectionListener((e: SelectionEvent) => {
+			if(item.getSelection)
+				setPriority(item.getText)
+			()
 		})
-		*/
-		dialog
 	}
 	
-	// http://ateraimemo.com/Swing/TrayIconPopupMenu.html
-	// http://stackoverflow.com/questions/12667526/adding-jpopupmenu-to-the-trayicon
-	// http://stackoverflow.com/questions/14670516/how-do-i-get-a-popupmenu-to-show-up-when-i-left-click-on-a-trayicon-in-java
-	// http://stackoverflow.com/questions/19868209/cannot-hide-systemtray-jpopupmenu-when-it-loses-focus
+	private lazy val priorityMenu: Menu = {
+		val menu = new Menu(systemShell, SWT.DROP_DOWN)
+		def add(text: String) = createPriorityMenuItem(menu, text)
+		
+		add("High")
+		add("Above Normal")
+		add("Normal")
+		
+		menu
+	}
+	
+	private def createNumberMenuItem(menu: Menu, name: String, low: Int, up: Int) {
+		val n = getNumberOfName(name)
+		val item = new MenuItem(menu, SWT.PUSH)
+		item.setText(makeNumberText(name, n))
+		
+		item.addListener(SWT.Selection, (e: Event) => {
+			val num = openNumberInputDialog(name, low, up)
+			num.foreach(n => {
+				setNumberOfName(name, n)
+				item.setText(makeNumberText(name, n))
+			})
+		})	
+	}
+	
+	private lazy val numberMenu: Menu = {
+		val menu = new Menu(systemShell, SWT.DROP_DOWN)
+		def add(text: String, low: Int, up: Int) = createNumberMenuItem(menu, text, low, up)
+		
+		add("pollTimeout", 150, 500)
+		add("scrollLocktime", 150, 500)
+		addSeparator(menu)
+		
+		add("verticalAccel", 0, 500)
+		add("verticalThreshold", 0, 500)
+		addSeparator(menu)
+		
+		add("horizontalAccel", 0, 500)
+		add("horizontalThreshold", 0, 500)
+		addSeparator(menu)
+		
+		add("wheelDelta", 10, 500)
+		add("vWheelMove", 10, 500)
+		add("hWheelMove", 10, 500)
+		
+		menu
+	}
+	
+	private def setUnhook: Unit =
+		W10Wheel.unhook.success(true)
+
+	private def createTriggerMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.CASCADE)
+		item.setText("Trigger")
+		item.setMenu(triggerMenu)
+	}
+	
+	private def createPriorityMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.CASCADE)
+		item.setText("Priority")
+		item.setMenu(priorityMenu)
+	}
+	
+	private def createNumberMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.CASCADE)
+		item.setText("Set Number")
+		item.setMenu(numberMenu)
+	}
+	
+	private def createReloadPropertiesMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.PUSH)
+		item.setText("Reload Properties")
+		item.addListener(SWT.Selection, (e: Event) => {
+			loadProperties
+			resetMenuItem
+		})		
+	}
+	
+	private def makeSetBooleanEvent(name: String) = {
+		(e: Event) => {
+			val item = e.widget.asInstanceOf[MenuItem]
+			val b = item.getSelection
+			setBooleanOfName(name, b)
+		}
+	}
+	
+	private var realWheelModeMenuItem: MenuItem = null
+	
+	private def createRealWheelModeMenu(menu: Menu) = {
+		val item = new MenuItem(menu, SWT.CHECK)
+		item.setText("Real Wheel Mode")
+		item.addListener(SWT.Selection, makeSetBooleanEvent("realWheelMode"))
+		realWheelModeMenuItem = item
+	}
+	
+	private var cursorChangeMenuItem: MenuItem = null
+	
+	private def createCursorChangeMenu(menu: Menu) = {
+		val item = new MenuItem(menu, SWT.CHECK)
+		item.setText("Cursor Change")
+		item.addListener(SWT.Selection, makeSetBooleanEvent("cursorChange"))
+		cursorChangeMenuItem = item
+	}
+	
+	private var horizontalScrollMenuItem: MenuItem = null
+	
+	private def createHorizontalScrollMenu(menu: Menu) = {
+		val item = new MenuItem(menu, SWT.CHECK)
+		item.setText("Horizontal Scroll")
+		item.addListener(SWT.Selection, makeSetBooleanEvent("horizontalScroll"))
+		horizontalScrollMenuItem = item
+	}
+	
+	private var reverseScrollMenuItem: MenuItem = null
+	
+	private def createReverseScrollMenu(menu: Menu) = {
+		val item = new MenuItem(menu, SWT.CHECK)
+		item.setText("Reverse Scroll")
+		item.addListener(SWT.Selection, makeSetBooleanEvent("reverseScroll"))
+		reverseScrollMenuItem = item
+	}
+	
+	private def createPassModeMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.CHECK)
+		item.setText("Pass Mode")
+		item.addListener(SWT.Selection, makeSetBooleanEvent("passMode"))
+	}
+	
+	private def createInfoMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.PUSH)
+		item.setText("Info")
+		item.addListener(SWT.Selection, (e: Event) => {
+			val msg = s"Name: $PROGRAM_NAME / Version: $PROGRAM_VERSION"
+
+			val mb = new MessageBox(systemShell, SWT.OK | SWT.ICON_INFORMATION)
+			mb.setText("Info")
+			mb.setMessage(msg)
+			mb.open()
+			()
+		})
+	}
+	
+	private def createExitMenu(menu: Menu) {
+		val item = new MenuItem(menu, SWT.PUSH)
+		item.setText("Exit")
+		item.addListener(SWT.Selection, (e: Event) => setUnhook)		
+	}
+	
+	def getIconImage = {
+		val stream = getClass.getClassLoader.getResourceAsStream(ICON_NAME)
+		new Image(Display.getDefault, stream)
+	}
+	
+	def createTrayItem(menu: Menu) = {
+		val trayItem = new TrayItem(Display.getDefault.getSystemTray, SWT.NONE)
+		trayItem.setToolTipText(PROGRAM_NAME)
+		trayItem.setImage(getIconImage)
+		
+		trayItem.addListener(SWT.MenuDetect, (e: Event) => menu.setVisible(true))		
+		trayItem.addListener(SWT.DefaultSelection, (e: Event) => setUnhook)
+		
+		trayItem
+	}
 	
 	def setSystemTray {
-		val stream = getClass.getClassLoader.getResourceAsStream(ICON_NAME)
-		val popupMenu = createPopupMenu
-		val hiddenDialog = createHiddenDialog
-		val trayIcon = new TrayIcon(ImageIO.read(stream), PROGRAM_NAME)
+		val menu = new Menu(systemShell, SWT.POP_UP)
+		createTrayItem(menu)
 		
-		popupMenu.addPopupMenuListener(new PopupMenuListener {
-			override def popupMenuWillBecomeVisible(e: PopupMenuEvent) {}
-			override def popupMenuWillBecomeInvisible(e: PopupMenuEvent) = hiddenDialog.setVisible(false)
-			override def popupMenuCanceled(e: PopupMenuEvent) = hiddenDialog.setVisible(false)
-		})
-	
-		trayIcon.addMouseListener(new MouseAdapter {
-			override def mouseReleased (jme: java.awt.event.MouseEvent) {
-				if (jme.isPopupTrigger) {
-					hiddenDialog.setLocation(jme.getPoint)
-					hiddenDialog.setVisible(true)
-					popupMenu.show(hiddenDialog, 0, 0)
-				}
-			}
-		})
-
-		//icon.setPopupMenu(menu)
-		trayIcon.addActionListener(setUnhook _)
+		createTriggerMenu(menu)
+		createPriorityMenu(menu)
+		createNumberMenu(menu)
+		createReloadPropertiesMenu(menu)
+		addSeparator(menu)
+		
+		createRealWheelModeMenu(menu)
+		createCursorChangeMenu(menu)
+		createHorizontalScrollMenu(menu)
+		createReverseScrollMenu(menu)
+		createPassModeMenu(menu)
+		createInfoMenu(menu)
+		createExitMenu(menu)
 		
 		resetMenuItem
-		
-		SystemTray.getSystemTray.add(trayIcon)
 	}
 	
 	private def getPropertiesName =
@@ -598,10 +672,10 @@ object Context {
 	private def getNumberOfProperty(name: String): Int =
 		prop.getProperty(name).toInt
 	
-	private def setNumberOfProperty(name: String, lowlimit: Int, uplimit: Int): Unit = {
+	private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
 		try {
 			val n = getNumberOfProperty(name)
-			if (n < lowlimit || n > uplimit)
+			if (n < low || n > up)
 				throw new IllegalArgumentException(n.toString())
 		
 			setNumberOfName(name, n)
@@ -702,26 +776,19 @@ object Context {
 		try {
 			prop.load(getPropertiesInput)
 			
-			val trigger = prop.getProperty("firstTrigger")
-			val r1 = trigger != firstTrigger.name
+			def check(name: String, current: String) =
+				prop.getProperty(name) != current
 			
-			val priority = prop.getProperty("processPriority")
-			val r2 = priority != processPriority.name
+			val res1 = Iterator(
+					("firstTrigger", firstTrigger.name),
+					("processPriority", processPriority.name),
+					("realWheelMode", realWheelMode.toString),
+					("cursorChange", Scroll.cursorChange.toString),
+					("horizontalScroll", Horizontal.scroll.toString),
+					("reverseScroll", Scroll.reverse.toString)
+			).map(p => check(p._1, p._2)).contains(true)
 			
-			val rwm = prop.getProperty("realWheelMode")
-			val r3 = rwm.toBoolean != realWheelMode
-			
-			val cc = prop.getProperty("cursorChange")
-			val r4 = cc.toBoolean != Scroll.cursorChange
-			
-			val hs = prop.getProperty("horizontalScroll")
-			val r5 = hs.toBoolean != Horizontal.scroll
-			
-			val rs = prop.getProperty("reverseScroll")
-			val r6 = rs.toBoolean != Scroll.reverse
-			
-			Array(r1, r2, r3, r4, r5, r6).contains(true) ||
-				getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
+			res1 || getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
 		}
 		catch {
 			case e: Exception => logger.warn(e.toString())

@@ -16,18 +16,21 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-import javax.swing.JOptionPane
-import javax.swing.UIManager
-
 import scala.collection.immutable.List
+
+// SWT
+import org.eclipse.swt.SWT
+import org.eclipse.swt.widgets._
 
 import win32ex.WinUserX._
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object W10Wheel {
 	private val ctx = Context
-	private val logger = ctx.logger	
+	private val logger = ctx.logger
 	val unhook: Promise[Boolean] = Promise[Boolean]
+	private val display = Display.getDefault
+	val shell = new Shell(display)
 		
 	private val eventDispatcher = new LowLevelMouseProc() {
 		override def callback(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
@@ -63,21 +66,34 @@ object W10Wheel {
 		PreventMultiInstance.unlock
 	}
 	
-	private def messageDoubleLaunch =
-		JOptionPane.showMessageDialog(null, "Double Launch?", "Error", JOptionPane.ERROR_MESSAGE)
+	private def messageDoubleLaunch {
+		val mb = new MessageBox(shell, SWT.OK | SWT.ICON_ERROR)
+		mb.setText("Error")
+		mb.setMessage("Double Launch?")
+		mb.open()
+	}
+	
+	private def messageLoop {
+		while (!shell.isDisposed) {
+			if (!display.readAndDispatch)
+				display.sleep
+		}
+	}
 	
 	def main(args: Array[String]) {
-		UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-		
 		if (!PreventMultiInstance.tryLock) {
 			messageDoubleLaunch
+			display.dispose()
 			System.exit(0)
 		}
 		
 		unhook.future.foreach(_ => {
 			processExit
+			display.syncExec(new Runnable() {
+				override def run() = display.dispose()
+			})
 			System.exit(0)
-		});
+		})
 		
 		ctx.loadProperties
 		ctx.setSystemTray
@@ -85,9 +101,9 @@ object W10Wheel {
 		Windows.setHook(eventDispatcher)
 		logger.debug("Mouse hook installed")
 		
-		Windows.messageLoop
-		logger.debug("exit message loop")
+		//Windows.messageLoop
+		//logger.debug("exit message loop")
 		
-		processExit
+		messageLoop
 	}
 }

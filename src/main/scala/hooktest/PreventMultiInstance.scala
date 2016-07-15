@@ -15,10 +15,13 @@ object PreventMultiInstance {
 	val LOCK_FILE_DIR = System.getProperty("java.io.tmpdir")
 	val LOCK_FILE_NAME = Context.PROGRAM_NAME + ".lock"
 	
+	private val logger = Context.logger
+	
 	private var channel: FileChannel = null
 	private var lock: FileLock = null
 	
 	def tryLock: Boolean = {
+		logger.debug("tryLock")
 		try {
 			if (lock != null)
 				throw new IllegalStateException()
@@ -29,12 +32,13 @@ object PreventMultiInstance {
 			lock != null
 		}
 		catch {
-			case e: Exception => Context.logger.warn(e.getMessage)
+			case e: Exception => logger.warn(s"tryLock: $e")
 			false
 		}
 	}
 	
 	def unlock {
+		logger.debug("unlock")
 		try {
 			if (lock == null)
 				throw new IllegalStateException()
@@ -43,7 +47,7 @@ object PreventMultiInstance {
 			channel.close
 		}
 		catch {
-			case e: Exception => Context.logger.warn(e.getMessage)
+			case e: Exception => logger.warn(s"unlock: $e")
 		}
 	}
 }

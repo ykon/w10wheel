@@ -1,7 +1,7 @@
 lazy val root = (project in file(".")).
   settings(
     name := "W10Wheel",
-    version := "0.6.2",
+    version := "0.7",
     scalaVersion := "2.11.8"
   )
  
@@ -17,6 +17,7 @@ val classPath = Seq(
   "lib/scala-library.jar",
   "lib/scala-logging_2.11-3.4.0.jar",
   "lib/slf4j-api-1.7.21.jar",
+  "lib/swt.jar",
   "lib/win32ex.jar"
 )
 
