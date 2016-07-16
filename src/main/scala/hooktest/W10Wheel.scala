@@ -25,11 +25,46 @@ import org.eclipse.swt.widgets._
 import win32ex.WinUserX._
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
+// for swt.jar
+import javax.swing.UIManager
+import javax.swing.JOptionPane
+import java.nio.file.Paths
+
 object W10Wheel {
 	private val ctx = Context
 	private val logger = ctx.logger
 	val unhook: Promise[Boolean] = Promise[Boolean]
-	private val display = Display.getDefault
+	
+	private def errorMessage(msg: String) {
+		JOptionPane.showMessageDialog(null, msg, "Error", JOptionPane.ERROR_MESSAGE)
+	}
+	
+	private val REPLACE_SWT_NAME = "ReplaceSWT.exe"
+	
+	private def getSelfPath = {
+		Paths.get(getClass.getProtectionDomain().getCodeSource().getLocation().toURI())
+	}
+	
+	private def exeReplaceSWT {
+		val selfPath = getSelfPath
+		val replaceSwtPath = selfPath.resolveSibling(REPLACE_SWT_NAME)
+		val pb = new ProcessBuilder(replaceSwtPath.toString, selfPath.toString)
+		pb.start
+	}
+	
+	private val display = {
+		try {
+			Display.getDefault
+		}
+		catch {
+			case e: UnsatisfiedLinkError => {
+				exeReplaceSWT
+				System.exit(0)
+				null
+			}
+		}
+	}
+	
 	val shell = new Shell(display)
 		
 	private val eventDispatcher = new LowLevelMouseProc() {

@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.7
+        0.7.1
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-16: Version 0.7.1: 32bit環境でのSWTの問題を修正
         2016-07-15: Version 0.7.0: AWT,SwingからSWTに変更 
         2016-07-14: Version 0.6.2: RealWheelModeのレスポンス改善
         2016-07-13: Version 0.6.1: hwCountの初期値を修正、デフォルト値の変更
@@ -91,7 +92,7 @@ URL:
         Horizontal Scroll: 水平スクロール
         Reverse Scroll: スクロールの方向を逆にする
         Pass Mode: 全てのメッセージをそのまま通す # WheelBall の制御停止
-        Version: バージョン番号を表示
+        Info: バージョン番号を表示
         Exit: 終了
         
 設定項目:

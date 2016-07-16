@@ -2,8 +2,8 @@
 <launch4jConfig>
   <dontWrapJar>false</dontWrapJar>
   <headerType>gui</headerType>
-  <jar>W10Wheel.jar</jar>
-  <outfile>W10Wheel.exe</outfile>
+  <jar>ReplaceSWT.jar</jar>
+  <outfile>ReplaceSWT.exe</outfile>
   <errTitle></errTitle>
   <cmdLine></cmdLine>
   <chdir>.</chdir>
@@ -13,7 +13,7 @@
   <stayAlive>false</stayAlive>
   <restartOnCrash>false</restartOnCrash>
   <manifest></manifest>
-  <icon>combined.ico</icon>
+  <icon></icon>
   <jre>
     <path></path>
     <bundledJre64Bit>false</bundledJre64Bit>
@@ -24,15 +24,15 @@
     <runtimeBits>64/32</runtimeBits>
   </jre>
   <versionInfo>
-    <fileVersion>0.7.1.0</fileVersion>
-    <txtFileVersion>0.7.1</txtFileVersion>
-    <fileDescription>Mouse Wheel Simulator</fileDescription>
+    <fileVersion>0.1.0.0</fileVersion>
+    <txtFileVersion>0.1</txtFileVersion>
+    <fileDescription>Replace SWT</fileDescription>
     <copyright>Copyright (c) 2016 Yuki Ono</copyright>
-    <productVersion>0.7.1.0</productVersion>
-    <txtProductVersion>0.7.1</txtProductVersion>
-    <productName>W10Wheel</productName>
+    <productVersion>0.1.0.0</productVersion>
+    <txtProductVersion>0.1</txtProductVersion>
+    <productName>Replace SWT</productName>
     <companyName></companyName>
-    <internalName>W10Wheel</internalName>
-    <originalFilename>W10Wheel.exe</originalFilename>
+    <internalName>ReplaceSWT</internalName>
+    <originalFilename>ReplaceSWT.exe</originalFilename>
   </versionInfo>
 </launch4jConfig>

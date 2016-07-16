@@ -10,3 +10,10 @@ win32ex/.settings/
 win32ex/bin/
 win32ex/.classpath
 win32ex/.project
+ReplaceSWT/.settings/
+ReplaceSWT/bin/
+ReplaceSWT/project/
+ReplaceSWT/target/
+ReplaceSWT/.cache-main
+ReplaceSWT/.classpath
+ReplaceSWT/.project

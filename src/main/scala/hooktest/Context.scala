@@ -28,7 +28,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object Context {
 	val PROGRAM_NAME = "W10Wheel"
-	val PROGRAM_VERSION = "0.7"
+	val PROGRAM_VERSION = "0.7.1"
 	val ICON_NAME = "icon_016.png"
 	val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
 	lazy val systemShell = W10Wheel.shell
@@ -601,11 +601,15 @@ object Context {
 		val item = new MenuItem(menu, SWT.PUSH)
 		item.setText("Info")
 		item.addListener(SWT.Selection, (e: Event) => {
-			val msg = s"Name: $PROGRAM_NAME / Version: $PROGRAM_VERSION"
+			val nameVer = s"Name: $PROGRAM_NAME / Version: $PROGRAM_VERSION\n\n"
+			val jVer = s"java.version: ${System.getProperty("java.version")}\n"
+			val osArch = s"os.arch: ${System.getProperty("os.arch")}\n"
+			val dataModel = s"sun.arch.data.model: ${System.getProperty("sun.arch.data.model")}"
+			
 
 			val mb = new MessageBox(systemShell, SWT.OK | SWT.ICON_INFORMATION)
 			mb.setText("Info")
-			mb.setMessage(msg)
+			mb.setMessage(nameVer + jVer + osArch + dataModel)
 			mb.open()
 			()
 		})
