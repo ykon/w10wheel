@@ -19,10 +19,7 @@ object EventWaiter {
     @volatile private var waiting = false
     
     def offer(me: MouseEvent) =
-        sync.offer(me)
-        
-    def isWaiting =
-        waiting
+        if (waiting) sync.offer(me) else false
     
     private def fromTimeout(we: MouseEvent) {
         //we.resent = true

@@ -111,7 +111,7 @@ object EventHandler {
     }
 
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
-        if (EventWaiter.isWaiting && EventWaiter.offer(me)) {
+        if (EventWaiter.offer(me)) {
             logger.debug(s"success to offer: ${me.name}")
             suppress
         }
@@ -464,7 +464,7 @@ object EventHandler {
             Windows.sendWheel(info.pt)
             suppress.get
         }
-        else if (EventWaiter.isWaiting && EventWaiter.offer(Move(info))) {
+        else if (EventWaiter.offer(Move(info))) {
             logger.debug("success to offer: Move")  
             suppress.get
         }

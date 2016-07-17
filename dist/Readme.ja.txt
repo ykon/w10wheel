@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.7.1
+        0.7.2
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-17: Version 0.7.2: RealWheelModeのメニュー構造変更、他
         2016-07-16: Version 0.7.1: 32bit環境でのSWTの問題を修正
         2016-07-15: Version 0.7.0: AWT,SwingからSWTに変更 
         2016-07-14: Version 0.6.2: RealWheelModeのレスポンス改善
@@ -86,8 +87,8 @@ URL:
         Trigger: トリガーを変更 (設定項目を参照)
         Priority: プロセスの優先度を変更
         SetNumber: 数値をセット (設定項目を参照)
+        Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         Reload Properties: 設定ファイルを再読込
-        Real Wheel Mode: 実際のホイールに近いスクロール
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
         Reverse Scroll: スクロールの方向を逆にする
@@ -96,7 +97,7 @@ URL:
         Exit: 終了
         
 設定項目:
-        firstTrigger: (デフォルト: LRTrigger)
+        firstTrigger: (default: LRTrigger)
                 LRTrigger:
                         左から右か、右から左を押すとトリガーになります。 # 同時押し
                         左、右クリックともに次のイベントを待つために遅延します。
@@ -128,43 +129,51 @@ URL:
                         X2ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すとX2クリックを送ります。
         
-        processPriority:  (デフォルト: AboveNormal)
+        processPriority:  (default: AboveNormal)
                 High: 高
                 AboveNormal: 通常以上
                 Normal: 通常
                 
-        pollTimeout: 150-500 (デフォルト: 300)
+        pollTimeout: 150-500 (default: 300)
                 同時押しのイベント待ち時間(ミリ秒)  # WheelBall の 判定時間 
-        scrollLocktime: 150-500 (デフォルト: 300)
+        scrollLocktime: 150-500 (default: 300)
                 トリガーを離してスクロールモードに固定する時間(ミリ秒)
                 この時間以内にトリガーを離すとスクロールモードに固定します。
-        realWheelMode: bool (デフォルト: false)
+        realWheelMode: bool (default: false)
                 実際のホイールに近いスクロール
                 こちらのモードではAccel値は使われません。
-        cursorChange: bool (デフォルト: true)
+        cursorChange: bool (default: true)
                 スクロールモードのカーソル変更
-        verticalAccel: 0-500 (デフォルト: 0)
+        verticalAccel: 0-500 (default: 0)
                 垂直(通常)スクロールのアクセル値
                 スクロールが遅いと思ったら試してみてください。
-        verticalThreshold: 0-500 (デフォルト: 0)
+        verticalThreshold: 0-500 (default: 0)
                 垂直(通常)スクロールの閾値
-        horizontalScroll: bool (デフォルト: true)
+        horizontalScroll: bool (default: true)
                 水平スクロール
                 使わない人は無効にしてください。
-        horizontalAccel: 0-500 (デフォルト: 0)
+        horizontalAccel: 0-500 (default: 0)
                 水平スクロールのアクセル値
-        horizontalThreshold: 0-500 (デフォルト: 50)
+        horizontalThreshold: 0-500 (default: 50)
                 水辺スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
-        reverseScroll: bool (デフォルト: false)
+        reverseScroll: bool (default: false)
                 スクロールの方向を逆にする
-        wheelDelta: 10-500 (デフォルト: 120) # RealWheelMode
+        wheelDelta: 10-500 (default: 120) # RealWheelMode
                 RealWheelModeでの一回分のホイール値
                 通常のマウスのホイール値は120です。
-        vWheelMove: 10-500 (デフォルト: 140) # RealWheelMode
+        vWheelMove: 10-500 (default: 60) # RealWheelMode
                 垂直(通常)スクロール、一回分のホイールに変換する移動量
-        hWheelMove: 10-500 (デフォルト: 100) # RealWheelMode
+        hWheelMove: 10-500 (default: 60) # RealWheelMode
                 水平スクロール、一回分のホイールに変換する移動量
+        quickFirst: bool (default: false) # RealWheelMode
+                初回の反応を速くするか
+                移動量に関係なくホイールを送ります。
+                falseでも初回は半分の移動量に設定されます。
+        quickTurn: bool (default: false)  # RealWheelMode
+                折り返しの反応を速くするか
+                移動量に関係なくホイールを送ります。
+                
 ライセンス:
         The MIT License
         詳しくは License.txt を参照

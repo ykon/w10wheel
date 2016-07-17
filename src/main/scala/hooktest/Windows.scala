@@ -140,8 +140,9 @@ object Windows {
     private var hLastMove: MoveDirection = null
     
     def startWheelCount = {
-        vwCount = ctx.getVWheelMove
-        hwCount = ctx.getHWheelMove
+        vwCount = if (ctx.isQuickFirst) ctx.getVWheelMove else ctx.getVWheelMove / 2
+        hwCount = if (ctx.isQuickFirst) ctx.getHWheelMove else ctx.getHWheelMove / 2
+        
         vLastMove = null
         hLastMove = null
     }
@@ -175,7 +176,7 @@ object Windows {
         def send = sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
         vwCount += Math.abs(d)
         
-        if (isTurnMove(vLastMove, d))
+        if (ctx.isQuickTurn && isTurnMove(vLastMove, d))
             send
         else if (vwCount >= ctx.getVWheelMove) {
             send
@@ -203,7 +204,7 @@ object Windows {
         def send = sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
         hwCount += Math.abs(d)
         
-        if (isTurnMove(hLastMove, d))
+        if (ctx.isQuickTurn && isTurnMove(hLastMove, d))
             send
         else if (hwCount >= ctx.getHWheelMove) {
             send
