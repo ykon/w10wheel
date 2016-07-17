@@ -21,6 +21,7 @@ import org.eclipse.swt.layout.GridLayout
 import scala.language.implicitConversions
 
 import java.util.Properties
+import java.io.FileNotFoundException
 import java.io.{ File, FileInputStream, FileOutputStream }
 
 import com.sun.jna.platform.win32.WinDef.HCURSOR
@@ -30,7 +31,7 @@ import scala.collection.mutable.HashMap
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "0.7.2"
+    val PROGRAM_VERSION = "0.7.3"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -75,7 +76,7 @@ object Context {
         @volatile var locktime = 300 // default
         @volatile var cursorChange = true // default
         @volatile var reverse = false // default
-        @volatile var horizontal = false // default
+        @volatile var horizontal = true // default
         
         def start(info: HookInfo) {
             if (RealWheel.mode)
@@ -765,6 +766,11 @@ object Context {
         }
     }
     
+    private def setDefaultSettings {
+        logger.debug("setDefaultSettings")
+        Windows.setPriority(processPriority)
+    }
+    
     private val prop = new Properties
     
     def loadProperties = {
@@ -790,6 +796,7 @@ object Context {
             setNumberOfProperty("hWheelMove", 10, 500)
         }
         catch {
+            case _: FileNotFoundException => setDefaultSettings                
             case e: Exception => logger.warn(e.toString)
         }
         finally {
@@ -812,8 +819,14 @@ object Context {
             getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
         }
         catch {
-            case e: Exception => logger.warn(e.toString())
-            true
+            case e: FileNotFoundException => {
+                logger.debug("First Write")
+                true
+            }
+            case e: Exception => {
+                logger.warn(e.toString())
+                true
+            }
         }
     }
     

@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.7.2
+        0.7.3
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-17: Version 0.7.3: 修正: 初回起動時にデフォルト優先度が設定されていない
         2016-07-17: Version 0.7.2: RealWheelModeのメニュー構造変更、他
         2016-07-16: Version 0.7.1: 32bit環境でのSWTの問題を修正
         2016-07-15: Version 0.7.0: AWT,SwingからSWTに変更 
