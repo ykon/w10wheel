@@ -18,8 +18,8 @@ import com.sun.jna.platform.win32.WinUser;
 
 public interface WinUserX extends WinUser
 {
-	// https://msdn.microsoft.com/library/ff468877.aspx
-	public int WM_MOUSEMOVE = 0x0200;
+    // https://msdn.microsoft.com/library/ff468877.aspx
+    public int WM_MOUSEMOVE = 0x0200;
     public int WM_LBUTTONDOWN = 0x0201;
     public int WM_LBUTTONUP = 0x0202;
     public int WM_LBUTTONDBLCLK = 0x0203;
@@ -65,14 +65,14 @@ public interface WinUserX extends WinUser
     public int MOUSEEVENTF_XUP = 0x0100;
     
     // https://msdn.microsoft.com/library/windows/desktop/dd375731.aspx
-	public int VK_LBUTTON = 0x01;
-	public int VK_RBUTTON = 0x02;
-	public int VK_MBUTTON = 0x04;
-	public int VK_XBUTTON1 = 0x05;
-	public int VK_XBUTTON2 = 0x06;
+    public int VK_LBUTTON = 0x01;
+    public int VK_RBUTTON = 0x02;
+    public int VK_MBUTTON = 0x04;
+    public int VK_XBUTTON1 = 0x05;
+    public int VK_XBUTTON2 = 0x06;
 
-	// http://stackoverflow.com/questions/7004810/from-java-capture-mouse-click-and-use-as-hotkey
-	
+    // http://stackoverflow.com/questions/7004810/from-java-capture-mouse-click-and-use-as-hotkey
+    
     // https://msdn.microsoft.com/library/windows/desktop/ms644986.aspx
     public interface LowLevelMouseProc extends HOOKPROC 
     {
@@ -115,17 +115,17 @@ public interface WinUserX extends WinUser
     public int SPI_SETCURSORS = 0x0057;
     
     public interface User32ex extends User32 {
-    	User32ex INSTANCE = (User32ex)Native.loadLibrary("user32", User32ex.class);
-    	
-    	public short GetKeyState(int vKey);
-    	public short GetAsyncKeyState(int vKey);
+        User32ex INSTANCE = (User32ex)Native.loadLibrary("user32", User32ex.class);
+        
+        public short GetKeyState(int vKey);
+        public short GetAsyncKeyState(int vKey);
     
-    	// https://msdn.microsoft.com/library/windows/desktop/aa383751.aspx
-    	public Pointer LoadImageW(HINSTANCE hinst, Pointer ptr, int type, int xDesired, int yDesired, int load);
-    	public Pointer LoadCursorW(HINSTANCE hInstance, Pointer lpCursorName);
-    	public boolean SystemParametersInfoW(int uiAction, int uiParam, Pointer pvParam, int fWinIni);
-    	public boolean SetSystemCursor(Pointer hcur, int id);
-    	public Pointer CopyIcon(Pointer hIcon);
+        // https://msdn.microsoft.com/library/windows/desktop/aa383751.aspx
+        public Pointer LoadImageW(HINSTANCE hinst, Pointer ptr, int type, int xDesired, int yDesired, int load);
+        public Pointer LoadCursorW(HINSTANCE hInstance, Pointer lpCursorName);
+        public boolean SystemParametersInfoW(int uiAction, int uiParam, Pointer pvParam, int fWinIni);
+        public boolean SetSystemCursor(Pointer hcur, int id);
+        public Pointer CopyIcon(Pointer hIcon);
     }
     
     // https://msdn.microsoft.com/library/windows/desktop/ms686219.aspx
@@ -134,8 +134,8 @@ public interface WinUserX extends WinUser
     public int NORMAL_PRIORITY_CLASS = 0x00000020;
     
     public interface Kernel32ex extends Kernel32 {
-    	Kernel32ex INSTANCE = (Kernel32ex)Native.loadLibrary("kernel32", Kernel32ex.class);
-    	
-    	public boolean SetPriorityClass(HANDLE hProcess, int dwPriorityClass);
+        Kernel32ex INSTANCE = (Kernel32ex)Native.loadLibrary("kernel32", Kernel32ex.class);
+        
+        public boolean SetPriorityClass(HANDLE hProcess, int dwPriorityClass);
     }
 }
