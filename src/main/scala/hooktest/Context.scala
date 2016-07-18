@@ -31,7 +31,7 @@ import scala.collection.mutable.HashMap
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "0.7.4"
+    val PROGRAM_VERSION = "0.7.5"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -254,59 +254,59 @@ object Context {
         override def widgetSelected(e: SelectionEvent) { f(e) }
     }
     
-    private def resetTriggerItems: Unit = {
-        val items = triggerMenu.getItems.filter(i => i.getText != "")
-        items.foreach(i => {
-            if (isTrigger(Mouse.getTrigger(textToName(i.getText))))
-                i.setSelection(true)
-        })
+    private def resetTriggerMenuItems: Unit = {  
+        triggerMenuItemMap.foreach { case (name, item) =>
+            item.setSelection(isTrigger(Mouse.getTrigger(name)))
+        }
     }
     
-    private def resetPriorityItems: Unit = {
-        val items = priorityMenu.getItems
-        items.foreach(i => {
-            if (Windows.getPriority(i.getText) == processPriority)
-                i.setSelection(true)
-        })
+    private def resetPriorityMenuItems: Unit = {        
+        priorityMenuItemMap.foreach { case (name, item) =>
+            item.setSelection(Windows.getPriority(name) == processPriority)
+        }
     }
     
-    private def resetNumberItems: Unit = {
+    private def resetNumberMenuItems: Unit = {
         numberMenuItemMap.foreach { case (name, item) =>
-            val name = textToName(item.getText)
             val n = getNumberOfName(name)
             item.setText(makeNumberText(name, n))
         }
     }
-        
-    private def resetMenuItem: Unit = {
-        resetTriggerItems
-        resetPriorityItems
-        resetNumberItems
-        
+    
+    private def resetBoolMenuItems: Unit = {
         boolMenuItemMap.foreach { case (name, item) =>
             item.setSelection(getBooleanOfName(name))
         }
+    }
+        
+    private def resetMenuItem: Unit = {
+        resetTriggerMenuItems
+        resetPriorityMenuItems
+        resetNumberMenuItems
+        resetBoolMenuItems
     }
     
     private def textToName(s: String): String =
         s.split(" ")(0)
         
-    private def unselectOtherTrigger(text: String) {
-        triggerMenu.getItems().foreach(i => {
-            if (i.getText != text)
-                i.setSelection(false)
-        })
+    private def unselectOtherItem(map: HashMap[String, MenuItem], selectName: String) {        
+        map.foreach { case (name, item) =>
+            if (name != selectName)
+                item.setSelection(false)
+        }
     }
+    
+    private val triggerMenuItemMap = new HashMap[String, MenuItem]
     
     private def createTriggerMenuItem(menu: Menu, text: String) {
         val item = new MenuItem(menu, SWT.RADIO)
         item.setText(text)
+        val name = textToName(text)
+        triggerMenuItemMap(name) = item
+        
         item.addSelectionListener((e: SelectionEvent) => {
             if (item.getSelection) {
-                val text = item.getText()
-                unselectOtherTrigger(text)
-                
-                val name = textToName(text)
+                unselectOtherItem(triggerMenuItemMap, name)
                 setTrigger(name)
             }
         })
@@ -316,9 +316,9 @@ object Context {
         new MenuItem(menu, SWT.SEPARATOR)
     }
     
-    private lazy val triggerMenu: Menu = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createTriggerMenuItem(menu, text)
+    private def createTriggerMenu(pMenu: Menu) {        
+        val tMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createTriggerMenuItem(tMenu, text)
 
         add("LRTrigger (Left <<-->> Right)")
         add("Left (Left -->> Right)")
@@ -326,7 +326,7 @@ object Context {
         add("Middle")
         add("X1")
         add("X2")
-        addSeparator(menu)
+        addSeparator(tMenu)
 
         add("LeftDrag")
         add("RightDrag")
@@ -334,7 +334,9 @@ object Context {
         add("X1Drag")
         add("X2Drag")
         
-        menu
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("Trigger")
+        item.setMenu(tMenu)
     }
     
     private class NumberInputDialog(name: String, low: Int, up: Int) extends Dialog(systemShell) {
@@ -457,9 +459,13 @@ object Context {
         Windows.setPriority(p)
     }
     
+    private val priorityMenuItemMap = new HashMap[String, MenuItem]
+    
     private def createPriorityMenuItem(menu: Menu, text: String) {
         val item = new MenuItem(menu, SWT.RADIO)
         item.setText(text)
+        priorityMenuItemMap(text) = item
+        
         item.addSelectionListener((e: SelectionEvent) => {
             if(item.getSelection)
                 setPriority(item.getText)
@@ -467,15 +473,17 @@ object Context {
         })
     }
     
-    private lazy val priorityMenu: Menu = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createPriorityMenuItem(menu, text)
+    private def createPriorityMenu(popMenu: Menu) {
+        val priMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createPriorityMenuItem(priMenu, text)
         
         add("High")
         add("Above Normal")
         add("Normal")
         
-        menu
+        val item = new MenuItem(popMenu, SWT.CASCADE)
+        item.setText("Priority")
+        item.setMenu(priMenu)
     }
     
     private val numberMenuItemMap = new HashMap[String, MenuItem]
@@ -495,22 +503,24 @@ object Context {
         })    
     }
     
-    private def createNumberMenu: Menu = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String, low: Int, up: Int) = createNumberMenuItem(menu, text, low, up)
+    private def createNumberMenu(pMenu: Menu) {
+        val nMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String, low: Int, up: Int) = createNumberMenuItem(nMenu, text, low, up)
         
         add("pollTimeout", 150, 500)
         add("scrollLocktime", 150, 500)
-        addSeparator(menu)
+        addSeparator(nMenu)
         
         add("verticalAccel", 0, 500)
         add("verticalThreshold", 0, 500)
-        addSeparator(menu)
+        addSeparator(nMenu)
         
         add("horizontalAccel", 0, 500)
         add("horizontalThreshold", 0, 500)
         
-        menu
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("Set Number")
+        item.setMenu(nMenu)
     }
         
     private def createRwmOnOffMenuItem(menu: Menu): Unit = {
@@ -528,52 +538,40 @@ object Context {
         boolMenuItemMap(vname) = item
     }
     
-    private def createBoolMenuItem(menu: Menu, name: String) {
+    private def createBoolMenuItem(menu: Menu, vName: String, mName: String) {
         val item = new MenuItem(menu, SWT.CHECK)
-        item.setText(name) 
-        item.addListener(SWT.Selection, makeSetBooleanEvent(name))
-        boolMenuItemMap(name) = item
+        item.setText(mName) 
+        item.addListener(SWT.Selection, makeSetBooleanEvent(vName))
+        boolMenuItemMap(vName) = item
     }
     
-    private lazy val realWheelModeMenu: Menu = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(menu, name, low, up)
-        def addBool(name: String) = createBoolMenuItem(menu, name)
+    private def createBoolMenuItem(menu: Menu, vName: String) {
+        createBoolMenuItem(menu, vName, vName)
+    }
+    
+    private def createRealWheelModeMenu(pMenu: Menu) {
+        val rMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(rMenu, name, low, up)
+        def addBool(name: String) = createBoolMenuItem(rMenu, name)
         
-        createRwmOnOffMenuItem(menu)
-        addSeparator(menu)
+        createRwmOnOffMenuItem(rMenu)
+        addSeparator(rMenu)
         
         addNum("wheelDelta", 10, 500)
         addNum("vWheelMove", 10, 500)
         addNum("hWheelMove", 10, 500)
-        addSeparator(menu)
+        addSeparator(rMenu)
         
         addBool("quickFirst")
         addBool("quickTurn")
         
-        menu
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("Real Wheel Mode")
+        item.setMenu(rMenu)
     }
     
     private def setUnhook: Unit =
         W10Wheel.unhook.success(true)
-
-    private def createTriggerMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.CASCADE)
-        item.setText("Trigger")
-        item.setMenu(triggerMenu)
-    }
-    
-    private def createPriorityMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.CASCADE)
-        item.setText("Priority")
-        item.setMenu(priorityMenu)
-    }
-    
-    private def createNumberMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.CASCADE)
-        item.setText("Set Number")
-        item.setMenu(createNumberMenu)
-    }
     
     private def createReloadPropertiesMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
@@ -592,36 +590,18 @@ object Context {
         }
     }
     
-    private def createRealWheelModeMenu(menu: Menu) = {
-        val item = new MenuItem(menu, SWT.CASCADE)
-        item.setText("Real Wheel Mode")
-        item.setMenu(realWheelModeMenu)
-    }
-    
     private val boolMenuItemMap = new HashMap[String, MenuItem]
     
     private def createCursorChangeMenu(menu: Menu) = {
-        val vname = "cursorChange"
-        val item = new MenuItem(menu, SWT.CHECK)
-        item.setText("Cursor Change")
-        item.addListener(SWT.Selection, makeSetBooleanEvent(vname))
-        boolMenuItemMap(vname) = item
+        createBoolMenuItem(menu, "cursorChange", "Cursor Change")
     }
     
     private def createHorizontalScrollMenu(menu: Menu) = {
-        val vname = "horizontalScroll"
-        val item = new MenuItem(menu, SWT.CHECK)
-        item.setText("Horizontal Scroll")
-        item.addListener(SWT.Selection, makeSetBooleanEvent(vname))
-        boolMenuItemMap(vname) = item
+        createBoolMenuItem(menu, "horizontalScroll", "Horizontal Scroll")
     }
     
     private def createReverseScrollMenu(menu: Menu) = {
-        val vname = "reverseScroll"
-        val item = new MenuItem(menu, SWT.CHECK)
-        item.setText("Reverse Scroll")
-        item.addListener(SWT.Selection, makeSetBooleanEvent(vname))
-        boolMenuItemMap(vname) = item
+        createBoolMenuItem(menu, "reverseScroll", "Reverse Scroll")
     }
     
     private def createPassModeMenu(menu: Menu) {
