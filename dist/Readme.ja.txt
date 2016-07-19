@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.7.5
+        0.8.0
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-19: Version 0.8.0: 追加: AccelTable / 廃止: verticalAccel, horizontalAccel
         2016-07-18: Version 0.7.5: 修正: 設定の再読み込みでメニューが二重に選択される
         2016-07-17: Version 0.7.4: 修正: メニューに数値のリセットが反映されていない
         2016-07-17: Version 0.7.3: 修正: 初回起動時にデフォルト優先度が設定されていない
@@ -88,6 +89,7 @@ URL:
         
 メニュー項目:
         Trigger: トリガーを変更 (設定項目を参照)
+        Accel Table: 加速を有効にするか、どのテーブルを使うか #1.0は1.0倍を表す
         Priority: プロセスの優先度を変更
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
@@ -147,16 +149,11 @@ URL:
                 こちらのモードではAccel値は使われません。
         cursorChange: bool (default: true)
                 スクロールモードのカーソル変更
-        verticalAccel: 0-500 (default: 0)
-                垂直(通常)スクロールのアクセル値
-                スクロールが遅いと思ったら試してみてください。
         verticalThreshold: 0-500 (default: 0)
                 垂直(通常)スクロールの閾値
         horizontalScroll: bool (default: true)
                 水平スクロール
                 使わない人は無効にしてください。
-        horizontalAccel: 0-500 (default: 0)
-                水平スクロールのアクセル値
         horizontalThreshold: 0-500 (default: 50)
                 水辺スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
@@ -176,7 +173,16 @@ URL:
         quickTurn: bool (default: false)  # RealWheelMode
                 折り返しの反応を速くするか
                 移動量に関係なくホイールを送ります。
-                
+        accelTable: bool (default: false) # AccelTable
+                AccelTableを有効にするか
+        customAccelTable: bool (default: false) # AccelTable
+                CustomTableを有効にするか
+        accelMultiplier: bool (default: M5) # AccelTable
+                選択されている乗数テーブル
+        customAccelThreshold: Int Array # AccelTable
+                CustomTableで使われるThreshold
+        customAccelMultiplier: Double Array # AccelTable
+                CustomTableで使われるMultiplier
 ライセンス:
         The MIT License
         詳しくは License.txt を参照

@@ -147,8 +147,38 @@ object Windows {
         hLastMove = null
     }
     
-    private def addAccel(d: Int, a: Int) =
-        if (d > 0) d + a else d - a
+    /*
+    private val moveT = Array(1, 2, 3, 5, 7, 10, 14, 20, 30, 43, 63, 91)
+    private val moveM5 = Array(1.0, 1.3, 1.7, 2.0, 2.4, 2.7, 3.1, 3.4, 3.8, 4.1, 4.5, 4.8)
+    private val moveM6 = Array(1.2, 1.6, 2.0, 2.4, 2.8, 3.3, 3.7, 4.1, 4.5, 4.9, 5.4, 5.8)
+    private val moveM7 = Array(1.4, 1.8, 2.3, 2.8, 3.3, 3.8, 4.3, 4.8, 5.3, 5.8, 6.3, 6.7)
+    private val moveM8 = Array(1.6, 2.1, 2.7, 3.2, 3.8, 4.4, 4.9, 5.5, 6.0, 6.6, 7.2, 7.7)
+    private val moveM9 = Array(1.8, 2.4, 3.0, 3.6, 4.3, 4.9, 5.5, 6.2, 6.8, 7.4, 8.1, 8.7)
+    */
+    
+    private def getNearestIndex(d: Int, sArray: Array[Int]): Int = {
+        var prev: Int = 0
+        
+        for ((n, i) <- sArray.zipWithIndex) {
+            if (n == d)
+                return i
+            else if (n > d)
+                return if (n - Math.abs(d) < Math.abs(prev - Math.abs(d))) i else i - 1
+            else
+                prev = n
+        }
+        
+        sArray.length - 1
+    }
+    
+    private def addAccel(d: Int): Int = {
+        if (!ctx.isAccelTable)
+            d
+        else {
+            val i = getNearestIndex(d, ctx.getAccelThreshold)
+            (d * ctx.getAccelMultiplier(i)).toInt
+        }
+    }
         
     private def setVScrollDirection(d: Int) =
         if (ctx.isReverseScroll) d else -d
@@ -191,7 +221,7 @@ object Windows {
             sendRealVWheel(pt, d)
         else {
             //logger.debug(s"d = $d")
-            val data = setVScrollDirection(addAccel(d, ctx.getVerticalAccel))
+            val data = setVScrollDirection(addAccel(d))
             sendInput(pt, data,  MOUSEEVENTF_WHEEL, 0, 0)
         }
     }
@@ -218,7 +248,7 @@ object Windows {
         if (ctx.isRealWheelMode)
             sendRealHWheel(pt, d)
         else {
-            val data = setHScrollDirection(addAccel(d, ctx.getHorizontalAccel))
+            val data = setHScrollDirection(addAccel(d))
             sendInput(pt, data, MOUSEEVENTF_HWHEEL, 0, 0)
         }
     }

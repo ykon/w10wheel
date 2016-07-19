@@ -28,10 +28,11 @@ import com.sun.jna.platform.win32.WinDef.HCURSOR
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 import scala.collection.mutable.HashMap
+import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "0.7.5"
+    val PROGRAM_VERSION = "0.8"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -41,21 +42,58 @@ object Context {
     @volatile private var passMode = false
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
     
-    private object Vertical {
-        @volatile var accel = 0  // default
-        @volatile var threshold = 0 // default
+    private object Accel {
+        val TD = Array(1, 2, 3, 5, 7, 10, 14, 20, 30, 43, 63, 91)
+        
+        abstract class Multiplier(val name: String, val dArray: Array[Double])
+        case class M5() extends Multiplier("M5", Array(1.0, 1.3, 1.7, 2.0, 2.4, 2.7, 3.1, 3.4, 3.8, 4.1, 4.5, 4.8))
+        case class M6() extends Multiplier("M6", Array(1.2, 1.6, 2.0, 2.4, 2.8, 3.3, 3.7, 4.1, 4.5, 4.9, 5.4, 5.8))
+        case class M7() extends Multiplier("M7", Array(1.4, 1.8, 2.3, 2.8, 3.3, 3.8, 4.3, 4.8, 5.3, 5.8, 6.3, 6.7))
+        case class M8() extends Multiplier("M8", Array(1.6, 2.1, 2.7, 3.2, 3.8, 4.4, 4.9, 5.5, 6.0, 6.6, 7.2, 7.7))
+        case class M9() extends Multiplier("M9", Array(1.8, 2.4, 3.0, 3.6, 4.3, 4.9, 5.5, 6.2, 6.8, 7.4, 8.1, 8.7))
+        
+        @volatile var customDisabled = true
+        @volatile var customTable = false
+        @volatile var customThreshold: Array[Int] = null
+        @volatile var customMultiplier: Array[Double] = null
+        
+        @volatile var table = false // default
+        @volatile var threshold: Array[Int] = TD // default
+        @volatile var multiplier: Multiplier = M5() // default
+            
+        def getMultiplier(name: String) = name match {
+            case "M5" => M5()
+            case "M6" => M6()
+            case "M7" => M7()
+            case "M8" => M8()
+            case "M9" => M9()
+        }
     }
     
-    def getVerticalAccel = Vertical.accel
-    def getVerticalThreshold = Vertical.threshold
+    def isAccelTable: Boolean =
+        Accel.table
     
-    private object Horizontal {
-        @volatile var accel = 0 // default
-        @volatile var threshold = 50 // default
+    def getAccelThreshold: Array[Int] = {
+        if (!Accel.customDisabled && Accel.customTable)
+            Accel.customThreshold
+        else
+            Accel.threshold 
     }
     
-    def getHorizontalAccel = Horizontal.accel    
-    def getHorizontalThreshold = Horizontal.threshold
+    def getAccelMultiplier: Array[Double] = {
+        if (!Accel.customDisabled && Accel.customTable)
+            Accel.customMultiplier
+        else
+            Accel.multiplier.dArray
+    }
+    
+    private object Threshold {
+        @volatile var vertical = 0 // default
+        @volatile var horizontal = 50 // default
+    }
+    
+    def getVerticalThreshold = Threshold.vertical
+    def getHorizontalThreshold = Threshold.horizontal
     
     /*
     private object Skip {
@@ -255,32 +293,39 @@ object Context {
     }
     
     private def resetTriggerMenuItems: Unit = {  
-        triggerMenuItemMap.foreach { case (name, item) =>
+        triggerMenuMap.foreach { case (name, item) =>
             item.setSelection(isTrigger(Mouse.getTrigger(name)))
         }
     }
     
+    private def resetAccelMenuItems: Unit = {
+        accelMenuMap.foreach { case (name, item) =>
+            item.setSelection(name == Accel.multiplier.name)    
+        }
+    }
+    
     private def resetPriorityMenuItems: Unit = {        
-        priorityMenuItemMap.foreach { case (name, item) =>
+        priorityMenuMap.foreach { case (name, item) =>
             item.setSelection(Windows.getPriority(name) == processPriority)
         }
     }
     
     private def resetNumberMenuItems: Unit = {
-        numberMenuItemMap.foreach { case (name, item) =>
+        numberMenuMap.foreach { case (name, item) =>
             val n = getNumberOfName(name)
             item.setText(makeNumberText(name, n))
         }
     }
     
     private def resetBoolMenuItems: Unit = {
-        boolMenuItemMap.foreach { case (name, item) =>
+        boolMenuMap.foreach { case (name, item) =>
             item.setSelection(getBooleanOfName(name))
         }
     }
         
     private def resetMenuItem: Unit = {
         resetTriggerMenuItems
+        resetAccelMenuItems
         resetPriorityMenuItems
         resetNumberMenuItems
         resetBoolMenuItems
@@ -289,24 +334,24 @@ object Context {
     private def textToName(s: String): String =
         s.split(" ")(0)
         
-    private def unselectOtherItem(map: HashMap[String, MenuItem], selectName: String) {        
+    private def unselectOtherItems(map: HashMap[String, MenuItem], selectedName: String) {        
         map.foreach { case (name, item) =>
-            if (name != selectName)
+            if (name != selectedName)
                 item.setSelection(false)
         }
     }
     
-    private val triggerMenuItemMap = new HashMap[String, MenuItem]
+    private val triggerMenuMap = new HashMap[String, MenuItem]
     
     private def createTriggerMenuItem(menu: Menu, text: String) {
         val item = new MenuItem(menu, SWT.RADIO)
         item.setText(text)
         val name = textToName(text)
-        triggerMenuItemMap(name) = item
+        triggerMenuMap(name) = item
         
         item.addSelectionListener((e: SelectionEvent) => {
             if (item.getSelection) {
-                unselectOtherItem(triggerMenuItemMap, name)
+                unselectOtherItems(triggerMenuMap, name)
                 setTrigger(name)
             }
         })
@@ -337,6 +382,50 @@ object Context {
         val item = new MenuItem(pMenu, SWT.CASCADE)
         item.setText("Trigger")
         item.setMenu(tMenu)
+    }
+    
+    private def setAccelMultiplier(name: String) {
+        logger.debug(s"setAccelMultiplier: $name")
+        Accel.multiplier = Accel.getMultiplier(name)
+    }
+    
+    private val accelMenuMap = new HashMap[String, MenuItem]
+    
+    private def createAccelMenuItem(menu: Menu, text: String) {
+        val item = new MenuItem(menu, SWT.RADIO)
+        item.setText(text)
+        val name = textToName(text)
+        accelMenuMap(name) = item
+        
+        item.addSelectionListener((e: SelectionEvent) => {
+            if (item.getSelection) {
+                unselectOtherItems(accelMenuMap, name)
+                setAccelMultiplier(name)
+            }
+        })
+    }
+    
+    private def createAccelTableMenu(pMenu: Menu) {        
+        val aMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createAccelMenuItem(aMenu, text)
+        
+        createOnOffMenuItem(aMenu, "accelTable")
+        addSeparator(aMenu)
+
+        add("M5 (1.0 ... 4.8)")
+        add("M6 (1.2 ... 5.8)")
+        add("M7 (1.4 ... 6.7)")
+        add("M8 (1.6 ... 7.7)")
+        add("M9 (1.8 ... 8.7)")
+        addSeparator(aMenu)
+        
+        val vName = "customAccelTable"
+        createBoolMenuItem(aMenu, vName, "Custom Table")
+        boolMenuMap(vName).setEnabled(!Accel.customDisabled)
+        
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("Accel Table")
+        item.setMenu(aMenu)
     }
     
     private class NumberInputDialog(name: String, low: Int, up: Int) extends Dialog(systemShell) {
@@ -459,12 +548,12 @@ object Context {
         Windows.setPriority(p)
     }
     
-    private val priorityMenuItemMap = new HashMap[String, MenuItem]
+    private val priorityMenuMap = new HashMap[String, MenuItem]
     
     private def createPriorityMenuItem(menu: Menu, text: String) {
         val item = new MenuItem(menu, SWT.RADIO)
         item.setText(text)
-        priorityMenuItemMap(text) = item
+        priorityMenuMap(text) = item
         
         item.addSelectionListener((e: SelectionEvent) => {
             if(item.getSelection)
@@ -486,13 +575,13 @@ object Context {
         item.setMenu(priMenu)
     }
     
-    private val numberMenuItemMap = new HashMap[String, MenuItem]
+    private val numberMenuMap = new HashMap[String, MenuItem]
     
     private def createNumberMenuItem(menu: Menu, name: String, low: Int, up: Int) {
         val n = getNumberOfName(name)
         val item = new MenuItem(menu, SWT.PUSH)
         item.setText(makeNumberText(name, n))
-        numberMenuItemMap(name) = item
+        numberMenuMap(name) = item
         
         item.addListener(SWT.Selection, (e: Event) => {
             val num = openNumberInputDialog(name, low, up)
@@ -511,11 +600,7 @@ object Context {
         add("scrollLocktime", 150, 500)
         addSeparator(nMenu)
         
-        add("verticalAccel", 0, 500)
         add("verticalThreshold", 0, 500)
-        addSeparator(nMenu)
-        
-        add("horizontalAccel", 0, 500)
         add("horizontalThreshold", 0, 500)
         
         val item = new MenuItem(pMenu, SWT.CASCADE)
@@ -523,26 +608,24 @@ object Context {
         item.setMenu(nMenu)
     }
         
-    private def createRwmOnOffMenuItem(menu: Menu): Unit = {
+    private def createOnOffMenuItem(menu: Menu, vname: String): Unit = {
         def getOnOff(b: Boolean) = if (b) "ON" else "OFF"
-        val vname = "realWheelMode"
         val item = new MenuItem(menu, SWT.CHECK)
-        item.setText(getOnOff(RealWheel.mode))
+        item.setText(getOnOff(getBooleanOfName(vname)))
+        boolMenuMap(vname) = item
         
         item.addListener(SWT.Selection, (e: Event) => {
             val b = item.getSelection
             item.setText(getOnOff(b))
             setBooleanOfName(vname, b)
         })
-        
-        boolMenuItemMap(vname) = item
     }
     
     private def createBoolMenuItem(menu: Menu, vName: String, mName: String) {
         val item = new MenuItem(menu, SWT.CHECK)
         item.setText(mName) 
         item.addListener(SWT.Selection, makeSetBooleanEvent(vName))
-        boolMenuItemMap(vName) = item
+        boolMenuMap(vName) = item
     }
     
     private def createBoolMenuItem(menu: Menu, vName: String) {
@@ -554,7 +637,7 @@ object Context {
         def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(rMenu, name, low, up)
         def addBool(name: String) = createBoolMenuItem(rMenu, name)
         
-        createRwmOnOffMenuItem(rMenu)
+        createOnOffMenuItem(rMenu, "realWheelMode")
         addSeparator(rMenu)
         
         addNum("wheelDelta", 10, 500)
@@ -590,7 +673,7 @@ object Context {
         }
     }
     
-    private val boolMenuItemMap = new HashMap[String, MenuItem]
+    private val boolMenuMap = new HashMap[String, MenuItem]
     
     private def createCursorChangeMenu(menu: Menu) = {
         createBoolMenuItem(menu, "cursorChange", "Cursor Change")
@@ -654,6 +737,7 @@ object Context {
         createTrayItem(menu)
         
         createTriggerMenu(menu)
+        createAccelTableMenu(menu)
         createPriorityMenu(menu)
         createNumberMenu(menu)
         createRealWheelModeMenu(menu)
@@ -689,32 +773,41 @@ object Context {
     private def getPropertiesOutput =
         new FileOutputStream(getPropertiesFile)
     
-    private def getNumberOfProperty(name: String): Int =
-        prop.getProperty(name).toInt
+    private def getProperty(name: String): String = {
+        val res = prop.getProperty(name)
+        if (res != null) res else throw new NoSuchElementException(name)
+    }
+    
+    private def setProperty(key: String, value: String) =
+        prop.setProperty(key, value)
+    
+    private def getNumberProperty(name: String): Int =
+        getProperty(name).toInt
         
-    private def getBooleanOfProperty(name: String): Boolean =
-        prop.getProperty(name).toBoolean
+    private def getBooleanProperty(name: String): Boolean =
+        getProperty(name).toBoolean
     
     private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
         try {
-            val n = getNumberOfProperty(name)
+            val n = getNumberProperty(name)
             if (n < low || n > up)
-                throw new IllegalArgumentException(n.toString())
-        
-            setNumberOfName(name, n)
+                logger.warn(s"Number out of bounds: $name")
+            else
+                setNumberOfName(name, n)
         }
         catch {
-            case _: scala.MatchError  => logger.warn(s"setNumberOfProperty: $name")
-            case _: IllegalArgumentException => logger.warn(s"setNumberOfProperty $name")
+            case _: NoSuchElementException => logger.debug(s"Not found: $name")
+            case _: scala.MatchError  => logger.warn(s"MatchError: $name")
         }
     }
     
     private def setBooleanOfProperty(name: String) {
         try {
-            val b = prop.getProperty(name).toBoolean
+            val b = getBooleanProperty(name)
             setBooleanOfName(name, b)
         }
         catch {
+            case _: NoSuchElementException => logger.debug(s"Not found: $name")
             case _: scala.MatchError => logger.warn(s"setBooleanOfProperty: $name")
             case _: IllegalArgumentException => logger.warn(s"setBooleanOfProperty: $name")
         }
@@ -729,27 +822,50 @@ object Context {
     
     private def setTriggerOfProperty: Unit = {
         try {
-            setTrigger(prop.getProperty("firstTrigger"))
+            setTrigger(getProperty("firstTrigger"))
         }
         catch {
-            case e: scala.MatchError => logger.warn(s"setTriggerOfProperty: ${e.getMessage}")
+            case _: NoSuchElementException => logger.debug(s"firstTrigger not found")
+        }
+    }
+    
+    private def setCustomAccelOfProperty {
+        val cAT = prop.getProperty("customAccelThreshold")
+        val cAM = prop.getProperty("customAccelMultiplier")
+        
+        if (cAT != null && cAM != null) {
+            logger.debug(s"customAccelThreshold: $cAT")
+            logger.debug(s"customAccelMultiplier: $cAM") 
+            
+            def split(s: String) = s.trim.split(",").filter(!_.isEmpty())
+            Accel.customThreshold = split(cAT).map(s => s.trim.toInt)
+            Accel.customMultiplier = split(cAM).map(s => s.trim.toDouble)
+            Accel.customDisabled = false
+        }
+        else
+            Accel.customDisabled = true
+    }
+    
+    private def setAccelOfProperty: Unit = {
+        try {
+            setAccelMultiplier(getProperty("accelMultiplier"))
+        }
+        catch {
+            case _: NoSuchElementException => logger.debug("accelMultiplier not found")
         }
     }
         
     private def setPriorityOfProperty: Unit = {
         try {
-            setPriority(prop.getProperty("processPriority"))
+            setPriority(getProperty("processPriority"))
         }
         catch {
-            case e: scala.MatchError => {
-                logger.warn(s"setPriorityOfProperty: ${e.getMessage}")
-                Windows.setPriority(processPriority) // default
-            }
+            case _: NoSuchElementException => setDefaultPriority
         }
     }
     
-    private def setDefaultSettings {
-        logger.debug("setDefaultSettings")
+    private def setDefaultPriority {
+        logger.debug("setDefaultPriority")
         Windows.setPriority(processPriority)
     }
     
@@ -762,15 +878,15 @@ object Context {
             prop.load(input)
             
             setTriggerOfProperty
+            setAccelOfProperty
+            setCustomAccelOfProperty
             setPriorityOfProperty
             
-            getBooleanNames.foreach(n => setBooleanOfProperty(n))
+            BooleanNames.foreach(n => setBooleanOfProperty(n))
             
             setNumberOfProperty("pollTimeout", 50, 500)
             setNumberOfProperty("scrollLocktime", 150, 500)
-            setNumberOfProperty("verticalAccel", 0, 500)
             setNumberOfProperty("verticalThreshold" , 0, 500)
-            setNumberOfProperty("horizontalAccel", 0, 500)
             setNumberOfProperty("horizontalThreshold", 0, 500)
             
             setNumberOfProperty("wheelDelta", 10, 500)
@@ -778,8 +894,11 @@ object Context {
             setNumberOfProperty("hWheelMove", 10, 500)
         }
         catch {
-            case _: FileNotFoundException => setDefaultSettings                
-            case e: Exception => logger.warn(e.toString)
+            case _: FileNotFoundException => {
+                logger.debug("Properties file not found")
+                setDefaultPriority                
+            }
+            case e: Exception => logger.warn(s"loadProperties: ${e.toString}")
         }
         finally {
             if (input != null)
@@ -787,42 +906,39 @@ object Context {
         }
     }
     
+    private def isChangedBoolean =
+        BooleanNames.map(n => getBooleanProperty(n) != getBooleanOfName(n)).contains(true)
+        
+    private def isChangedNumber =
+        NumberNames.map(n => getNumberProperty(n) != getNumberOfName(n)).contains(true)
+    
     private def isChangedProperties: Boolean = {
         try {
             prop.load(getPropertiesInput)
             
-            def check(name: String, current: String) =
-                prop.getProperty(name) != current
-            
-            Iterator(("firstTrigger", firstTrigger.name),
-                     ("processPriority", processPriority.name)
-            ).map(p => check(p._1, p._2)).contains(true) ||
-            getBooleanNames.map(n => getBooleanOfProperty(n) != getBooleanOfName(n)).contains(true) ||
-            getNumberNames.map(n => getNumberOfProperty(n) != getNumberOfName(n)).contains(true)
+            getProperty("firstTrigger") != firstTrigger.name ||
+            getProperty("accelMultiplier") != Accel.multiplier.name ||
+            getProperty("processPriority") != processPriority.name ||
+            isChangedBoolean || isChangedNumber
         }
         catch {
-            case e: FileNotFoundException => {
-                logger.debug("First Write")
-                true
-            }
-            case e: Exception => {
-                logger.warn(e.toString())
-                true
-            }
+            case e: NoSuchElementException => logger.debug(s"Not found: ${e.getMessage}"); true
+            case _: FileNotFoundException => logger.debug("First write"); true
+            case e: Exception => logger.warn(e.toString()); true
         }
     }
     
-    private def getNumberNames: Array[String] = {
+    private val NumberNames: Array[String] = {
         Array("pollTimeout", "scrollLocktime", 
-              "verticalAccel", "verticalThreshold",
-              "horizontalAccel", "horizontalThreshold",
+              "verticalThreshold", "horizontalThreshold",
               "wheelDelta", "vWheelMove", "hWheelMove")
     }
     
-    private def getBooleanNames: Array[String] = {
+    private val BooleanNames: Array[String] = {
         Array("realWheelMode", "cursorChange",
               "horizontalScroll", "reverseScroll",
-              "quickFirst", "quickTurn")
+              "quickFirst", "quickTurn",
+              "accelTable", "customAccelTable")
     }
     
     private def setNumberOfName(name: String, n: Int): Unit = {
@@ -831,10 +947,8 @@ object Context {
         name match {
             case "pollTimeout" => pollTimeout = n
             case "scrollLocktime" => Scroll.locktime = n
-            case "verticalAccel" => Vertical.accel = n
-            case "verticalThreshold" => Vertical.threshold = n
-            case "horizontalAccel" => Horizontal.accel = n
-            case "horizontalThreshold" => Horizontal.threshold = n
+            case "verticalThreshold" => Threshold.vertical = n
+            case "horizontalThreshold" => Threshold.horizontal = n
             case "wheelDelta" => RealWheel.wheelDelta = n
             case "vWheelMove" => RealWheel.vWheelMove = n
             case "hWheelMove" => RealWheel.hWheelMove = n
@@ -844,10 +958,8 @@ object Context {
     private def getNumberOfName(name: String): Int = name match {
         case "pollTimeout" => pollTimeout
         case "scrollLocktime" => Scroll.locktime
-        case "verticalAccel" => Vertical.accel
-        case "verticalThreshold" => Vertical.threshold
-        case "horizontalAccel" => Horizontal.accel
-        case "horizontalThreshold" => Horizontal.threshold
+        case "verticalThreshold" => Threshold.vertical
+        case "horizontalThreshold" => Threshold.horizontal
         case "wheelDelta" => RealWheel.wheelDelta
         case "vWheelMove" => RealWheel.vWheelMove
         case "hWheelMove" => RealWheel.hWheelMove
@@ -862,6 +974,8 @@ object Context {
             case "reverseScroll" => Scroll.reverse = b
             case "quickFirst" => RealWheel.quickFirst = b
             case "quickTurn" => RealWheel.quickTurn = b
+            case "accelTable" => Accel.table = b
+            case "customAccelTable" => Accel.customTable = b
             case "passMode" => passMode = b
         }
     }
@@ -873,21 +987,25 @@ object Context {
         case "reverseScroll" => Scroll.reverse
         case "quickFirst" => RealWheel.quickFirst
         case "quickTurn" => RealWheel.quickTurn
+        case "accelTable" => Accel.table
+        case "customAccelTable" => Accel.customTable
         case "passMode" => passMode
     }
     
-    def storeProperties: Unit = {
-        if (!isChangedProperties) {
-            logger.debug("Not Changed Properties")
-            return
-        }
-        
-        try {            
-            prop.setProperty("firstTrigger", firstTrigger.name)
-            prop.setProperty("processPriority", processPriority.name)
+    def storeProperties: Unit = {        
+        try {
+            if (!isChangedProperties) {
+                logger.debug("Not changed properties")
+                return
+            }
             
-            getBooleanNames.foreach(n => prop.setProperty(n, getBooleanOfName(n).toString))
-            getNumberNames.foreach(n => prop.setProperty(n, getNumberOfName(n).toString))
+            setProperty("firstTrigger", firstTrigger.name)
+            setProperty("accelMultiplier", Accel.multiplier.name)
+            setProperty("processPriority", processPriority.name)
+            
+            BooleanNames.foreach(n => setProperty(n, getBooleanOfName(n).toString))
+            NumberNames.foreach(n => setProperty(n, getNumberOfName(n).toString))
+            
             prop.store(getPropertiesOutput, PROGRAM_NAME)
         }
         catch {
