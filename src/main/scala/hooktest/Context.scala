@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "0.8"
+    val PROGRAM_VERSION = "0.8.1"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -43,9 +43,13 @@ object Context {
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
     
     private object Accel {
+        // MouseWorks by Kensington (TD, M5, M6, M7, M8, M9)
+        // http://www.nanayojapan.co.jp/support/help/tmh00017.htm
+        
         val TD = Array(1, 2, 3, 5, 7, 10, 14, 20, 30, 43, 63, 91)
         
         abstract class Multiplier(val name: String, val dArray: Array[Double])
+        
         case class M5() extends Multiplier("M5", Array(1.0, 1.3, 1.7, 2.0, 2.4, 2.7, 3.1, 3.4, 3.8, 4.1, 4.5, 4.8))
         case class M6() extends Multiplier("M6", Array(1.2, 1.6, 2.0, 2.4, 2.8, 3.3, 3.7, 4.1, 4.5, 4.9, 5.4, 5.8))
         case class M7() extends Multiplier("M7", Array(1.4, 1.8, 2.3, 2.8, 3.3, 3.8, 4.3, 4.8, 5.3, 5.8, 6.3, 6.7))

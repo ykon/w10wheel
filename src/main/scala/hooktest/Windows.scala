@@ -158,12 +158,13 @@ object Windows {
     
     private def getNearestIndex(d: Int, sArray: Array[Int]): Int = {
         var prev: Int = 0
+        val ad = Math.abs(d)
         
         for ((n, i) <- sArray.zipWithIndex) {
-            if (n == d)
+            if (n == ad)
                 return i
-            else if (n > d)
-                return if (n - Math.abs(d) < Math.abs(prev - Math.abs(d))) i else i - 1
+            else if (n > ad)
+                return if (n - ad < Math.abs(prev - ad)) i else i - 1
             else
                 prev = n
         }
