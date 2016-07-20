@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.8.1
+        0.8.2
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-21: Version 0.8.2: Min JRE version(Launch4j)を1.8.0_101に引き上げ
         2016-07-20: Version 0.8.1: 修正: AccelTableが上りに適用されていない
         2016-07-19: Version 0.8.0: 追加: AccelTable / 廃止: verticalAccel, horizontalAccel
         2016-07-18: Version 0.7.5: 修正: 設定の再読み込みでメニューが二重に選択される
