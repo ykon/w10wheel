@@ -147,29 +147,24 @@ object Windows {
         hLastMove = null
     }
     
-    /*
-    private val moveT = Array(1, 2, 3, 5, 7, 10, 14, 20, 30, 43, 63, 91)
-    private val moveM5 = Array(1.0, 1.3, 1.7, 2.0, 2.4, 2.7, 3.1, 3.4, 3.8, 4.1, 4.5, 4.8)
-    private val moveM6 = Array(1.2, 1.6, 2.0, 2.4, 2.8, 3.3, 3.7, 4.1, 4.5, 4.9, 5.4, 5.8)
-    private val moveM7 = Array(1.4, 1.8, 2.3, 2.8, 3.3, 3.8, 4.3, 4.8, 5.3, 5.8, 6.3, 6.7)
-    private val moveM8 = Array(1.6, 2.1, 2.7, 3.2, 3.8, 4.4, 4.9, 5.5, 6.0, 6.6, 7.2, 7.7)
-    private val moveM9 = Array(1.8, 2.4, 3.0, 3.6, 4.3, 4.9, 5.5, 6.2, 6.8, 7.4, 8.1, 8.7)
-    */
+    import scala.annotation.tailrec
     
-    private def getNearestIndex(d: Int, sArray: Array[Int]): Int = {
-        var prev: Int = 0
+    // d == Not Zero
+    private def getNearestIndex(d: Int, thr: Array[Int]): Int = {
         val ad = Math.abs(d)
         
-        for ((n, i) <- sArray.zipWithIndex) {
+        @tailrec
+        def loop(i: Int): Int = {
+            val n = thr(i)
             if (n == ad)
-                return i
+                i
             else if (n > ad)
-                return if (n - ad < Math.abs(prev - ad)) i else i - 1
+                if (n - ad < Math.abs(thr(i - 1) - ad)) i else i - 1
             else
-                prev = n
+                if (i != thr.length - 1) loop(i + 1) else i
         }
         
-        sArray.length - 1
+        loop(0)
     }
     
     private def addAccel(d: Int): Int = {

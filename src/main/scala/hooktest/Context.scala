@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "0.8.2"
+    val PROGRAM_VERSION = "0.8.3"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -296,19 +296,19 @@ object Context {
         override def widgetSelected(e: SelectionEvent) { f(e) }
     }
     
-    private def resetTriggerMenuItems: Unit = {  
+    private def resetTriggerMenuItems {  
         triggerMenuMap.foreach { case (name, item) =>
-            item.setSelection(isTrigger(Mouse.getTrigger(name)))
+            item.setSelection(Mouse.getTrigger(name) == firstTrigger)
         }
     }
     
-    private def resetAccelMenuItems: Unit = {
+    private def resetAccelMenuItems {
         accelMenuMap.foreach { case (name, item) =>
-            item.setSelection(name == Accel.multiplier.name)    
+            item.setSelection(Accel.getMultiplier(name) == Accel.multiplier)
         }
     }
     
-    private def resetPriorityMenuItems: Unit = {        
+    private def resetPriorityMenuItems: Unit = {
         priorityMenuMap.foreach { case (name, item) =>
             item.setSelection(Windows.getPriority(name) == processPriority)
         }
@@ -762,14 +762,11 @@ object Context {
         resetMenuItem
     }
     
-    private def getPropertiesName =
-        s".$PROGRAM_NAME.properties"
-        
-    private def getUserDir =
-        System.getProperty("user.home")    
+    val PROP_NAME = s".$PROGRAM_NAME.properties" 
+    val USER_DIR = System.getProperty("user.home")  
         
     private def getPropertiesFile =
-        new File(getUserDir, getPropertiesName)
+        new File(USER_DIR, PROP_NAME)
     
     private def getPropertiesInput =
         new FileInputStream(getPropertiesFile)
@@ -777,43 +774,29 @@ object Context {
     private def getPropertiesOutput =
         new FileOutputStream(getPropertiesFile)
     
-    private def getProperty(name: String): String = {
-        val res = prop.getProperty(name)
-        if (res != null) res else throw new NoSuchElementException(name)
-    }
-    
-    private def setProperty(key: String, value: String) =
-        prop.setProperty(key, value)
-    
-    private def getNumberProperty(name: String): Int =
-        getProperty(name).toInt
-        
-    private def getBooleanProperty(name: String): Boolean =
-        getProperty(name).toBoolean
-    
     private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
         try {
-            val n = getNumberProperty(name)
+            val n = prop.getInt(name)
             if (n < low || n > up)
                 logger.warn(s"Number out of bounds: $name")
             else
                 setNumberOfName(name, n)
         }
         catch {
-            case _: NoSuchElementException => logger.debug(s"Not found: $name")
-            case _: scala.MatchError  => logger.warn(s"MatchError: $name")
+            case _: NoSuchElementException => logger.warn(s"Not found: $name")
+            case _: NumberFormatException => logger.warn(s"Parse error: $name")
+            case _: scala.MatchError  => logger.warn(s"Match error: $name")
         }
     }
     
     private def setBooleanOfProperty(name: String) {
         try {
-            val b = getBooleanProperty(name)
-            setBooleanOfName(name, b)
+            setBooleanOfName(name, prop.getBoolean(name))
         }
         catch {
-            case _: NoSuchElementException => logger.debug(s"Not found: $name")
-            case _: scala.MatchError => logger.warn(s"setBooleanOfProperty: $name")
-            case _: IllegalArgumentException => logger.warn(s"setBooleanOfProperty: $name")
+            case _: NoSuchElementException => logger.warn(s"Not found: $name")
+            case _: IllegalArgumentException => logger.warn(s"Parse error: $name")
+            case _: scala.MatchError => logger.warn(s"Match error: $name")
         }
     }
     
@@ -826,45 +809,57 @@ object Context {
     
     private def setTriggerOfProperty: Unit = {
         try {
-            setTrigger(getProperty("firstTrigger"))
+            setTrigger(prop.getString("firstTrigger"))
         }
         catch {
-            case _: NoSuchElementException => logger.debug(s"firstTrigger not found")
+            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}")
+            case e: scala.MatchError => logger.warn(s"Match error: ${e.getMessage}") 
         }
     }
     
     private def setCustomAccelOfProperty {
-        val cAT = prop.getProperty("customAccelThreshold")
-        val cAM = prop.getProperty("customAccelMultiplier")
-        
-        if (cAT != null && cAM != null) {
-            logger.debug(s"customAccelThreshold: $cAT")
-            logger.debug(s"customAccelMultiplier: $cAM") 
-            
-            def split(s: String) = s.trim.split(",").filter(!_.isEmpty())
-            Accel.customThreshold = split(cAT).map(s => s.trim.toInt)
-            Accel.customMultiplier = split(cAM).map(s => s.trim.toDouble)
-            Accel.customDisabled = false
+        try {
+            val cat = prop.getIntArray("customAccelThreshold")
+            val cam = prop.getDoubleArray("customAccelMultiplier")
+
+            if (cat.length != 0 && cat.length == cam.length) {
+                logger.debug(s"customAccelThreshold: ${cat.toList}")
+                logger.debug(s"customAccelMultiplier: ${cam.toList}") 
+                
+                Accel.customThreshold = cat
+                Accel.customMultiplier = cam
+                Accel.customDisabled = false
+            }
         }
-        else
-            Accel.customDisabled = true
+        catch {
+            case e: NoSuchElementException => logger.debug(s"Not found: ${e.getMessage}")
+            case e: NumberFormatException => logger.warn(s"Parse error: ${e.getMessage}")
+        }
     }
     
     private def setAccelOfProperty: Unit = {
         try {
-            setAccelMultiplier(getProperty("accelMultiplier"))
+            setAccelMultiplier(prop.getString("accelMultiplier"))
         }
         catch {
-            case _: NoSuchElementException => logger.debug("accelMultiplier not found")
+            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}")
+            case e: scala.MatchError => logger.warn(s"Match error: ${e.getMessage}")
         }
     }
         
     private def setPriorityOfProperty: Unit = {
         try {
-            setPriority(getProperty("processPriority"))
+            setPriority(prop.getString("processPriority"))
         }
         catch {
-            case _: NoSuchElementException => setDefaultPriority
+            case e: NoSuchElementException => {
+                logger.warn(s"Not found: ${e.getMessage}")
+                setDefaultPriority
+            }
+            case e: scala.MatchError => {
+                logger.warn(s"Match error: ${e.getMessage}")
+                setDefaultPriority
+            }
         }
     }
     
@@ -873,13 +868,73 @@ object Context {
         Windows.setPriority(processPriority)
     }
     
-    private val prop = new Properties
+    private class SProperties extends Properties {
+        // http://stackoverflow.com/questions/17011108/how-can-i-write-java-properties-in-a-defined-order
+        override def keys(): java.util.Enumeration[Object] = synchronized {
+            java.util.Collections.enumeration(new java.util.TreeSet[Object](super.keySet))
+        }
+        
+        override def load(inStream: java.io.InputStream) = synchronized {
+            super.load(inStream)
+            inStream.close
+        }
+        
+        override def load(reader: java.io.Reader) = synchronized {
+            super.load(reader)
+            reader.close
+        }
+        
+        def getPropertyE(key: String): String = synchronized {
+            val res = super.getProperty(key)
+            if (res != null) res else throw new NoSuchElementException(key)
+        }
+        
+        def getString(key: String) = synchronized {
+            getPropertyE(key)
+        }
+        
+        def getInt(key: String) = synchronized {
+            getString(key).toInt
+        }
+        
+        def getBoolean(key: String) = synchronized {
+            getString(key).toBoolean
+        }
+        
+        def getArray(key: String): Array[String] = synchronized {
+            getString(key).split(",").map(_.trim).filter(!_.isEmpty)
+        }
+        
+        def getIntArray(key: String): Array[Int] = synchronized {
+            getArray(key).map(_.toInt)
+        }
+        
+        def getDoubleArray(key: String): Array[Double] = synchronized {
+            getArray(key).map(_.toDouble)
+        }
+        
+        def store(out: java.io.OutputStream) = synchronized {
+            super.store(out, null)
+        }
+        
+        def store(writer: java.io.Writer) = synchronized {
+            super.store(writer, null)
+        }
+        
+        def setInt(key: String, n: Int) = synchronized {
+            super.setProperty(key, n.toString)
+        }
+        
+        def setBoolean(key: String, b: Boolean) = synchronized {
+            super.setProperty(key, b.toString)
+        }
+    }
+    
+    private val prop = new SProperties
     
     def loadProperties = {
-        var input: FileInputStream = null
         try {
-            input = getPropertiesInput
-            prop.load(input)
+            prop.load(getPropertiesInput)
             
             setTriggerOfProperty
             setAccelOfProperty
@@ -902,33 +957,29 @@ object Context {
                 logger.debug("Properties file not found")
                 setDefaultPriority                
             }
-            case e: Exception => logger.warn(s"loadProperties: ${e.toString}")
-        }
-        finally {
-            if (input != null)
-                input.close()
+            case e: Exception => logger.warn(s"load: ${e.toString}")
         }
     }
     
     private def isChangedBoolean =
-        BooleanNames.map(n => getBooleanProperty(n) != getBooleanOfName(n)).contains(true)
+        BooleanNames.map(n => prop.getBoolean(n) != getBooleanOfName(n)).contains(true)
         
     private def isChangedNumber =
-        NumberNames.map(n => getNumberProperty(n) != getNumberOfName(n)).contains(true)
+        NumberNames.map(n => prop.getInt(n) != getNumberOfName(n)).contains(true)
     
     private def isChangedProperties: Boolean = {
         try {
             prop.load(getPropertiesInput)
             
-            getProperty("firstTrigger") != firstTrigger.name ||
-            getProperty("accelMultiplier") != Accel.multiplier.name ||
-            getProperty("processPriority") != processPriority.name ||
+            prop.getString("firstTrigger") != firstTrigger.name ||
+            prop.getString("accelMultiplier") != Accel.multiplier.name ||
+            prop.getString("processPriority") != processPriority.name ||
             isChangedBoolean || isChangedNumber
         }
         catch {
-            case e: NoSuchElementException => logger.debug(s"Not found: ${e.getMessage}"); true
-            case _: FileNotFoundException => logger.debug("First write"); true
-            case e: Exception => logger.warn(e.toString()); true
+            case _: FileNotFoundException => logger.debug("First write properties"); true
+            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}"); true
+            case e: Exception => logger.warn(s"isChanged: ${e.toString}"); true
         }
     }
     
@@ -1003,17 +1054,17 @@ object Context {
                 return
             }
             
-            setProperty("firstTrigger", firstTrigger.name)
-            setProperty("accelMultiplier", Accel.multiplier.name)
-            setProperty("processPriority", processPriority.name)
+            prop.setProperty("firstTrigger", firstTrigger.name)
+            prop.setProperty("accelMultiplier", Accel.multiplier.name)
+            prop.setProperty("processPriority", processPriority.name)
             
-            BooleanNames.foreach(n => setProperty(n, getBooleanOfName(n).toString))
-            NumberNames.foreach(n => setProperty(n, getNumberOfName(n).toString))
+            BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
+            NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))
             
-            prop.store(getPropertiesOutput, PROGRAM_NAME)
+            prop.store(getPropertiesOutput)
         }
         catch {
-            case e: Exception => logger.warn(e.toString())
+            case e: Exception => logger.warn(s"store: ${e.toString}")
         }
     }
 }
