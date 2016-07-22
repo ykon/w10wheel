@@ -369,7 +369,7 @@ object Context {
         val tMenu = new Menu(systemShell, SWT.DROP_DOWN)
         def add(text: String) = createTriggerMenuItem(tMenu, text)
 
-        add("LRTrigger (Left <<-->> Right)")
+        add("LR (Left <<-->> Right)")
         add("Left (Left -->> Right)")
         add("Right (Right -->> Left)")
         add("Middle")

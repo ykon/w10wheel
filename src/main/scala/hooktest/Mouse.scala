@@ -72,7 +72,7 @@ object Mouse {
     }
     
     def getTrigger(s: String): Trigger = s match {
-        case "LRTrigger" => LRTrigger()
+        case "LR" | "LRTrigger" => LRTrigger()
         case "Left" | "LeftTrigger" => LeftTrigger()
         case "Right" | "RightTrigger" => RightTrigger()
         case "Middle" | "MiddleTrigger" => MiddleTrigger()

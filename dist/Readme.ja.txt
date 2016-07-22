@@ -38,16 +38,19 @@ URL:
         Java 8 のシステム要件項目 Windows を参照
         https://www.java.com/ja/download/help/sysreq.xml
         
+        最新の Java 8 をインストールしてください。
+        http://java.com/ja/
+        
         Java の環境で動いてはいますが JNA (Java Native Access) で
         Windows API を使っているため、Mac や Linux では動作しません。
         
-        PostMessage ではなく SendInput でホイールメッセージを送っているため、
-        Windows 10 以外の環境では WizMouse など
-        http://forest.watch.impress.co.jp/docs/serial/okiniiri/587890.html
-        非アクティブなウィンドウをスクロール可能にするソフトが必要です。
+        Windows 7, 8.1:
+                WizMouse など、非アクティブウィンドウをスクロール可能にするソフトが必要です。
+                http://forest.watch.impress.co.jp/docs/serial/okiniiri/587890.html
         
-        Windows 10 ではオプションを有効にしてください。
-        http://www.lifehacker.jp/2015/09/150909_window_scrolling.html
+        Windows 10:
+                オプションを有効にしてください。
+                http://www.lifehacker.jp/2015/09/150909_window_scrolling.html
         
 互換性:
         Logitech(ロジクール) の SetPoint は問題ありません。
@@ -87,12 +90,15 @@ URL:
         Middle, X1, X2 のトリガーでは Shift か Ctrl か Alt の
         キーを押しながらトリガーを押すとミドル(中)クリックを送ります。
         
+        *Dragのトリガーではドラッグしている間だけスクロールします。
+        スクロールモードに固定されません。
+        
         終了するには、タスクトレイのアイコンをダブルクリックか
         右クリックメニューから Exit を選択してください。
         
 メニュー項目:
         Trigger: トリガーを変更 (設定項目を参照)
-        Accel Table: 加速を有効にするか、どのテーブルを使うか #1.0は1.0倍を表す
+        Accel Table: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
         Priority: プロセスの優先度を変更
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
@@ -106,14 +112,14 @@ URL:
         
 設定項目:
         firstTrigger: (default: LRTrigger)
-                LRTrigger:
-                        左から右か、右から左を押すとトリガーになります。 # 同時押し
+                LRTrigger: # 同時押し
+                        左から右か、右から左を押すとトリガーになります。
                         左、右クリックともに次のイベントを待つために遅延します。
-                LeftTrigger:
-                        左から右を押すとトリガーになります。 # 同時押し
+                LeftTrigger: # 同時押し
+                        左から右を押すとトリガーになります。
                         右からはトリガーになりません、そのため右クリックの遅延を解消できます。
-                RightTrigger:
-                        右から左を押すとトリガーになります。 # 同時押し
+                RightTrigger: # 同時押し
+                        右から左を押すとトリガーになります。
                         左からはトリガーになりません、そのため左クリックの遅延を解消できます。
                 MiddleTrigger:
                         ミドル(中)を押すとトリガーになります。
@@ -121,19 +127,19 @@ URL:
                         X1を押すとトリガーになります。
                 X2Trigger:
                         X2を押すとトリガーになります。
-                LeftDragTrigger:
+                LeftDragTrigger: # 固定なし
                         左ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すと左クリックを送ります。
-                RightDragTrigger:
+                RightDragTrigger: # 固定なし
                         右ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すと右クリックを送ります。
-                MiddleDragTrigger:
+                MiddleDragTrigger: # 固定なし
                         ミドル(中)ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すとミドル(中)クリックを送ります。
-                X1DragTrigger:
+                X1DragTrigger: # 固定なし
                         X1ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すとX1クリックを送ります。
-                X2DragTrigger:
+                X2DragTrigger: # 固定なし
                         X2ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すとX2クリックを送ります。
         
@@ -162,6 +168,7 @@ URL:
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (default: false)
                 スクロールの方向を逆にする
+                
         wheelDelta: 10-500 (default: 120) # RealWheelMode
                 RealWheelModeでの一回分のホイール値
                 通常のマウスのホイール値は120です。
@@ -176,6 +183,7 @@ URL:
         quickTurn: bool (default: false)  # RealWheelMode
                 折り返しの反応を速くするか
                 移動量に関係なくホイールを送ります。
+                
         accelTable: bool (default: false) # AccelTable
                 AccelTableを有効にするか
         customAccelTable: bool (default: false) # AccelTable
@@ -194,21 +202,23 @@ URL:
         Library.txt を参照
         
 アイコン:
-        こちらのジェネレーターで作りました。
+        Icon Generator: こちらで作りました。
         http://icon-generator.net/
 
 .exe:
-        jarファイルのラッパーはこちらです。
+        Launch4j: exe wrapper はこちらを使っています。
         http://launch4j.sourceforge.net/
 
 連絡:
-        使っていて何か問題が見つかったら、
+        使用していて、何か問題が見つかったら、
         2ch の該当スレッドに書き込んでください。
-        GitHub からも連絡する方法があると思います。
-        # まだ GitHub に慣れていないため連絡が遅くなるかもしれません。
+        http://echo.2ch.net/test/read.cgi/hard/1468152050/
+        
+        GitHub から連絡する場合は Issues などにどうぞ。
+        メールを送ってきても OK ですが、答えられるとは限りません。
         
 製作者:
-        Yuki Ono
+        Yuki Ono <ykon0x1@gmail.com>
         
 著作権:
         Copyright (c) 2016 Yuki Ono
