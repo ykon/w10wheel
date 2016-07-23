@@ -134,10 +134,19 @@ object Mouse {
     
     
     def sameEvent(me1: MouseEvent, me2: MouseEvent) = {
-        if (me1 != null && me2 != null)
-            me1.getClass == me2.getClass
-        else
-            false
+        (me1, me2) match {
+            case (LeftDown(_), LeftDown(_)) => true
+            case (LeftUp(_), LeftUp(_)) => true
+            case (RightDown(_), RightDown(_)) => true
+            case (RightUp(_), RightUp(_)) => true
+            case (MiddleDown(_), MiddleDown(_)) => true
+            case (MiddleUp(_), MiddleUp(_)) => true
+            case (X1Down(_), X1Down(_)) => true
+            case (X1Up(_), X1Up(_)) => true
+            case (X2Down(_), X2Down(_)) => true
+            case (X2Up(_), X2Up(_)) => true
+            case _ => false
+        }
     }
     
     def isDownEvent(me: MouseEvent) = me match {

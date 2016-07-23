@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.8.3
+        0.9
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-23: Version 0.9.0: スレッド周辺とイベント受け渡しの改良
         2016-07-21: Version 0.8.3: 設定ファイル周辺の改良 / AccelTableのループ最適化
         2016-07-20: Version 0.8.2: Min JRE version(Launch4j)を1.8.0_101に引き上げ
         2016-07-20: Version 0.8.1: 修正: AccelTableが上りに適用されていない
@@ -41,9 +42,6 @@ URL:
         最新の Java 8 をインストールしてください。
         http://java.com/ja/
         
-        Java の環境で動いてはいますが JNA (Java Native Access) で
-        Windows API を使っているため、Mac や Linux では動作しません。
-        
         Windows 7, 8.1:
                 WizMouse など、非アクティブウィンドウをスクロール可能にするソフトが必要です。
                 http://forest.watch.impress.co.jp/docs/serial/okiniiri/587890.html
@@ -51,6 +49,9 @@ URL:
         Windows 10:
                 オプションを有効にしてください。
                 http://www.lifehacker.jp/2015/09/150909_window_scrolling.html
+        
+        Java の環境で動いてはいますが JNA (Java Native Access) で
+        Windows API を使っているため、Mac や Linux では動作しません。
         
 互換性:
         Logitech(ロジクール) の SetPoint は問題ありません。
@@ -73,7 +74,7 @@ URL:
         # 他に何か方法があったら教えてください。
         
 使用方法:
-        W10Wheel.exe を実行してください、これは単なる .jar のラッパーになっています。
+        W10Wheel.exe を実行してください。
         タスクトレイに exe ファイルと同様のアイコンが発生するはずです。
         こちらから右クリックメニューで設定を変更できます。
         詳しい方は、設定ファイル (.W10Wheel.properties) を直接編集してください。
@@ -202,11 +203,11 @@ URL:
         Library.txt を参照
         
 アイコン:
-        Icon Generator: こちらで作りました。
+        こちらのジェネレーターで作りました。
         http://icon-generator.net/
 
 .exe:
-        Launch4j: exe wrapper はこちらを使っています。
+        exe wrapper はこちらを使っています。
         http://launch4j.sourceforge.net/
 
 連絡:

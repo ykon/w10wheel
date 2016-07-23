@@ -5,8 +5,8 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import scala.concurrent._
-import ExecutionContext.Implicits.global
+//import scala.concurrent._
+//import ExecutionContext.Implicits.global
 
 import java.util.concurrent.ArrayBlockingQueue
 
@@ -50,14 +50,17 @@ object Windows {
     
     private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
     
-    private def inputSender = Future {
-        while (true) {
-            val msgs = inputQueue.take()
-            u32.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
+    private val senderThread = new Thread(new Runnable {
+        override def run {
+            while (true) {
+                val msgs = inputQueue.take()
+                u32.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
+            }
         }
-    }
+    })
     
-    inputSender // start
+    senderThread.setDaemon(true)
+    senderThread.start
     
     def unhook =
         u32.UnhookWindowsHookEx(hhk)
@@ -267,7 +270,7 @@ object Windows {
         }
     }
     
-    def createClick(mc: MouseClick, extra: Int) = {
+    private def createClick(mc: MouseClick, extra: Int) = {
         val input = createInputArray(2)
         
         def set(mouseData: Int, down: Int, up: Int) {
@@ -295,12 +298,8 @@ object Windows {
         //ctx.setSkip(me, true)
         
         me match {
-            case LeftDown(info) => {
-                sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, ext)
-            }
-            case RightDown(info) => {
-                sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, ext)
-            }
+            case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, ext)
+            case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, ext)
         }
     }
     

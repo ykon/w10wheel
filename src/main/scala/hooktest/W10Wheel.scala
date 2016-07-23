@@ -97,6 +97,7 @@ object W10Wheel {
     private def processExit = {
         logger.debug("unhook and exit")
         Windows.unhook
+        
         ctx.storeProperties
         PreventMultiInstance.unlock
     }

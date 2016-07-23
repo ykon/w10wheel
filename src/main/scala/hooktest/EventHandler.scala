@@ -5,9 +5,10 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import scala.concurrent._
-import scala.collection.Iterator
-import ExecutionContext.Implicits.global
+//import scala.concurrent._
+//import scala.collection.Iterator
+//import ExecutionContext.Iplicits.global
+import scala.annotation.tailrec
 
 import com.sun.jna.platform.win32.WinDef.LRESULT
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
@@ -109,11 +110,35 @@ object EventHandler {
         else
             None
     }
+    
+    private def retryOffer(me: MouseEvent): Boolean = {
+        @tailrec
+        def loop(b: Boolean, i: Int): Boolean = {
+            if (b) {
+                logger.debug(s"retryOffer: $i")
+                true
+            }
+            else if (i == 0) {
+                logger.debug("retryOffer failed")
+                false
+            }
+            else
+                loop(EventWaiter.offer(me), i - 1)
+        }
+        
+        loop(false, 3)
+    }
 
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
-        if (EventWaiter.offer(me)) {
-            logger.debug(s"success to offer: ${me.name}")
-            suppress
+        if (EventWaiter.isWaiting) {
+            if (retryOffer(me)) {
+                logger.debug(s"success to offer: ${me.name}")
+                suppress
+            }
+            else {
+                logger.debug(s"fail to offer: ${me.name}")
+                None
+            }
         }
         else
             None
@@ -134,8 +159,8 @@ object EventHandler {
         val resent = ctx.LastFlags.isDownResent(up)
         
         if (resent) {
-            // waiter thread timing issue
             logger.debug(s"forced to resend: ${up.name}")
+            // waiter thread timing issue
             Windows.resendUp(up)
             suppress
         }
@@ -262,8 +287,6 @@ object EventHandler {
         cs.flatMap(_.apply(me)).head
     */
     
-    import scala.annotation.tailrec
-    
     @tailrec
     private def getResultL(lcs: LCheckers, me: MouseEvent): Option[LRESULT] = lcs match {
         case f :: fs => {
@@ -281,11 +304,9 @@ object EventHandler {
     private def branchDragDown(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isDragTrigger) {
             logger.debug(s"branch drag down: ${me.name}")
-            //val cs: Checkers = Stream(
             val lcs: LCheckers = List(
                     passNotDragTrigger, startScrollDrag)
                     
-            //getResultBranch(cs, me)
             getResultL(lcs, me)
         }
         else
@@ -295,11 +316,9 @@ object EventHandler {
     private def branchDragUp(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isDragTrigger) {
             logger.debug(s"branch drag up: ${me.name}")
-            //val cs: Checkers = Stream(
             val lcs: LCheckers = List(
                     passNotDragTrigger, exitAndResendDrag)
                         
-            //getResultBranch(cs, me)
             getResultL(lcs, me)
         }
         else
@@ -307,8 +326,6 @@ object EventHandler {
     }
 
     private def lrDown(me: MouseEvent): LRESULT = {
-        //val start = System.nanoTime()
-        //val cs: Checkers = Stream(
         val lcs: LCheckers = List( 
                 skipResendEvent,
                 checkSameLastEvent,
@@ -320,15 +337,10 @@ object EventHandler {
                 checkTriggerWaitStart,
                 endNotTrigger)
         
-        //val res = getResult(cs, me)
-        val res = getResultL(lcs, me).get
-        //logger.debug(s"lrDown: ${(System.nanoTime() - start) / 1000} us")
-        res
+        getResultL(lcs, me).get
     }
     
     private def lrUp(me: MouseEvent): LRESULT = {
-        //val start = System.nanoTime
-        //val cs: Checkers = Stream(
         val lcs: LCheckers = List(
                 skipResendEvent,
                 skipFirstUpOrSingle,
@@ -342,37 +354,8 @@ object EventHandler {
                 checkDownSuppressed,
                 endUnknownEvent)
                 
-        //val res = getResult(cs, me)
-        val res = getResultL(lcs, me).get
-        //logger.debug(s"lrUp: ${(System.nanoTime() - start) / 1000} us")
-        res
+        getResultL(lcs, me).get
     }
-    
-    /*
-    private def lrOnlyDown(me: MouseEvent): LRESULT = {
-        val cs: Checkers = Stream(
-                skipResendEvent,
-                checkSameLastEvent,
-                passNotTriggerLROnly,
-                startScrollLROnly)
-        
-        getResult(me, cs)
-    }
-    
-    private def lrOnlyUp(me: MouseEvent): LRESULT = {
-        val cs: Checkers = Stream(
-                skipResendEvent,
-                skipFirstUpOrSingle,
-                checkSameLastEvent,
-                passNotTriggerLROnly,
-                exitAndResendLROnly)
-                
-        getResult(me, cs)
-    }
-    */
-    
-    //@volatile private var lrDownFunc: (MouseEvent => LRESULT) = null
-    //@volatile private var lrUpFunc: (MouseEvent => LRESULT) = null
     
     def leftDown(info: HookInfo): LRESULT = {
         //logger.debug("leftDown")
@@ -395,7 +378,6 @@ object EventHandler {
     }
     
     private def singleDown(me: MouseEvent): LRESULT = {
-        //val cs: Checkers = Stream(
         val lcs: LCheckers = List(
                 skipResendEvent,
                 checkSameLastEvent,
@@ -407,12 +389,10 @@ object EventHandler {
                 checkTriggerScrollStart,
                 endIllegalState)
         
-        //getResult(cs, me)
         getResultL(lcs, me).get
     }
     
     private def singleUp(me: MouseEvent): LRESULT = {
-        //val cs: Checkers = Stream(
         val lcs: LCheckers = List(
                 skipResendEvent,
                 skipFirstUpOrLR,
@@ -423,7 +403,6 @@ object EventHandler {
                 checkDownSuppressed,
                 endIllegalState)
                 
-        //getResult(cs, me)
         getResultL(lcs, me).get
     }
     
@@ -464,8 +443,8 @@ object EventHandler {
             Windows.sendWheel(info.pt)
             suppress.get
         }
-        else if (EventWaiter.offer(Move(info))) {
-            logger.debug("success to offer: Move")  
+        else if (EventWaiter.isWaiting && EventWaiter.offer(Move(info))) {
+            logger.debug("success to offer: Move")
             suppress.get
         }
         else
