@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        0.9
+        1.0
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-25: Version 1.0.0: DraggedLockの追加、再送イベントの改良
         2016-07-23: Version 0.9.0: スレッド周辺とイベント受け渡しの改良
         2016-07-21: Version 0.8.3: 設定ファイル周辺の改良 / AccelTableのループ最適化
         2016-07-20: Version 0.8.2: Min JRE version(Launch4j)を1.8.0_101に引き上げ
@@ -169,6 +170,9 @@ URL:
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (default: false)
                 スクロールの方向を逆にする
+                
+        draggedLock: bool (default: false) # *DragTrigger
+                *DragTriggerでドラッグ後、スクロールモードに固定します。
                 
         wheelDelta: 10-500 (default: 120) # RealWheelMode
                 RealWheelModeでの一回分のホイール値

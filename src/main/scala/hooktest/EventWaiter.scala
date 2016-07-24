@@ -9,7 +9,6 @@ package hooktest
 //import ExecutionContext.Implicits.global
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 

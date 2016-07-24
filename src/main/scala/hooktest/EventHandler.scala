@@ -18,6 +18,7 @@ object EventHandler {
     private val logger = ctx.logger
     
     private var lastEvent: MouseEvent = null
+    private var lastResendEvent: MouseEvent = null
     
     private var __callNextHook: () => LRESULT = null
     
@@ -31,6 +32,7 @@ object EventHandler {
         //if (ctx.checkSkip(me)) {
         if (Windows.isResendEvent(me)) {
             logger.debug(s"skip resend event: ${me.name}")
+            lastResendEvent = me
             callNextHook
         }
         else
@@ -159,10 +161,15 @@ object EventHandler {
         val resent = ctx.LastFlags.isDownResent(up)
         
         if (resent) {
-            logger.debug(s"forced to resend: ${up.name}")
-            // waiter thread timing issue
-            Windows.resendUp(up)
-            suppress
+            if (up.sameButton(lastResendEvent)) {
+                logger.debug(s"pass (checkDownResent): ${up.name}")
+                callNextHook
+            }
+            else {
+                logger.debug(s"resend (checkDownResent): ${up.name}")
+                Windows.resendUp(up)
+                suppress
+            }
         }
         else
             None
@@ -216,6 +223,15 @@ object EventHandler {
         dragged = false
             
         suppress
+    }
+    
+    private def continueScrollDrag(me: MouseEvent): Option[LRESULT] = {
+        if (ctx.isDraggedLock && dragged) {
+            logger.debug(s"continueScrollDrag: ${me.name}")
+            suppress
+        }
+        else
+            None
     }
     
     private def exitAndResendDrag(me: MouseEvent): Option[LRESULT] = {
@@ -305,7 +321,9 @@ object EventHandler {
         if (ctx.isDragTrigger) {
             logger.debug(s"branch drag down: ${me.name}")
             val lcs: LCheckers = List(
-                    passNotDragTrigger, startScrollDrag)
+                    passNotDragTrigger,
+                    startScrollDrag
+            )
                     
             getResultL(lcs, me)
         }
@@ -317,7 +335,11 @@ object EventHandler {
         if (ctx.isDragTrigger) {
             logger.debug(s"branch drag up: ${me.name}")
             val lcs: LCheckers = List(
-                    passNotDragTrigger, exitAndResendDrag)
+                    checkDownSuppressed,
+                    passNotDragTrigger,
+                    continueScrollDrag,
+                    exitAndResendDrag
+            )
                         
             getResultL(lcs, me)
         }
@@ -326,12 +348,12 @@ object EventHandler {
     }
 
     private def lrDown(me: MouseEvent): LRESULT = {
-        val lcs: LCheckers = List( 
+        val lcs: LCheckers = List(
                 skipResendEvent,
                 checkSameLastEvent,
-                branchDragDown,
                 resetLastFlags,
                 checkExitScrollDown,
+                branchDragDown,
                 passSingleTrigger,
                 offerEventWaiter,
                 checkTriggerWaitStart,
@@ -349,8 +371,8 @@ object EventHandler {
                 passSingleTrigger,
                 checkExitScrollUp,
                 passNotTriggerLR,
-                offerEventWaiter,
                 checkDownResent,
+                offerEventWaiter,
                 checkDownSuppressed,
                 endUnknownEvent)
                 
@@ -381,9 +403,9 @@ object EventHandler {
         val lcs: LCheckers = List(
                 skipResendEvent,
                 checkSameLastEvent,
-                branchDragDown,
                 resetLastFlags,
                 checkExitScrollDown,
+                branchDragDown,
                 passNotTrigger,
                 checkKeySendMiddle,
                 checkTriggerScrollStart,

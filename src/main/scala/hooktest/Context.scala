@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "0.9"
+    val PROGRAM_VERSION = "1.0"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -119,6 +119,7 @@ object Context {
         @volatile var cursorChange = true // default
         @volatile var reverse = false // default
         @volatile var horizontal = true // default
+        @volatile var draggedLock = false // default
         
         def start(info: HookInfo) {
             if (RealWheel.mode)
@@ -158,6 +159,7 @@ object Context {
     def checkExitScroll(time: Int) = Scroll.checkExit(time)
     def isReverseScroll = Scroll.reverse 
     def isHorizontalScroll = Scroll.horizontal
+    def isDraggedLock = Scroll.draggedLock
     
     private object RealWheel {
         @volatile var mode = false // default
@@ -382,6 +384,9 @@ object Context {
         add("MiddleDrag")
         add("X1Drag")
         add("X2Drag")
+        addSeparator(tMenu)
+
+        createBoolMenuItem(tMenu, "draggedLock", "Dragged Lock", isDragTrigger)
         
         val item = new MenuItem(pMenu, SWT.CASCADE)
         item.setText("Trigger")
@@ -423,9 +428,7 @@ object Context {
         add("M9 (1.8 ... 8.7)")
         addSeparator(aMenu)
         
-        val vName = "customAccelTable"
-        createBoolMenuItem(aMenu, vName, "Custom Table")
-        boolMenuMap(vName).setEnabled(!Accel.customDisabled)
+        createBoolMenuItem(aMenu, "customAccelTable", "Custom Table", !Accel.customDisabled)
         
         val item = new MenuItem(pMenu, SWT.CASCADE)
         item.setText("Accel Table")
@@ -625,9 +628,10 @@ object Context {
         })
     }
     
-    private def createBoolMenuItem(menu: Menu, vName: String, mName: String) {
+    private def createBoolMenuItem(menu: Menu, vName: String, mName: String, enabled: Boolean = true) {
         val item = new MenuItem(menu, SWT.CHECK)
-        item.setText(mName) 
+        item.setText(mName)
+        item.setEnabled(enabled)
         item.addListener(SWT.Selection, makeSetBooleanEvent(vName))
         boolMenuMap(vName) = item
     }
@@ -804,6 +808,11 @@ object Context {
         val res = Mouse.getTrigger(s)
         logger.debug("setTrigger: " + res.name);
         firstTrigger = res
+        
+        val dlkey = "draggedLock"
+        if (boolMenuMap.contains(dlkey))
+            boolMenuMap(dlkey).setEnabled(res.isDrag)
+            
         //EventHandler.changeTrigger
     }
     
@@ -993,7 +1002,9 @@ object Context {
         Array("realWheelMode", "cursorChange",
               "horizontalScroll", "reverseScroll",
               "quickFirst", "quickTurn",
-              "accelTable", "customAccelTable")
+              "accelTable", "customAccelTable",
+              "draggedLock"
+        )
     }
     
     private def setNumberOfName(name: String, n: Int): Unit = {
@@ -1031,6 +1042,7 @@ object Context {
             case "quickTurn" => RealWheel.quickTurn = b
             case "accelTable" => Accel.table = b
             case "customAccelTable" => Accel.customTable = b
+            case "draggedLock" => Scroll.draggedLock = b
             case "passMode" => passMode = b
         }
     }
@@ -1044,6 +1056,7 @@ object Context {
         case "quickTurn" => RealWheel.quickTurn
         case "accelTable" => Accel.table
         case "customAccelTable" => Accel.customTable
+        case "draggedLock" => Scroll.draggedLock
         case "passMode" => passMode
     }
     
