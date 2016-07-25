@@ -254,8 +254,12 @@ object Windows {
     
     def sendWheel(pt: POINT) {
         val (sx, sy) = ctx.getScrollStartPoint
-        val dx = pt.x - sx
-        val dy = pt.y - sy
+        
+        val tx = pt.x - sx
+        val ty = pt.y - sy
+        
+        val dx = if (ctx.isSwapScroll) ty else tx  
+        val dy = if (ctx.isSwapScroll) tx else ty
         
         val spt = new POINT(sx, sy)
         

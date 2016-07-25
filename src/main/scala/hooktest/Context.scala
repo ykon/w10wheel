@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.0"
+    val PROGRAM_VERSION = "1.1"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -121,6 +121,9 @@ object Context {
         @volatile var horizontal = true // default
         @volatile var draggedLock = false // default
         
+        // Vertical <-> Horizontall
+        @volatile var swap = false // default 
+        
         def start(info: HookInfo) {
             if (RealWheel.mode)
                 Windows.startWheelCount
@@ -160,6 +163,7 @@ object Context {
     def isReverseScroll = Scroll.reverse 
     def isHorizontalScroll = Scroll.horizontal
     def isDraggedLock = Scroll.draggedLock
+    def isSwapScroll = Scroll.swap
     
     private object RealWheel {
         @volatile var mode = false // default
@@ -692,7 +696,11 @@ object Context {
     }
     
     private def createReverseScrollMenu(menu: Menu) = {
-        createBoolMenuItem(menu, "reverseScroll", "Reverse Scroll")
+        createBoolMenuItem(menu, "reverseScroll", "Reverse Scroll (Flip)")
+    }
+    
+    private def createSwapScrollMenu(menu: Menu) = {
+        createBoolMenuItem(menu, "swapScroll", "Swap Scroll (V.H)")
     }
     
     private def createPassModeMenu(menu: Menu) {
@@ -757,6 +765,7 @@ object Context {
         createCursorChangeMenu(menu)
         createHorizontalScrollMenu(menu)
         createReverseScrollMenu(menu)
+        createSwapScrollMenu(menu)
         createPassModeMenu(menu)
         addSeparator(menu)
         
@@ -1003,7 +1012,7 @@ object Context {
               "horizontalScroll", "reverseScroll",
               "quickFirst", "quickTurn",
               "accelTable", "customAccelTable",
-              "draggedLock"
+              "draggedLock", "swapScroll"
         )
     }
     
@@ -1043,6 +1052,7 @@ object Context {
             case "accelTable" => Accel.table = b
             case "customAccelTable" => Accel.customTable = b
             case "draggedLock" => Scroll.draggedLock = b
+            case "swapScroll" => Scroll.swap = b
             case "passMode" => passMode = b
         }
     }
@@ -1057,6 +1067,7 @@ object Context {
         case "accelTable" => Accel.table
         case "customAccelTable" => Accel.customTable
         case "draggedLock" => Scroll.draggedLock
+        case "swapScroll" => Scroll.swap
         case "passMode" => passMode
     }
     

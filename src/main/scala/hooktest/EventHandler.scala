@@ -67,10 +67,6 @@ object EventHandler {
         if (me.same(lastEvent)) {
             logger.warn(s"same last event: ${me.name}")
             callNextHook
-            
-            //logger.warn(me.toString())
-            //logger.warn(lastEvent.toString())
-            //suppress
         }
         else {
             lastEvent = me

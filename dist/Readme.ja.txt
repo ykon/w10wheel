@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        1.0
+        1.1
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-25: Version 1.1.0: SwapScrollの追加
         2016-07-25: Version 1.0.0: DraggedLockの追加、再送イベントの改良
         2016-07-23: Version 0.9.0: スレッド周辺とイベント受け渡しの改良
         2016-07-21: Version 0.8.3: 設定ファイル周辺の改良 / AccelTableのループ最適化
@@ -107,7 +108,8 @@ URL:
         Reload Properties: 設定ファイルを再読込
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
-        Reverse Scroll: スクロールの方向を逆にする
+        Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
+        Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
         Pass Mode: 全てのメッセージをそのまま通す # WheelBall の制御停止
         Info: バージョン番号を表示
         Exit: 終了
@@ -169,7 +171,9 @@ URL:
                 水辺スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (default: false)
-                スクロールの方向を逆にする
+                スクロールの方向を逆にする (反転する)
+        swapScroll: bool (default: false)
+                垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
                 
         draggedLock: bool (default: false) # *DragTrigger
                 *DragTriggerでドラッグ後、スクロールモードに固定します。
