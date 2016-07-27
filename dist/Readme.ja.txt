@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        1.1
+        1.2
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-07-26: Version 1.2.0: イベントの順序、同期の改良
         2016-07-25: Version 1.1.0: SwapScrollの追加
         2016-07-25: Version 1.0.0: DraggedLockの追加、再送イベントの改良
         2016-07-23: Version 0.9.0: スレッド周辺とイベント受け渡しの改良

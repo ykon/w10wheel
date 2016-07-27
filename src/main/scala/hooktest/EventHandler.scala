@@ -29,11 +29,19 @@ object EventHandler {
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
         
     private def skipResendEvent(me: MouseEvent): Option[LRESULT] = {
-        //if (ctx.checkSkip(me)) {
         if (Windows.isResendEvent(me)) {
-            logger.debug(s"skip resend event: ${me.name}")
-            lastResendEvent = me
-            callNextHook
+            (lastResendEvent, me) match {
+                case (LeftUp(_), LeftUp(_)) | (RightUp(_), RightUp(_)) => {
+                    logger.warn(s"re-resend event: ${me.name}")
+                    Windows.resendUp(me)
+                    suppress
+                }
+                case _ => {
+                    logger.debug(s"skip resend event: ${me.name}")
+                    lastResendEvent = me
+                    callNextHook       
+                }
+            }
         }
         else
             None
@@ -49,7 +57,7 @@ object EventHandler {
     }
     
     private def skipFirstUpOrLR(me: MouseEvent): Option[LRESULT] = {
-        if (lastEvent == null || !lastEvent.isSingle) {
+        if (lastEvent == null || lastEvent.isLR) {
             logger.debug(s"skip first Up or LR: ${me.name}")
             callNextHook
         }
@@ -109,6 +117,7 @@ object EventHandler {
             None
     }
     
+    /*
     private def retryOffer(me: MouseEvent): Boolean = {
         @tailrec
         def loop(b: Boolean, i: Int): Boolean = {
@@ -126,17 +135,12 @@ object EventHandler {
         
         loop(false, 3)
     }
+    */
 
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
-        if (EventWaiter.isWaiting) {
-            if (retryOffer(me)) {
-                logger.debug(s"success to offer: ${me.name}")
-                suppress
-            }
-            else {
-                logger.debug(s"fail to offer: ${me.name}")
-                None
-            }
+        if (EventWaiter.offer(me)) {
+            logger.debug(s"success to offer: ${me.name}")
+            suppress
         }
         else
             None
@@ -157,15 +161,9 @@ object EventHandler {
         val resent = ctx.LastFlags.isDownResent(up)
         
         if (resent) {
-            if (up.sameButton(lastResendEvent)) {
-                logger.debug(s"pass (checkDownResent): ${up.name}")
-                callNextHook
-            }
-            else {
-                logger.debug(s"resend (checkDownResent): ${up.name}")
-                Windows.resendUp(up)
-                suppress
-            }
+            logger.debug(s"resend up (checkDownResent): ${up.name}")
+            Windows.resendUp(up)
+            suppress
         }
         else
             None
@@ -461,7 +459,7 @@ object EventHandler {
             Windows.sendWheel(info.pt)
             suppress.get
         }
-        else if (EventWaiter.isWaiting && EventWaiter.offer(Move(info))) {
+        else if (EventWaiter.offer(Move(info))) {
             logger.debug("success to offer: Move")
             suppress.get
         }

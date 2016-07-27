@@ -14,6 +14,7 @@ trait MouseEvent {
     def isDown = Mouse.isDownEvent(this)
     def isUp = Mouse.isUpEvent(this)
     def isSingle = Mouse.isSingleEvent(this)
+    def isLR = Mouse.isLrEvent(this)
     def same(me2: MouseEvent) = Mouse.sameEvent(this, me2)
     def sameButton(me2: MouseEvent) = Mouse.sameButton(this, me2)
 }
@@ -100,6 +101,11 @@ object Mouse {
         case MiddleDown(_) | MiddleUp(_) => true
         case X1Down(_) | X1Up(_) => true
         case X2Down(_) | X2Up(_) => true
+        case _ => false
+    }
+    
+    def isLrEvent(me: MouseEvent) = me match {
+        case LeftDown(_) | LeftUp(_) | RightDown(_) | RightUp(_) => true
         case _ => false
     }
     

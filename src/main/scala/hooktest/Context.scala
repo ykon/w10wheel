@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.1"
+    val PROGRAM_VERSION = "1.2"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -241,6 +241,7 @@ object Context {
         def setResent(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = true
             case RightDown(_) => rdR = true
+            case _ => {}
         }
         
         def isDownResent(up: MouseEvent) = up match {
@@ -252,6 +253,7 @@ object Context {
             case LeftDown(_) => ldS = true 
             case RightDown(_) => rdS = true 
             case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = true
+            case _ => {}
         }
         
         def isDownSuppressed(up: MouseEvent) = up match {

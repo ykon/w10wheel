@@ -13,29 +13,48 @@ import java.util.concurrent.TimeUnit
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object EventWaiter {
-    private val logger = Context.logger
+    private val ctx = Context
+    private val logger = ctx.logger
     private val sync = new SynchronousQueue[MouseEvent](true)
-    @volatile private var waiting = false
+    @volatile private var waitingEvent: MouseEvent = null
     
-    def offer(me: MouseEvent) =
-        sync.offer(me)
+    private def setFlagsOffer(me: MouseEvent) {
+        me match {
+            case Move(_) | LeftUp(_) | RightUp(_) => ctx.LastFlags.setResent(waitingEvent)
+            case LeftDown(_) | RightDown(_) => {
+                ctx.LastFlags.setSuppressed(waitingEvent)
+                ctx.LastFlags.setSuppressed(me)
+            }
+            case _ => throw new IllegalStateException(me.name)
+        }
+    }
     
-    def isWaiting = waiting
+    private def isWaiting = waitingEvent != null
+    
+    def offer(me: MouseEvent): Boolean = {
+        if (isWaiting && sync.offer(me)) {
+            setFlagsOffer(me)
+            true
+        }
+        else
+            false
+    }
     
     private def fromTimeout(down: MouseEvent) {
-        Context.LastFlags.setResent(down)
+        ctx.LastFlags.setResent(down)
+        
         logger.debug(s"wait Trigger (${down.name} -->> Timeout): resend ${down.name}")
         Windows.resendDown(down)
     }
     
     private def fromMove(down: MouseEvent) {
-        Context.LastFlags.setResent(down)
+        //ctx.LastFlags.setResent(down)
         logger.debug(s"wait Trigger (${down.name} -->> Move): resend ${down.name}")
         Windows.resendDown(down)
     }
     
     private def fromUp(down: MouseEvent, up: MouseEvent) {
-        Context.LastFlags.setResent(down)
+        //ctx.LastFlags.setResent(down)
         
         def resendC(mc: MouseClick) = {
             logger.debug(s"wait Trigger (${down.name} -->> ${up.name}): resend ${mc.name}")
@@ -61,8 +80,8 @@ object EventWaiter {
     }
     
     private def fromDown(d1: MouseEvent, d2: MouseEvent) {
-        Context.LastFlags.setSuppressed(d1)
-        Context.LastFlags.setSuppressed(d2)
+        //ctx.LastFlags.setSuppressed(d1)
+        //ctx.LastFlags.setSuppressed(d2)
         
         logger.debug(s"wait Trigger (${d1.name} -->> ${d2.name}): start scroll mode")
         Context.startScrollMode(d2.info)
@@ -75,9 +94,9 @@ object EventWaiter {
             while (true) {
                 val down = waiterQueue.take
                 
-                logger.debug("EventWaiter: poll")
+                //logger.debug("EventWaiter: poll")
                 val res = sync.poll(Context.getPollTimeout, TimeUnit.MILLISECONDS)
-                waiting = false
+                waitingEvent = null
             
                 res match {
                     case null => fromTimeout(down)
@@ -97,7 +116,7 @@ object EventWaiter {
         if (!down.isDown)
             throw new IllegalArgumentException
         
-        waiting = true
+        waitingEvent = down
         waiterQueue.put(down)
     }
 }
