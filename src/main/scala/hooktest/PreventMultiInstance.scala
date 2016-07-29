@@ -17,34 +17,42 @@ object PreventMultiInstance {
     
     private val logger = Context.logger
     
-    private var channel: FileChannel = null
-    private var lock: FileLock = null
+    @volatile private var channel: FileChannel = null
+    @volatile private var lock: FileLock = null
+    
+    def isLocked: Boolean =
+        (lock != null)
     
     def tryLock: Boolean = {
         logger.debug("tryLock")
-        try {
-            if (lock != null)
-                throw new IllegalStateException()
         
+        if (isLocked)
+            throw new IllegalStateException()
+        
+        try {
             val file = new File(LOCK_FILE_DIR, LOCK_FILE_NAME)
             channel = new RandomAccessFile(file, "rw").getChannel()    
             lock = channel.tryLock
-            lock != null
+            
+            isLocked
         }
         catch {
-            case e: Exception => logger.warn(s"tryLock: $e")
-            false
+            case e: Exception => logger.warn(s"tryLock: $e"); false
         }
     }
     
     def unlock {
         logger.debug("unlock")
-        try {
-            if (lock == null)
-                throw new IllegalStateException()
-            
+        
+        if (!isLocked)
+            return
+                
+        try {            
             lock.release
             channel.close
+            
+            lock = null
+            channel = null
         }
         catch {
             case e: Exception => logger.warn(s"unlock: $e")

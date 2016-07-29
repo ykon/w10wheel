@@ -28,7 +28,7 @@ object EventHandler {
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
         
-    private def skipResendEvent(me: MouseEvent): Option[LRESULT] = {
+    private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
         if (Windows.isResendEvent(me)) {
             (lastResendEvent, me) match {
                 case (LeftUp(_), LeftUp(_)) | (RightUp(_), RightUp(_)) => {
@@ -42,6 +42,15 @@ object EventHandler {
                     callNextHook       
                 }
             }
+        }
+        else
+            None
+    }
+    
+    private def skipResendEventSingle(me: MouseEvent): Option[LRESULT] = {
+        if (Windows.isResendEvent(me)) {
+            logger.debug(s"skip resend event: ${me.name}")
+            callNextHook
         }
         else
             None
@@ -180,7 +189,7 @@ object EventHandler {
     }
     
     private def checkKeySendMiddle(me: MouseEvent): Option[LRESULT] = {
-        if (Windows.getAsyncShiftState || Windows.getAsyncCtrlState || Windows.getAsyncAltState) {
+        if (ctx.isSendMiddleClick && (Windows.getAsyncShiftState || Windows.getAsyncCtrlState || Windows.getAsyncAltState)) {
             logger.debug(s"send middle click")
             Windows.resendClick(MiddleClick(me.info))
             ctx.LastFlags.setSuppressed(me)
@@ -343,7 +352,7 @@ object EventHandler {
 
     private def lrDown(me: MouseEvent): LRESULT = {
         val lcs: LCheckers = List(
-                skipResendEvent,
+                skipResendEventLR,
                 checkSameLastEvent,
                 resetLastFlags,
                 checkExitScrollDown,
@@ -358,7 +367,7 @@ object EventHandler {
     
     private def lrUp(me: MouseEvent): LRESULT = {
         val lcs: LCheckers = List(
-                skipResendEvent,
+                skipResendEventLR,
                 skipFirstUpOrSingle,
                 checkSameLastEvent,
                 branchDragUp,
@@ -395,7 +404,7 @@ object EventHandler {
     
     private def singleDown(me: MouseEvent): LRESULT = {
         val lcs: LCheckers = List(
-                skipResendEvent,
+                skipResendEventSingle,
                 checkSameLastEvent,
                 resetLastFlags,
                 checkExitScrollDown,
@@ -410,7 +419,7 @@ object EventHandler {
     
     private def singleUp(me: MouseEvent): LRESULT = {
         val lcs: LCheckers = List(
-                skipResendEvent,
+                skipResendEventSingle,
                 skipFirstUpOrLR,
                 checkSameLastEvent,
                 branchDragUp,

@@ -11,6 +11,7 @@ package hooktest
 import java.util.concurrent.ArrayBlockingQueue
 
 import com.sun.jna.Pointer
+import com.sun.jna.WString
 import com.sun.jna.platform.win32._
 import com.sun.jna.platform.win32.BaseTSD.ULONG_PTR
 import com.sun.jna.platform.win32.WinDef._
@@ -30,7 +31,7 @@ object Windows {
     private var hhk: HHOOK = null
     
     def messageLoop: Unit = {
-        val msg = new MSG()
+        val msg = new MSG
         
         while (true) {
             u32.GetMessage(msg, null, 0, 0) match {
@@ -48,6 +49,38 @@ object Windows {
         }
     }
     
+    
+    private val WM_QUERYENDSESSION = 0x0011
+    //private val WS_MINIMIZE = 0x20000000
+    private val GWL_WNDPROC = -4
+    
+    private val shutdownThread = new Thread {
+        val windowProc = new WindowProc {
+            override def callback(hwnd: HWND, uMsg: Int, wParam: WPARAM, lParam: LPARAM): LRESULT = {
+                if (uMsg == WM_QUERYENDSESSION)
+                    W10Wheel.procExit
+                
+                u32.DefWindowProc(hwnd, uMsg, wParam, lParam)
+            }
+        }
+    
+        override def run {
+            val className = new WString(ctx.PROGRAM_NAME + "_Shutdown")
+         
+            val wx = new WNDCLASSEX
+            wx.lpszClassName = className
+            wx.lpfnWndProc = windowProc
+            
+            if (u32.RegisterClassEx(wx).intValue() != 0) {
+                val hwnd = u32.CreateWindowEx(0, className, null, 0, 0, 0, 0, 0, null, null, null, null)
+            
+                messageLoop
+            }
+        }
+    }
+    shutdownThread.setDaemon(true)
+    shutdownThread.start
+    
     private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
     
     private val senderThread = new Thread(new Runnable {
@@ -62,8 +95,12 @@ object Windows {
     senderThread.setDaemon(true)
     senderThread.start
     
-    def unhook =
-        u32.UnhookWindowsHookEx(hhk)
+    def unhook = {
+        if (hhk != null) {
+            u32.UnhookWindowsHookEx(hhk)
+            hhk = null
+        }
+    }
     
     def setHook(proc: LowLevelMouseProc) = {
         val hMod = Kernel32.INSTANCE.GetModuleHandle(null)

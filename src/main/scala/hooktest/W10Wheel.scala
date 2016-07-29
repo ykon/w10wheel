@@ -94,12 +94,16 @@ object W10Wheel {
         }
     }
     
-    private def processExit = {
-        logger.debug("unhook and exit")
-        Windows.unhook
+    def procExit = {
+        logger.debug("procExit")
         
+        Windows.unhook
         ctx.storeProperties
         PreventMultiInstance.unlock
+        
+        display.syncExec(new Runnable() {
+            override def run() = display.dispose
+        })
     }
     
     private def messageDoubleLaunch {
@@ -116,18 +120,22 @@ object W10Wheel {
         }
     }
     
+    private val shutdown = new Thread {
+        override def run {
+            logger.debug("Shutdown Hook");
+            procExit
+        }
+    }
+     
+    Runtime.getRuntime.addShutdownHook(shutdown);
+
     def main(args: Array[String]) {
         if (!PreventMultiInstance.tryLock) {
             messageDoubleLaunch
-            display.dispose()
             System.exit(0)
         }
         
         unhook.future.foreach(_ => {
-            processExit
-            display.syncExec(new Runnable() {
-                override def run() = display.dispose()
-            })
             System.exit(0)
         })
         

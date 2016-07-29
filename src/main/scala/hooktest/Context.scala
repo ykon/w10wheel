@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.2"
+    val PROGRAM_VERSION = "1.3"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -41,6 +41,10 @@ object Context {
     @volatile private var pollTimeout = 300 // default
     @volatile private var passMode = false
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
+    @volatile private var sendMiddleClick = false
+    
+    def isSendMiddleClick =
+        sendMiddleClick
     
     private object Accel {
         // MouseWorks by Kensington (TD, M5, M6, M7, M8, M9)
@@ -391,7 +395,8 @@ object Context {
         add("X1Drag")
         add("X2Drag")
         addSeparator(tMenu)
-
+        
+        createBoolMenuItem(tMenu, "sendMiddleClick", "Send MiddleClick", isSingleTrigger)
         createBoolMenuItem(tMenu, "draggedLock", "Dragged Lock", isDragTrigger)
         
         val item = new MenuItem(pMenu, SWT.CASCADE)
@@ -679,6 +684,14 @@ object Context {
         })        
     }
     
+    private def createSavePropertiesMenu(menu: Menu) {
+        val item = new MenuItem(menu, SWT.PUSH)
+        item.setText("Save Properties")
+        item.addListener(SWT.Selection, (e: Event) => {
+            storeProperties
+        })  
+    }
+    
     private def makeSetBooleanEvent(name: String) = {
         (e: Event) => {
             val item = e.widget.asInstanceOf[MenuItem]
@@ -762,6 +775,7 @@ object Context {
         addSeparator(menu)
         
         createReloadPropertiesMenu(menu)
+        createSavePropertiesMenu(menu)
         addSeparator(menu)
         
         createCursorChangeMenu(menu)
@@ -773,6 +787,8 @@ object Context {
         
         createInfoMenu(menu)
         createExitMenu(menu)
+        
+        //systemShell.h
         
         resetMenuItem
     }
@@ -815,15 +831,21 @@ object Context {
         }
     }
     
+    private def setEnabledMenu(menuMap: HashMap[String, MenuItem], key: String, enabled: Boolean) {
+         if (menuMap.contains(key))
+            menuMap(key).setEnabled(enabled)       
+    }
+    
     private def setTrigger(s: String): Unit = {
         val res = Mouse.getTrigger(s)
         logger.debug("setTrigger: " + res.name);
         firstTrigger = res
         
-        val dlkey = "draggedLock"
-        if (boolMenuMap.contains(dlkey))
-            boolMenuMap(dlkey).setEnabled(res.isDrag)
-            
+        val smc = "sendMiddleClick"
+        
+        setEnabledMenu(boolMenuMap, "sendMiddleClick", res.isSingle)
+        setEnabledMenu(boolMenuMap, "draggedLock", res.isDrag)
+        
         //EventHandler.changeTrigger
     }
     
@@ -935,10 +957,12 @@ object Context {
         
         def store(out: java.io.OutputStream) = synchronized {
             super.store(out, null)
+            out.close
         }
         
         def store(writer: java.io.Writer) = synchronized {
             super.store(writer, null)
+            writer.close
         }
         
         def setInt(key: String, n: Int) = synchronized {
@@ -951,8 +975,10 @@ object Context {
     }
     
     private val prop = new SProperties
+    private var loaded = false
     
     def loadProperties = {
+        loaded = true
         try {
             prop.load(getPropertiesInput)
             
@@ -997,7 +1023,7 @@ object Context {
             isChangedBoolean || isChangedNumber
         }
         catch {
-            case _: FileNotFoundException => logger.debug("First write properties"); true
+            case _: FileNotFoundException => logger.debug("First write"); true
             case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}"); true
             case e: Exception => logger.warn(s"isChanged: ${e.toString}"); true
         }
@@ -1014,7 +1040,8 @@ object Context {
               "horizontalScroll", "reverseScroll",
               "quickFirst", "quickTurn",
               "accelTable", "customAccelTable",
-              "draggedLock", "swapScroll"
+              "draggedLock", "swapScroll",
+              "sendMiddleClick"
         )
     }
     
@@ -1055,6 +1082,7 @@ object Context {
             case "customAccelTable" => Accel.customTable = b
             case "draggedLock" => Scroll.draggedLock = b
             case "swapScroll" => Scroll.swap = b
+            case "sendMiddleClick" => sendMiddleClick = b
             case "passMode" => passMode = b
         }
     }
@@ -1070,12 +1098,13 @@ object Context {
         case "customAccelTable" => Accel.customTable
         case "draggedLock" => Scroll.draggedLock
         case "swapScroll" => Scroll.swap
+        case "sendMiddleClick" => sendMiddleClick
         case "passMode" => passMode
     }
     
-    def storeProperties: Unit = {        
-        try {
-            if (!isChangedProperties) {
+    def storeProperties: Unit = {          
+        try {   
+            if (!loaded || !isChangedProperties) {
                 logger.debug("Not changed properties")
                 return
             }
