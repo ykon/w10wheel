@@ -5,25 +5,13 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import com.sun.jna.Pointer
-import com.sun.jna.platform.win32._
-import com.sun.jna.platform.win32.WinDef._
-import com.sun.jna.platform.win32.WinUser._
-
 import scala.concurrent._
 import ExecutionContext.Implicits.global
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
-
 import scala.collection.immutable.List
 
 // SWT
 import org.eclipse.swt.SWT
 import org.eclipse.swt.widgets._
-
-import win32ex.WinUserX._
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 // for swt.jar
 import javax.swing.UIManager
@@ -66,38 +54,11 @@ object W10Wheel {
     }
     
     val shell = new Shell(display)
-        
-    private val eventDispatcher = new LowLevelMouseProc() {
-        override def callback(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
-            val eh = EventHandler
-            val callNextHook = () => Windows.callNextHook(nCode, wParam, info)
-            eh.setCallNextHook(callNextHook)
-            
-            if (nCode < 0 || ctx.isPassMode)
-                return callNextHook()
-            
-            wParam.intValue() match {
-                case WM_MOUSEMOVE => eh.move(info)
-                case WM_LBUTTONDOWN => eh.leftDown(info)
-                case WM_LBUTTONUP => eh.leftUp(info)
-                case WM_RBUTTONDOWN => eh.rightDown(info)
-                case WM_RBUTTONUP => eh.rightUp(info)
-                case WM_MBUTTONDOWN => eh.middleDown(info)
-                case WM_MBUTTONUP => eh.middleUp(info)
-                case WM_XBUTTONDOWN => eh.xDown(info)
-                case WM_XBUTTONUP => eh.xUp(info)
-                case WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-                    //logger.debug(s"mouseData: ${info.mouseData}")
-                    callNextHook()
-                }
-            }
-        }
-    }
     
     def procExit = {
         logger.debug("procExit")
         
-        Windows.unhook
+        Hook.unhook
         ctx.storeProperties
         PreventMultiInstance.unlock
         
@@ -142,7 +103,7 @@ object W10Wheel {
         ctx.loadProperties
         ctx.setSystemTray
         
-        Windows.setHook(eventDispatcher)
+        Hook.setMouseHook
         logger.debug("Mouse hook installed")
         
         //Windows.messageLoop

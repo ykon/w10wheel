@@ -126,6 +126,7 @@ public interface WinUserX extends WinUser
         public boolean SystemParametersInfoW(int uiAction, int uiParam, Pointer pvParam, int fWinIni);
         public boolean SetSystemCursor(Pointer hcur, int id);
         public Pointer CopyIcon(Pointer hIcon);
+        public boolean GetCursorPos(POINT p);
     }
     
     // https://msdn.microsoft.com/library/windows/desktop/ms686219.aspx

@@ -15,7 +15,7 @@ trait MouseEvent {
     def isUp = Mouse.isUpEvent(this)
     def isSingle = Mouse.isSingleEvent(this)
     def isLR = Mouse.isLrEvent(this)
-    def same(me2: MouseEvent) = Mouse.sameEvent(this, me2)
+    def sameEvent(me2: MouseEvent) = Mouse.sameEvent(this, me2)
     def sameButton(me2: MouseEvent) = Mouse.sameButton(this, me2)
 }
 case class LeftDown (info: HookInfo) extends MouseEvent

@@ -18,6 +18,7 @@ import com.sun.jna.platform.win32.WinDef._
 import com.sun.jna.platform.win32.WinUser._
 import win32ex.WinUserX._
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import java.util.Random
 
@@ -28,7 +29,6 @@ object Windows {
     private val u32ex = User32ex.INSTANCE
     private val k32 = Kernel32.INSTANCE
     private val k32ex = Kernel32ex.INSTANCE
-    private var hhk: HHOOK = null
     
     def messageLoop: Unit = {
         val msg = new MSG
@@ -51,7 +51,6 @@ object Windows {
     
     
     private val WM_QUERYENDSESSION = 0x0011
-    //private val WS_MINIMIZE = 0x20000000
     private val GWL_WNDPROC = -4
     
     private val shutdownThread = new Thread {
@@ -95,20 +94,21 @@ object Windows {
     senderThread.setDaemon(true)
     senderThread.start
     
-    def unhook = {
-        if (hhk != null) {
-            u32.UnhookWindowsHookEx(hhk)
-            hhk = null
-        }
+    def unhook(hhk: HHOOK) {
+        u32.UnhookWindowsHookEx(hhk)
     }
     
     def setHook(proc: LowLevelMouseProc) = {
-        val hMod = Kernel32.INSTANCE.GetModuleHandle(null)
-        hhk = u32.SetWindowsHookEx(WH_MOUSE_LL, proc, hMod, 0)
+        val hMod = k32.GetModuleHandle(null)
+        u32.SetWindowsHookEx(WH_MOUSE_LL, proc, hMod, 0)
     }
     
-    def callNextHook(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
-        val ptr = info.getPointer
+    def setHook(proc: LowLevelKeyboardProc) = {
+        val hMod = k32.GetModuleHandle(null)
+        u32.SetWindowsHookEx(WH_KEYBOARD_LL, proc, hMod, 0)
+    }
+    
+    def callNextHook(hhk: HHOOK, nCode: Int, wParam: WPARAM, ptr: Pointer): LRESULT = {
         val peer = Pointer.nativeValue(ptr)
         u32.CallNextHookEx(hhk, nCode, wParam, new LPARAM(peer))
     }
@@ -422,5 +422,11 @@ object Windows {
             case AboveNormal() => setPriorityClass(ABOVE_NORMAL_PRIORITY_CLASS)
             case High() => setPriorityClass(HIGH_PRIORITY_CLASS)
         }
+    }
+    
+    def getCursorPos = {
+        val cursorPos = new POINT;
+        u32ex.GetCursorPos(cursorPos)
+        cursorPos
     }
 }

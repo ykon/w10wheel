@@ -5,9 +5,6 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-//import scala.concurrent._
-//import scala.collection.Iterator
-//import ExecutionContext.Iplicits.global
 import scala.annotation.tailrec
 
 import com.sun.jna.platform.win32.WinDef.LRESULT
@@ -81,7 +78,7 @@ object EventHandler {
     }
     
     private def checkSameLastEvent(me: MouseEvent): Option[LRESULT] = {
-        if (me.same(lastEvent)) {
+        if (me.sameEvent(lastEvent)) {
             logger.warn(s"same last event: ${me.name}")
             callNextHook
         }

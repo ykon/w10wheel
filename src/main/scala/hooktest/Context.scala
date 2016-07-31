@@ -24,15 +24,15 @@ import java.util.Properties
 import java.io.FileNotFoundException
 import java.io.{ File, FileInputStream, FileOutputStream }
 
-import com.sun.jna.platform.win32.WinDef.HCURSOR
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import scala.collection.mutable.HashMap
 import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.3"
+    val PROGRAM_VERSION = "1.4"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -41,7 +41,19 @@ object Context {
     @volatile private var pollTimeout = 300 // default
     @volatile private var passMode = false
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
-    @volatile private var sendMiddleClick = false
+    @volatile private var sendMiddleClick = false // default
+    
+    @volatile private var keyboardHook = false // default
+    @volatile private var targetVKCode = Keyboard.getVKCode("VK_NONCONVERT") // default
+    
+    def isKeyboardHook =
+        keyboardHook
+        
+    def getTargetVKCode =
+        targetVKCode
+        
+    def isTriggerKey(ke: KeyboardEvent) =
+        ke.vkCode == targetVKCode
     
     def isSendMiddleClick =
         sendMiddleClick
@@ -141,6 +153,20 @@ object Context {
                 Windows.changeCursor
         }
         
+        def start(kinfo: KHookInfo) {
+            if (RealWheel.mode)
+                Windows.startWheelCount
+            
+            stime = kinfo.time
+            val pt = Windows.getCursorPos
+            sx = pt.x
+            sy = pt.y
+            mode = true
+            
+            if (cursorChange)
+                Windows.changeCursor
+        }
+        
         def exit = {
             mode = false
             
@@ -160,6 +186,8 @@ object Context {
     }
     
     def startScrollMode(info: HookInfo) = Scroll.start(info)
+    def startScrollMode(kinfo: KHookInfo) = Scroll.start(kinfo)
+    
     def exitScrollMode = Scroll.exit
     def isScrollMode = Scroll.isMode
     def getScrollStartPoint = Scroll.getStartPoint
@@ -242,6 +270,8 @@ object Context {
         @volatile private var rdS = false
         @volatile private var sdS = false
         
+        @volatile private var kdSMap = new HashMap[Int, Boolean]
+        
         def setResent(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = true
             case RightDown(_) => rdR = true
@@ -254,9 +284,14 @@ object Context {
         }
         
         def setSuppressed(down: MouseEvent) = down match {
-            case LeftDown(_) => ldS = true 
+            case LeftDown(_) => ldS = true
             case RightDown(_) => rdS = true 
             case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = true
+            case _ => {}
+        }
+        
+        def setSuppressed(down: KeyboardEvent) = down match {
+            case KeyDown(_) => kdSMap(down.vkCode) = true
             case _ => {}
         }
         
@@ -266,10 +301,18 @@ object Context {
             case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS
         }
         
+        def isDownSuppressed(up: KeyboardEvent) = up match {
+            case KeyUp(_) => kdSMap.getOrElse(up.vkCode, false)
+        }
+        
         def reset(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = false; ldS = false
             case RightDown(_) => rdR = false; rdS = false
             case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
+        }
+        
+        def reset(down: KeyboardEvent) = down match {
+            case KeyDown(_) => kdSMap(down.vkCode) = false
         }
     }
     
@@ -338,6 +381,12 @@ object Context {
             item.setSelection(getBooleanOfName(name))
         }
     }
+    
+    private def resetKeyboardMenuItems: Unit = {
+        keyboardMenuMap.foreach { case (name, item) =>
+            item.setSelection(Keyboard.getVKCode(name) == targetVKCode)
+        }
+    }
         
     private def resetMenuItem: Unit = {
         resetTriggerMenuItems
@@ -345,6 +394,7 @@ object Context {
         resetPriorityMenuItems
         resetNumberMenuItems
         resetBoolMenuItems
+        resetKeyboardMenuItems
     }
     
     private def textToName(s: String): String =
@@ -626,7 +676,7 @@ object Context {
         item.setMenu(nMenu)
     }
         
-    private def createOnOffMenuItem(menu: Menu, vname: String): Unit = {
+    private def createOnOffMenuItem(menu: Menu, vname: String, action: Boolean => Unit = _ => {}): Unit = {
         def getOnOff(b: Boolean) = if (b) "ON" else "OFF"
         val item = new MenuItem(menu, SWT.CHECK)
         item.setText(getOnOff(getBooleanOfName(vname)))
@@ -636,6 +686,7 @@ object Context {
             val b = item.getSelection
             item.setText(getOnOff(b))
             setBooleanOfName(vname, b)
+            action(b)
         })
     }
     
@@ -670,6 +721,56 @@ object Context {
         val item = new MenuItem(pMenu, SWT.CASCADE)
         item.setText("Real Wheel Mode")
         item.setMenu(rMenu)
+    }
+    
+    private val keyboardMenuMap = new HashMap[String, MenuItem]
+    
+    private def setTargetVKCode(name: String) {
+        logger.debug(s"setTargetVKCode: $name")
+        targetVKCode = Keyboard.getVKCode(name)
+    }
+    
+    private def createKeyboardMenuItem(menu: Menu, text: String) {
+        val item = new MenuItem(menu, SWT.RADIO)
+        item.setText(text)
+        val name = textToName(text)
+        keyboardMenuMap(name) = item
+        
+        item.addSelectionListener((e: SelectionEvent) => {
+            if (item.getSelection) {
+                unselectOtherItems(keyboardMenuMap, name)
+                setTargetVKCode(name)
+            }
+        })
+    }
+    
+    private def createKeyboardMenu(pMenu: Menu) {
+        val kMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createKeyboardMenuItem(kMenu, text)
+        
+        createOnOffMenuItem(kMenu, "keyboardHook", Hook.setOrUnsetKeyboardHook)
+        addSeparator(kMenu)
+        
+        add("VK_PAUSE (Pause)")
+        add("VK_CAPITAL (Caps Lock)")
+        add("VK_CONVERT (Henkan)")
+        add("VK_NONCONVERT (Muhenkan)")
+        add("VK_SNAPSHOT (Print Screen)")
+        add("VK_LWIN (Left Windows)")
+        add("VK_RWIN (Right Windows)")
+        add("VK_APPS (Application)")
+        add("VK_NUMLOCK (Number Lock)")
+        add("VK_SCROLL (Scroll Lock)")
+        add("VK_LSHIFT (Left Shift)")
+        add("VK_RSHIFT (Right Shift)")
+        add("VK_LCONTROL (Left Ctrl)")
+        add("VK_RCONTROL (Right Ctrl)")
+        add("VK_LMENU (Left Alt)")
+        add("VK_RMENU (Right Alt)")
+        
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("Keyboard")
+        item.setMenu(kMenu)
     }
     
     private def setUnhook: Unit =
@@ -772,6 +873,7 @@ object Context {
         createPriorityMenu(menu)
         createNumberMenu(menu)
         createRealWheelModeMenu(menu)
+        createKeyboardMenu(menu)
         addSeparator(menu)
         
         createReloadPropertiesMenu(menu)
@@ -905,6 +1007,16 @@ object Context {
         }
     }
     
+    private def setVKCodeOfProperty: Unit = {
+        try {
+            setTargetVKCode(prop.getString("targetVKCode"))
+        }
+        catch {
+            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}")
+            case e: scala.MatchError => logger.warn(s"Match error: ${e.getMessage}")
+        }
+    }
+    
     private def setDefaultPriority {
         logger.debug("setDefaultPriority")
         Windows.setPriority(processPriority)
@@ -986,8 +1098,10 @@ object Context {
             setAccelOfProperty
             setCustomAccelOfProperty
             setPriorityOfProperty
+            setVKCodeOfProperty
             
             BooleanNames.foreach(n => setBooleanOfProperty(n))
+            Hook.setOrUnsetKeyboardHook(keyboardHook)
             
             setNumberOfProperty("pollTimeout", 50, 500)
             setNumberOfProperty("scrollLocktime", 150, 500)
@@ -1020,6 +1134,7 @@ object Context {
             prop.getString("firstTrigger") != firstTrigger.name ||
             prop.getString("accelMultiplier") != Accel.multiplier.name ||
             prop.getString("processPriority") != processPriority.name ||
+            prop.getString("targetVKCode") != Keyboard.getName(targetVKCode) ||
             isChangedBoolean || isChangedNumber
         }
         catch {
@@ -1041,7 +1156,7 @@ object Context {
               "quickFirst", "quickTurn",
               "accelTable", "customAccelTable",
               "draggedLock", "swapScroll",
-              "sendMiddleClick"
+              "sendMiddleClick", "keyboardHook"
         )
     }
     
@@ -1083,6 +1198,7 @@ object Context {
             case "draggedLock" => Scroll.draggedLock = b
             case "swapScroll" => Scroll.swap = b
             case "sendMiddleClick" => sendMiddleClick = b
+            case "keyboardHook" => keyboardHook = b
             case "passMode" => passMode = b
         }
     }
@@ -1099,6 +1215,7 @@ object Context {
         case "draggedLock" => Scroll.draggedLock
         case "swapScroll" => Scroll.swap
         case "sendMiddleClick" => sendMiddleClick
+        case "keyboardHook" => keyboardHook
         case "passMode" => passMode
     }
     
@@ -1112,6 +1229,7 @@ object Context {
             prop.setProperty("firstTrigger", firstTrigger.name)
             prop.setProperty("accelMultiplier", Accel.multiplier.name)
             prop.setProperty("processPriority", processPriority.name)
+            prop.setProperty("targetVKCode", Keyboard.getName(targetVKCode))
             
             BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
             NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))
