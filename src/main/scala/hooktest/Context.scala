@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.4"
+    val PROGRAM_VERSION = "1.5"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -54,6 +54,9 @@ object Context {
         
     def isTriggerKey(ke: KeyboardEvent) =
         ke.vkCode == targetVKCode
+        
+    def isNoneTriggerKey =
+        targetVKCode == 0
     
     def isSendMiddleClick =
         sendMiddleClick
@@ -281,6 +284,7 @@ object Context {
         def isDownResent(up: MouseEvent) = up match {
             case LeftUp(_) => ldR
             case RightUp(_) => rdR
+            case _ => false
         }
         
         def setSuppressed(down: MouseEvent) = down match {
@@ -299,20 +303,24 @@ object Context {
             case LeftUp(_) => ldS
             case RightUp(_) => rdS
             case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS
+            case _ => false
         }
         
         def isDownSuppressed(up: KeyboardEvent) = up match {
             case KeyUp(_) => kdSMap.getOrElse(up.vkCode, false)
+            case _ => false
         }
         
         def reset(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = false; ldS = false
             case RightDown(_) => rdR = false; rdS = false
             case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
+            case _ => {}
         }
         
         def reset(down: KeyboardEvent) = down match {
             case KeyDown(_) => kdSMap(down.vkCode) = false
+            case _ => {}
         }
     }
     
@@ -330,7 +338,9 @@ object Context {
     }
     
     def isSingleTrigger = firstTrigger.isSingle
+    def isDoubleTrigger = firstTrigger.isDouble
     def isDragTrigger = firstTrigger.isDrag
+    def isNoneTrigger = firstTrigger.isNone
     
     // http://stackoverflow.com/questions/3239106/scala-actionlistener-anonymous-function-type-mismatch
     /*
@@ -434,6 +444,8 @@ object Context {
         add("LR (Left <<-->> Right)")
         add("Left (Left -->> Right)")
         add("Right (Right -->> Left)")
+        addSeparator(tMenu)
+        
         add("Middle")
         add("X1")
         add("X2")
@@ -444,6 +456,9 @@ object Context {
         add("MiddleDrag")
         add("X1Drag")
         add("X2Drag")
+        addSeparator(tMenu)
+        
+        add("None")
         addSeparator(tMenu)
         
         createBoolMenuItem(tMenu, "sendMiddleClick", "Send MiddleClick", isSingleTrigger)
@@ -751,11 +766,18 @@ object Context {
         createOnOffMenuItem(kMenu, "keyboardHook", Hook.setOrUnsetKeyboardHook)
         addSeparator(kMenu)
         
+        add("VK_TAB (Tab)")
         add("VK_PAUSE (Pause)")
         add("VK_CAPITAL (Caps Lock)")
         add("VK_CONVERT (Henkan)")
         add("VK_NONCONVERT (Muhenkan)")
+        add("VK_PRIOR (Page Up)")
+        add("VK_NEXT (Page Down)")
+        add("VK_END (End)")
+        add("VK_HOME (Home)")
         add("VK_SNAPSHOT (Print Screen)")
+        add("VK_INSERT (Insert)")
+        add("VK_DELETE (Delete)")
         add("VK_LWIN (Left Windows)")
         add("VK_RWIN (Right Windows)")
         add("VK_APPS (Application)")
@@ -767,6 +789,9 @@ object Context {
         add("VK_RCONTROL (Right Ctrl)")
         add("VK_LMENU (Left Alt)")
         add("VK_RMENU (Right Alt)")
+        addSeparator(kMenu)
+        
+        add("None")
         
         val item = new MenuItem(pMenu, SWT.CASCADE)
         item.setText("Keyboard")
@@ -942,8 +967,6 @@ object Context {
         val res = Mouse.getTrigger(s)
         logger.debug("setTrigger: " + res.name);
         firstTrigger = res
-        
-        val smc = "sendMiddleClick"
         
         setEnabledMenu(boolMenuMap, "sendMiddleClick", res.isSingle)
         setEnabledMenu(boolMenuMap, "draggedLock", res.isDrag)

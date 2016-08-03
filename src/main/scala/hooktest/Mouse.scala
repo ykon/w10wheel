@@ -11,12 +11,60 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 trait MouseEvent {
     val info: HookInfo
     def name = Mouse.getSimpleName(this)
-    def isDown = Mouse.isDownEvent(this)
-    def isUp = Mouse.isUpEvent(this)
-    def isSingle = Mouse.isSingleEvent(this)
-    def isLR = Mouse.isLrEvent(this)
-    def sameEvent(me2: MouseEvent) = Mouse.sameEvent(this, me2)
-    def sameButton(me2: MouseEvent) = Mouse.sameButton(this, me2)
+
+    def isDown = this match {
+        case LeftDown(_) | RightDown(_) | MiddleDown(_) | X1Down(_) | X2Down(_) => true
+        case _ => false
+    }
+    
+    def isUp = this match {
+        case LeftUp(_) | RightUp(_) | MiddleUp(_) | X1Up(_) | X2Up(_) => true
+        case _ => false
+    }
+
+    def isSingle = this match {
+        case MiddleDown(_) | MiddleUp(_) => true
+        case X1Down(_) | X1Up(_) => true
+        case X2Down(_) | X2Up(_) => true
+        case _ => false
+    }
+    
+    def isLR = this match {
+        case LeftDown(_) | LeftUp(_) | RightDown(_) | RightUp(_) => true
+        case _ => false
+    }
+    
+    def sameEvent(me2: MouseEvent) = {
+        (this, me2) match {
+            case (LeftDown(_), LeftDown(_)) => true
+            case (LeftUp(_), LeftUp(_)) => true
+            case (RightDown(_), RightDown(_)) => true
+            case (RightUp(_), RightUp(_)) => true
+            case (MiddleDown(_), MiddleDown(_)) => true
+            case (MiddleUp(_), MiddleUp(_)) => true
+            case (X1Down(_), X1Down(_)) => true
+            case (X1Up(_), X1Up(_)) => true
+            case (X2Down(_), X2Down(_)) => true
+            case (X2Up(_), X2Up(_)) => true
+            case _ => false
+        }
+    }
+    
+    def sameButton(me2: MouseEvent) = {
+        (this, me2) match {
+            case (LeftDown(_), LeftUp(_)) => true
+            case (LeftUp(_), LeftDown(_)) => true
+            case (RightDown(_), RightUp(_)) => true
+            case (RightUp(_), RightDown(_)) => true
+            case (MiddleDown(_), MiddleUp(_)) => true
+            case (MiddleUp(_), MiddleDown(_)) => true
+            case (X1Down(_), X1Up(_)) => true
+            case (X1Up(_), X1Down(_)) => true
+            case (X2Down(_), X2Up(_)) => true
+            case (X2Up(_), X2Down(_)) => true
+            case _ => false
+        }
+    }
 }
 case class LeftDown (info: HookInfo) extends MouseEvent
 case class LeftUp (info: HookInfo) extends MouseEvent
@@ -42,8 +90,23 @@ case class X2Click (info: HookInfo) extends MouseClick
 
 trait Trigger {
     def name = Mouse.getSimpleName(this)
-    def isSingle = Mouse.isSingleTrigger(this)
-    def isDrag = Mouse.isDragTrigger(this) 
+
+    def isSingle = this match {
+        case MiddleTrigger() | X1Trigger() | X2Trigger() => true
+        case _ => false
+    }
+
+    def isDouble = this match {
+        case LRTrigger() | LeftTrigger() | RightTrigger() => true
+        case _ => false
+    }
+
+    def isDrag = this match {
+        case LeftDragTrigger() | RightDragTrigger() | MiddleDragTrigger() | X1DragTrigger() | X2DragTrigger() => true
+        case _ => false
+    }
+
+    def isNone = (this == NoneTrigger())
 }
 case class LRTrigger () extends Trigger
 case class LeftTrigger () extends Trigger
@@ -57,6 +120,8 @@ case class RightDragTrigger () extends Trigger
 case class MiddleDragTrigger () extends Trigger
 case class X1DragTrigger () extends Trigger
 case class X2DragTrigger () extends Trigger
+
+case class NoneTrigger () extends Trigger
 
 object Mouse {
     def isXButton1(mouseData: Int) =
@@ -85,28 +150,7 @@ object Mouse {
         case "MiddleDrag" | "MiddleDragTrigger" => MiddleDragTrigger()
         case "X1Drag" | "X1DragTrigger" => X1DragTrigger()
         case "X2Drag" | "X2DragTrigger" => X2DragTrigger()
-    }
-    
-    def isSingleTrigger(t: Trigger) = t match {
-        case MiddleTrigger() | X1Trigger() | X2Trigger() => true
-        case _ => false
-    }
-    
-    def isDragTrigger(t: Trigger) = t match {
-        case LeftDragTrigger() | RightDragTrigger() | MiddleDragTrigger() | X1DragTrigger() | X2DragTrigger() => true
-        case _ => false
-    }
-    
-    def isSingleEvent(event: MouseEvent) = event match {
-        case MiddleDown(_) | MiddleUp(_) => true
-        case X1Down(_) | X1Up(_) => true
-        case X2Down(_) | X2Up(_) => true
-        case _ => false
-    }
-    
-    def isLrEvent(me: MouseEvent) = me match {
-        case LeftDown(_) | LeftUp(_) | RightDown(_) | RightUp(_) => true
-        case _ => false
+        case "None" | "NoneTrigger" => NoneTrigger()
     }
     
     def getSimpleName(obj: Object) = {
@@ -124,47 +168,5 @@ object Mouse {
                 case _ => false
             }
         }
-    }
-    
-    def sameButton(me1: MouseEvent, me2: MouseEvent) = {
-        (me1, me2) match {
-            case (LeftDown(_), LeftUp(_)) => true
-            case (LeftUp(_), LeftDown(_)) => true
-            case (RightDown(_), RightUp(_)) => true
-            case (RightUp(_), RightDown(_)) => true
-            case (MiddleDown(_), MiddleUp(_)) => true
-            case (MiddleUp(_), MiddleDown(_)) => true
-            case (X1Down(_), X1Up(_)) => true
-            case (X1Up(_), X1Down(_)) => true
-            case (X2Down(_), X2Up(_)) => true
-            case (X2Up(_), X2Down(_)) => true
-            case _ => false
-        }
-    }
-    
-    def sameEvent(me1: MouseEvent, me2: MouseEvent) = {
-        (me1, me2) match {
-            case (LeftDown(_), LeftDown(_)) => true
-            case (LeftUp(_), LeftUp(_)) => true
-            case (RightDown(_), RightDown(_)) => true
-            case (RightUp(_), RightUp(_)) => true
-            case (MiddleDown(_), MiddleDown(_)) => true
-            case (MiddleUp(_), MiddleUp(_)) => true
-            case (X1Down(_), X1Down(_)) => true
-            case (X1Up(_), X1Up(_)) => true
-            case (X2Down(_), X2Down(_)) => true
-            case (X2Up(_), X2Up(_)) => true
-            case _ => false
-        }
-    }
-    
-    def isDownEvent(me: MouseEvent) = me match {
-        case LeftDown(_) | RightDown(_) | MiddleDown(_) | X1Down(_) | X2Down(_) => true
-        case _ => false
-    }
-    
-    def isUpEvent(me: MouseEvent) = me match {
-        case LeftUp(_) | RightUp(_) | MiddleUp(_) | X1Up(_) | X2Up(_) => true
-        case _ => false
     }
 }

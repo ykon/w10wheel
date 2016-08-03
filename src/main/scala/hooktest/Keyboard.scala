@@ -33,12 +33,21 @@ case class KeyUp (info: KHookInfo) extends KeyboardEvent
 //case class SyskeyUp(info: KHookInfo) extends KeyboardEvent
 
 object Keyboard {
+    // https://msdn.microsoft.com/library/windows/desktop/dd375731
     private val vkCodeMap = Map(
+        "None" -> 0,
+        "VK_TAB" -> 0x09,
         "VK_PAUSE" -> 0x13,
         "VK_CAPITAL" -> 0x14,
         "VK_CONVERT" -> 0x1C,
         "VK_NONCONVERT" -> 0x1D,
+        "VK_PRIOR" -> 0x21,
+        "VK_NEXT" -> 0x22,
+        "VK_END" -> 0x23,
+        "VK_HOME" -> 0x24,
         "VK_SNAPSHOT" -> 0x2C,
+        "VK_INSERT" -> 0x2D,
+        "VK_DELETE" -> 0x2E,
         "VK_LWIN" -> 0x5B,
         "VK_RWIN" -> 0x5C,
         "VK_APPS" -> 0x5D,

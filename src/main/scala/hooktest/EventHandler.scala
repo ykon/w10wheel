@@ -53,6 +53,16 @@ object EventHandler {
             None
     }
     
+    private def skipFirstUp(me: MouseEvent): Option[LRESULT] = {
+        if (lastEvent == null) {
+            logger.debug(s"skip first Up: ${me.name}")
+            callNextHook
+        }
+        else
+            None
+    }
+    
+    /*
     private def skipFirstUpOrSingle(me: MouseEvent): Option[LRESULT] = {
         if (lastEvent == null || lastEvent.isSingle) {
             logger.debug(s"skip first Up or Single: ${me.name}")
@@ -70,6 +80,7 @@ object EventHandler {
         else
             None
     }
+    */
     
     private def resetLastFlags(me: MouseEvent): Option[LRESULT] = {
         logger.debug(s"reset last flag: ${me.name}")
@@ -99,6 +110,7 @@ object EventHandler {
             None
     }
     
+    /*
     private def passSingleTrigger(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isSingleTrigger) {
             logger.debug(s"pass single trigger: ${me.name}")
@@ -107,6 +119,7 @@ object EventHandler {
         else
             None
     }
+    */
     
     private def checkExitScrollUp(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isScrollMode) {
@@ -122,26 +135,6 @@ object EventHandler {
         else
             None
     }
-    
-    /*
-    private def retryOffer(me: MouseEvent): Boolean = {
-        @tailrec
-        def loop(b: Boolean, i: Int): Boolean = {
-            if (b) {
-                logger.debug(s"retryOffer: $i")
-                true
-            }
-            else if (i == 0) {
-                logger.debug("retryOffer failed")
-                false
-            }
-            else
-                loop(EventWaiter.offer(me), i - 1)
-        }
-        
-        loop(false, 3)
-    }
-    */
 
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
         if (EventWaiter.offer(me)) {
@@ -156,7 +149,7 @@ object EventHandler {
         val suppressed = ctx.LastFlags.isDownSuppressed(up)
         
         if (suppressed) {
-            logger.debug(s"after suppressed down event: ${up.name}")
+            logger.debug(s"suppress (checkDownSuppressed): ${up.name}")
             suppress
         }
         else
@@ -167,7 +160,7 @@ object EventHandler {
         val resent = ctx.LastFlags.isDownResent(up)
         
         if (resent) {
-            logger.debug(s"resend up (checkDownResent): ${up.name}")
+            logger.debug(s"resendUp and suppress (checkDownResent): ${up.name}")
             Windows.resendUp(up)
             suppress
         }
@@ -261,7 +254,7 @@ object EventHandler {
         else
             None
     }
-    
+   
     private def passNotTriggerLR(me: MouseEvent): Option[LRESULT] = {
         if (!ctx.isLRTrigger && !ctx.isTriggerEvent(me)) {
             logger.debug(s"pass not trigger: ${me.name}")
@@ -271,13 +264,17 @@ object EventHandler {
             None
     }
     
-    private def endCallNextHook(me: MouseEvent, msg: Option[String] = None): Option[LRESULT] = {
-        msg.foreach(logger.debug(_))
+    private def endCallNextHook(me: MouseEvent, msg: String): Option[LRESULT] = {
+        logger.debug(msg)
         callNextHook
     }
     
     private def endNotTrigger(me: MouseEvent): Option[LRESULT] = {
-        endCallNextHook(me, Some(s"pass not trigger: ${me.name}"))
+        endCallNextHook(me, s"endNotTrigger: ${me.name}")
+    }
+    
+    private def endPass(me: MouseEvent): Option[LRESULT] = {
+        endCallNextHook(me, s"endPass: ${me.name}")
     }
     
     private def endUnknownEvent(me: MouseEvent): Option[LRESULT] = {
@@ -295,155 +292,189 @@ object EventHandler {
         suppress
     }
     
-    //type Checkers = Stream[MouseEvent => Option[LRESULT]]
-    type LCheckers = List[MouseEvent => Option[LRESULT]]
-    
-    /*
-    private def getResult(cs: Checkers, me: MouseEvent): LRESULT =
-        cs.flatMap(_.apply(me)).head
-    */
+    type Checkers = List[MouseEvent => Option[LRESULT]]
     
     @tailrec
-    private def getResultL(lcs: LCheckers, me: MouseEvent): Option[LRESULT] = lcs match {
+    private def getResult(cs: Checkers, me: MouseEvent): LRESULT = cs match {
         case f :: fs => {
             val res = f(me)
-            if (res.isDefined) res else getResultL(fs, me)
+            if (res.isDefined) res.get else getResult(fs, me)
         }
         case _ => throw new IllegalArgumentException()
     }
+    
+    private def doubleDown(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            skipResendEventLR,
+            checkSameLastEvent,
+            resetLastFlags,
+            checkExitScrollDown,
+            offerEventWaiter,
+            checkTriggerWaitStart,
+            endNotTrigger
+        )
         
-    /*
-    private def getResultBranch(cs: Checkers, me: MouseEvent): Option[LRESULT] =
-        cs.map(_.apply(me)).find(_.isDefined).get
-    */
-    
-    private def branchDragDown(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isDragTrigger) {
-            logger.debug(s"branch drag down: ${me.name}")
-            val lcs: LCheckers = List(
-                    passNotDragTrigger,
-                    startScrollDrag
-            )
-                    
-            getResultL(lcs, me)
-        }
-        else
-            None
+        getResult(cs, me)
     }
     
-    private def branchDragUp(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isDragTrigger) {
-            logger.debug(s"branch drag up: ${me.name}")
-            val lcs: LCheckers = List(
-                    checkDownSuppressed,
-                    passNotDragTrigger,
-                    continueScrollDrag,
-                    exitAndResendDrag
-            )
-                        
-            getResultL(lcs, me)
-        }
-        else
-            None
-    }
-
-    private def lrDown(me: MouseEvent): LRESULT = {
-        val lcs: LCheckers = List(
-                skipResendEventLR,
-                checkSameLastEvent,
-                resetLastFlags,
-                checkExitScrollDown,
-                branchDragDown,
-                passSingleTrigger,
-                offerEventWaiter,
-                checkTriggerWaitStart,
-                endNotTrigger)
-        
-        getResultL(lcs, me).get
-    }
-    
-    private def lrUp(me: MouseEvent): LRESULT = {
-        val lcs: LCheckers = List(
-                skipResendEventLR,
-                skipFirstUpOrSingle,
-                checkSameLastEvent,
-                branchDragUp,
-                passSingleTrigger,
-                checkExitScrollUp,
-                passNotTriggerLR,
-                checkDownResent,
-                offerEventWaiter,
-                checkDownSuppressed,
-                endUnknownEvent)
+    private def doubleUp(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            skipResendEventLR,
+            skipFirstUp,
+            checkSameLastEvent,
+            checkExitScrollUp,
+            checkDownResent,
+            offerEventWaiter,
+            checkDownSuppressed,
+            endNotTrigger
+        )
                 
-        getResultL(lcs, me).get
+        getResult(cs, me)
+    }
+    
+    private def singleDown(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            skipResendEventSingle,
+            checkSameLastEvent,
+            resetLastFlags,
+            checkExitScrollDown,
+            passNotTrigger,
+            checkKeySendMiddle,
+            checkTriggerScrollStart,
+            endIllegalState
+        )
+        
+        getResult(cs, me)
+    }
+    
+    private def singleUp(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            skipResendEventSingle,
+            skipFirstUp,
+            checkSameLastEvent,
+            checkDownSuppressed,
+            passNotTrigger,
+            checkExitScrollUp,
+            endIllegalState
+        )
+                
+        getResult(cs, me)
+    }
+    
+    private def dragDown(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            skipResendEventSingle,
+            checkSameLastEvent,
+            resetLastFlags,
+            checkExitScrollDown,
+            passNotDragTrigger,
+            startScrollDrag
+        )
+        
+        getResult(cs, me)
+    }
+    
+    private def dragUp(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            skipResendEventSingle,
+            skipFirstUp,
+            checkSameLastEvent,
+            checkDownSuppressed,
+            passNotDragTrigger,
+            continueScrollDrag,
+            exitAndResendDrag
+        )
+        
+        getResult(cs, me)
+    }
+    
+    private def noneDown(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            resetLastFlags,
+            checkExitScrollDown,
+            endPass
+        )
+        
+        getResult(cs, me)
+    }
+    
+    private def noneUp(me: MouseEvent): LRESULT = {
+        val cs: Checkers = List(
+            checkDownSuppressed,
+            endPass
+        )
+        
+        getResult(cs, me)
+    }
+    
+    private def dispatchDown(d: MouseEvent): LRESULT = {
+        if (ctx.isDoubleTrigger) doubleDown(d)
+        else if (ctx.isSingleTrigger) singleDown(d)
+        else if (ctx.isDragTrigger) dragDown(d)
+        else noneDown(d)
+    }
+    
+    private def dispatchUp(u: MouseEvent): LRESULT = {
+        if (ctx.isDoubleTrigger) doubleUp(u)
+        else if (ctx.isSingleTrigger) singleUp(u)
+        else if (ctx.isDragTrigger) dragUp(u)
+        else noneUp(u)
+    }
+    
+    private def dispatchDownS(d: MouseEvent): LRESULT = {
+        if (ctx.isSingleTrigger) singleDown(d)
+        else if (ctx.isDragTrigger) dragDown(d)
+        else noneDown(d)
+    }
+    
+    private def dispatchUpS(u: MouseEvent): LRESULT = {
+        if (ctx.isSingleTrigger) singleUp(u)
+        else if (ctx.isDragTrigger) dragUp(u)
+        else noneUp(u)
     }
     
     def leftDown(info: HookInfo): LRESULT = {
         //logger.debug("leftDown")
-        lrDown(LeftDown(info))
-    }
-    
-    def rightDown(info: HookInfo): LRESULT = {
-        //logger.debug("rightDown")
-        lrDown(RightDown(info))
+        val ld = LeftDown(info)
+        dispatchDown(ld)
     }
     
     def leftUp(info: HookInfo): LRESULT = {
         //logger.debug("leftUp");
-        lrUp(LeftUp(info))
+        val lu = LeftUp(info)
+        dispatchUp(lu)
+    }
+    
+    def rightDown(info: HookInfo): LRESULT = {
+        //logger.debug("rightDown")]
+        val rd = RightDown(info)
+        dispatchDown(rd)
     }
     
     def rightUp(info: HookInfo): LRESULT = {
         //logger.debug("rightUp")
-        lrUp(RightUp(info))
+        val ru = RightUp(info)
+        dispatchUp(ru)
     }
     
-    private def singleDown(me: MouseEvent): LRESULT = {
-        val lcs: LCheckers = List(
-                skipResendEventSingle,
-                checkSameLastEvent,
-                resetLastFlags,
-                checkExitScrollDown,
-                branchDragDown,
-                passNotTrigger,
-                checkKeySendMiddle,
-                checkTriggerScrollStart,
-                endIllegalState)
-        
-        getResultL(lcs, me).get
-    }
-    
-    private def singleUp(me: MouseEvent): LRESULT = {
-        val lcs: LCheckers = List(
-                skipResendEventSingle,
-                skipFirstUpOrLR,
-                checkSameLastEvent,
-                branchDragUp,
-                passNotTrigger,
-                checkExitScrollUp,
-                checkDownSuppressed,
-                endIllegalState)
-                
-        getResultL(lcs, me).get
-    }
-    
-    def middleDown(info: HookInfo): LRESULT = {            
-        singleDown(MiddleDown(info))
-    }
-    
-    def xDown(info: HookInfo): LRESULT = {
-        val evt = if (Mouse.isXButton1(info.mouseData)) X1Down(info) else X2Down(info)
-        singleDown(evt)
+    def middleDown(info: HookInfo): LRESULT = {
+        val md = MiddleDown(info)
+        dispatchDownS(md)
     }
     
     def middleUp(info: HookInfo): LRESULT = {
-        singleUp(MiddleUp(info))
+        val mu = MiddleUp(info)
+        dispatchUpS(mu)
+    }
+    
+    def xDown(info: HookInfo): LRESULT = {
+        val xd = if (Mouse.isXButton1(info.mouseData)) X1Down(info) else X2Down(info)
+        dispatchDownS(xd)
     }
     
     def xUp(info: HookInfo): LRESULT = {
-        val evt = if (Mouse.isXButton1(info.mouseData)) X1Up(info) else X2Up(info)
-        singleUp(evt)
+        val xu = if (Mouse.isXButton1(info.mouseData)) X1Up(info) else X2Up(info)
+        dispatchUpS(xu)
     }
     
     private def dragDefault(info: HookInfo): Unit = {}

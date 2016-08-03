@@ -103,6 +103,15 @@ object KEventHandler {
             None
     }
     
+    private def endCallNextHook(ke: KeyboardEvent, msg: String): Option[LRESULT] = {
+        logger.debug(msg)
+        callNextHook
+    }
+    
+    private def endPass(ke: KeyboardEvent): Option[LRESULT] = {
+        endCallNextHook(ke, s"endPass: ${ke.name}")
+    }
+    
     private def endIllegalState(ke: KeyboardEvent): Option[LRESULT] = {
         logger.warn(s"illegal state: ${ke.name}")
         suppress
@@ -119,32 +128,65 @@ object KEventHandler {
         case _ => throw new IllegalArgumentException()
     }
     
-    def keyDown(info: KHookInfo): LRESULT = {
-        //logger.debug(s"keyDown: ${info.vkCode}")
-        
+    private def singleDown(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
                 checkSameLastEvent,
                 resetLastFlags,
                 checkExitScrollDown,
                 passNotTrigger,
                 checkTriggerScrollStart,
-                endIllegalState)
+                endIllegalState
+        )
         
-        getResult(cs, KeyDown(info))
+        getResult(cs, ke)
     }
     
-    def keyUp(info: KHookInfo): LRESULT = {
-        //logger.debug(s"keyUp: ${info.vkCode}")
-
+    private def singleUp(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
                 skipFirstUp,
                 checkSameLastEvent,
                 checkDownSuppressed,
                 passNotTrigger,
                 checkExitScrollUp,
-                endIllegalState)
+                endIllegalState
+        )
                 
-        getResult(cs, KeyUp(info))
+        getResult(cs, ke)
+    }
+    
+    /*
+    private def noneDown(ke: KeyboardEvent): LRESULT = {
+        val cs: Checkers = List(
+            resetLastFlags,
+            checkExitScrollDown,
+            endPass
+        )
+        
+        getResult(cs, ke)        
+    }
+    
+    private def noneUp(ke: KeyboardEvent): LRESULT = {
+        val cs: Checkers = List(
+            checkDownSuppressed,
+            endPass
+        )
+        
+        getResult(cs, ke)        
+    }
+    */
+    
+    def keyDown(info: KHookInfo): LRESULT = {
+        //logger.debug(s"keyDown: ${info.vkCode}")
+        
+        val kd = KeyDown(info)
+        singleDown(kd)
+    }
+    
+    def keyUp(info: KHookInfo): LRESULT = {
+        //logger.debug(s"keyUp: ${info.vkCode}")
+        
+        val ku = KeyUp(info)
+        singleUp(ku)
     }
     
     /*
