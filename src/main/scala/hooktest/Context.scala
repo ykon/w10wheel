@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.5"
+    val PROGRAM_VERSION = "1.5.1"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -971,7 +971,7 @@ object Context {
         setEnabledMenu(boolMenuMap, "sendMiddleClick", res.isSingle)
         setEnabledMenu(boolMenuMap, "draggedLock", res.isDrag)
         
-        //EventHandler.changeTrigger
+        EventHandler.changeTrigger
     }
     
     private def setTriggerOfProperty: Unit = {

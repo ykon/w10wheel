@@ -110,16 +110,29 @@ object EventHandler {
             None
     }
     
-    /*
-    private def passSingleTrigger(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isSingleTrigger) {
-            logger.debug(s"pass single trigger: ${me.name}")
+    private def passSingleEvent(me: MouseEvent): Option[LRESULT] = {
+        if (me.isSingle) {
+            logger.debug(s"pass single event: ${me.name}")
             callNextHook
         }
         else
             None
     }
-    */
+    
+    private def checkSingleSuppressed(up: MouseEvent): Option[LRESULT] = {
+        if (up.isSingle) {
+            if (ctx.LastFlags.isDownSuppressed(up)) {
+                logger.debug(s"suppress (checkSingleSuppressed): ${up.name}")
+                suppress
+            }
+            else {
+                logger.debug(s"pass (checkSingleSuppressed): ${up.name}")
+                callNextHook
+            }
+        }
+        else
+            None
+    }
     
     private def checkExitScrollUp(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isScrollMode) {
@@ -303,12 +316,14 @@ object EventHandler {
         case _ => throw new IllegalArgumentException()
     }
     
-    private def doubleDown(me: MouseEvent): LRESULT = {
+    private def lrDown(me: MouseEvent): LRESULT = {
+        //logger.debug("lrDown")
         val cs: Checkers = List(
             skipResendEventLR,
             checkSameLastEvent,
             resetLastFlags,
             checkExitScrollDown,
+            //passSingleEvent,
             offerEventWaiter,
             checkTriggerWaitStart,
             endNotTrigger
@@ -317,11 +332,13 @@ object EventHandler {
         getResult(cs, me)
     }
     
-    private def doubleUp(me: MouseEvent): LRESULT = {
+    private def lrUp(me: MouseEvent): LRESULT = {
+        //logger.debug("lrUp")
         val cs: Checkers = List(
             skipResendEventLR,
             skipFirstUp,
             checkSameLastEvent,
+            //checkSingleSuppressed,
             checkExitScrollUp,
             checkDownResent,
             offerEventWaiter,
@@ -333,6 +350,7 @@ object EventHandler {
     }
     
     private def singleDown(me: MouseEvent): LRESULT = {
+        //logger.debug("singleDown")
         val cs: Checkers = List(
             skipResendEventSingle,
             checkSameLastEvent,
@@ -348,6 +366,7 @@ object EventHandler {
     }
     
     private def singleUp(me: MouseEvent): LRESULT = {
+        //logger.debug("singleUp")
         val cs: Checkers = List(
             skipResendEventSingle,
             skipFirstUp,
@@ -362,6 +381,7 @@ object EventHandler {
     }
     
     private def dragDown(me: MouseEvent): LRESULT = {
+        //logger.debug("dragDown")
         val cs: Checkers = List(
             skipResendEventSingle,
             checkSameLastEvent,
@@ -375,6 +395,7 @@ object EventHandler {
     }
     
     private def dragUp(me: MouseEvent): LRESULT = {
+        //logger.debug("dragUp")
         val cs: Checkers = List(
             skipResendEventSingle,
             skipFirstUp,
@@ -389,6 +410,7 @@ object EventHandler {
     }
     
     private def noneDown(me: MouseEvent): LRESULT = {
+        //logger.debug("noneDown")
         val cs: Checkers = List(
             resetLastFlags,
             checkExitScrollDown,
@@ -399,6 +421,7 @@ object EventHandler {
     }
     
     private def noneUp(me: MouseEvent): LRESULT = {
+        //logger.debug("noneUp")
         val cs: Checkers = List(
             checkDownSuppressed,
             endPass
@@ -407,74 +430,53 @@ object EventHandler {
         getResult(cs, me)
     }
     
-    private def dispatchDown(d: MouseEvent): LRESULT = {
-        if (ctx.isDoubleTrigger) doubleDown(d)
-        else if (ctx.isSingleTrigger) singleDown(d)
-        else if (ctx.isDragTrigger) dragDown(d)
-        else noneDown(d)
-    }
-    
-    private def dispatchUp(u: MouseEvent): LRESULT = {
-        if (ctx.isDoubleTrigger) doubleUp(u)
-        else if (ctx.isSingleTrigger) singleUp(u)
-        else if (ctx.isDragTrigger) dragUp(u)
-        else noneUp(u)
-    }
-    
-    private def dispatchDownS(d: MouseEvent): LRESULT = {
-        if (ctx.isSingleTrigger) singleDown(d)
-        else if (ctx.isDragTrigger) dragDown(d)
-        else noneDown(d)
-    }
-    
-    private def dispatchUpS(u: MouseEvent): LRESULT = {
-        if (ctx.isSingleTrigger) singleUp(u)
-        else if (ctx.isDragTrigger) dragUp(u)
-        else noneUp(u)
-    }
+    @volatile private var procDownLR: MouseEvent => LRESULT = null
+    @volatile private var procUpLR: MouseEvent => LRESULT = null
+    @volatile private var procDownS: MouseEvent => LRESULT = null
+    @volatile private var procUpS: MouseEvent => LRESULT = null
     
     def leftDown(info: HookInfo): LRESULT = {
         //logger.debug("leftDown")
         val ld = LeftDown(info)
-        dispatchDown(ld)
+        procDownLR(ld)
     }
     
     def leftUp(info: HookInfo): LRESULT = {
         //logger.debug("leftUp");
         val lu = LeftUp(info)
-        dispatchUp(lu)
+        procUpLR(lu)
     }
     
     def rightDown(info: HookInfo): LRESULT = {
         //logger.debug("rightDown")]
         val rd = RightDown(info)
-        dispatchDown(rd)
+        procDownLR(rd)
     }
     
     def rightUp(info: HookInfo): LRESULT = {
         //logger.debug("rightUp")
         val ru = RightUp(info)
-        dispatchUp(ru)
+        procUpLR(ru)
     }
     
     def middleDown(info: HookInfo): LRESULT = {
         val md = MiddleDown(info)
-        dispatchDownS(md)
+        procDownS(md)
     }
     
     def middleUp(info: HookInfo): LRESULT = {
         val mu = MiddleUp(info)
-        dispatchUpS(mu)
+        procUpS(mu)
     }
     
     def xDown(info: HookInfo): LRESULT = {
         val xd = if (Mouse.isXButton1(info.mouseData)) X1Down(info) else X2Down(info)
-        dispatchDownS(xd)
+        procDownS(xd)
     }
     
     def xUp(info: HookInfo): LRESULT = {
         val xu = if (Mouse.isXButton1(info.mouseData)) X1Up(info) else X2Up(info)
-        dispatchUpS(xu)
+        procUpS(xu)
     }
     
     private def dragDefault(info: HookInfo): Unit = {}
@@ -504,18 +506,27 @@ object EventHandler {
             callNextHook.get
     }
     
-    /*
-    def changeTrigger: Unit = {
-        logger.debug("changeTrigger")
+    def changeTrigger {
+        logger.debug("changeTrigger: EventHandler")
         
-        if (ctx.isLROnlyTrigger) {
-            lrDownFunc = lrOnlyDown
-            lrUpFunc = lrOnlyUp
+        val (downLR, upLR, downS, upS) = if (ctx.isDoubleTrigger) {
+            logger.debug("set double down/up")
+            (lrDown _, lrUp _, noneDown _, noneUp _)
+        }
+        else if (ctx.isSingleTrigger) {
+            logger.debug("set single down/up")
+            (noneDown _, noneUp _, singleDown _, singleUp _)
+        }
+        else if (ctx.isDragTrigger) {
+            logger.debug("set drag down/up")
+            (dragDown _, dragUp _, dragDown _, dragUp _)
         }
         else {
-            lrDownFunc = lrDown
-            lrUpFunc = lrUp
+            logger.debug("set none down/up")
+            (noneDown _, noneUp _, noneDown _, noneUp _)
         }
+        
+        procDownLR = downLR; procUpLR = upLR
+        procDownS = downS; procUpS = upS
     }
-    */
 }
