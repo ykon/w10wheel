@@ -32,7 +32,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.5.1"
+    val PROGRAM_VERSION = "1.5.2"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -273,7 +273,7 @@ object Context {
         @volatile private var rdS = false
         @volatile private var sdS = false
         
-        @volatile private var kdSMap = new HashMap[Int, Boolean]
+        private val kdSArray = new Array[Boolean](256)
         
         def setResent(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = true
@@ -295,7 +295,7 @@ object Context {
         }
         
         def setSuppressed(down: KeyboardEvent) = down match {
-            case KeyDown(_) => kdSMap(down.vkCode) = true
+            case KeyDown(_) => kdSArray(down.vkCode) = true
             case _ => {}
         }
         
@@ -307,7 +307,7 @@ object Context {
         }
         
         def isDownSuppressed(up: KeyboardEvent) = up match {
-            case KeyUp(_) => kdSMap.getOrElse(up.vkCode, false)
+            case KeyUp(_) => kdSArray(up.vkCode)
             case _ => false
         }
         
@@ -319,7 +319,7 @@ object Context {
         }
         
         def reset(down: KeyboardEvent) = down match {
-            case KeyDown(_) => kdSMap(down.vkCode) = false
+            case KeyDown(_) => kdSArray(down.vkCode) = false
             case _ => {}
         }
     }

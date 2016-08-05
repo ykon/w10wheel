@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        1.5.1
+        1.5.2
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-05: Version 1.5.2: キーボードのフラグ変更
         2016-08-04: Version 1.5.1: EventHandlerの最適化
         2016-08-03: Version 1.5.0: トリガーにNoneを追加、他
         2016-07-31: Version 1.4.0: キーボード(トリガー)対応
