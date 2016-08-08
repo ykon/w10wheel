@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        1.5.2
+        1.6
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-08: Version 1.6.0: VHAdjusterを追加、他
         2016-08-05: Version 1.5.2: キーボードのフラグ変更
         2016-08-04: Version 1.5.1: EventHandlerの最適化
         2016-08-03: Version 1.5.0: トリガーにNoneを追加、他
@@ -104,11 +105,13 @@ URL:
         
 メニュー項目:
         Trigger: トリガーを変更 (設定項目を参照)
+        Keyboard: キーボードトリガー
         Accel Table: 加速を有効にするか、どのテーブルを使うか # 1.0は1.0倍を表す
         Priority: プロセスの優先度を変更
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
-        Keyboard: キーボードをトリガーとする
+        VH Adjuster: 垂直、水平の方向固定、切り替え機能
+        
         Reload Properties: 設定ファイルを再読込
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -119,7 +122,7 @@ URL:
         Exit: 終了
         
 設定項目:
-        firstTrigger: (default: LRTrigger)
+        firstTrigger: string (default: LRTrigger)
                 LRTrigger: # 同時押し
                         左から右か、右から左を押すとトリガーになります。
                         左、右クリックともに次のイベントを待つために遅延します。
@@ -151,14 +154,14 @@ URL:
                         X2ボタンでドラッグするとスクロールできます。
                         固定はされません、ドラッグしないで離すとX2クリックを送ります。
         
-        processPriority:  (default: AboveNormal)
+        processPriority: string (default: AboveNormal)
                 High: 高
                 AboveNormal: 通常以上
                 Normal: 通常
                 
-        pollTimeout: 150-500 (default: 300)
+        pollTimeout: 150-500 (default: 200)
                 同時押しのイベント待ち時間(ミリ秒)  # WheelBall の 判定時間 
-        scrollLocktime: 150-500 (default: 300)
+        scrollLocktime: 150-500 (default: 200)
                 トリガーを離してスクロールモードに固定する時間(ミリ秒)
                 この時間以内にトリガーを離すとスクロールモードに固定します。
         realWheelMode: bool (default: false)
@@ -185,6 +188,19 @@ URL:
                 
         draggedLock: bool (default: false) # *DragTrigger
                 *DragTriggerでドラッグ後、スクロールモードに固定します。
+                
+        vhAdjusterMethod: string (default: Switching) # VHAdjuster
+                Fixed: 初回の移動量が多い方向に固定
+                Switching: 方向固定 + 切り替え (switchingThreshold参照)
+                
+        vhAdjusterMode: bool (default: false) # VHAdjuster
+                VHAdjusterの有効、無効
+        firstPreferVertical: bool (default: true) # VHAdjuster
+                初回判定時に垂直(縦)を優先する
+        firstMinThreshold: 1-10 (default: 5) # VHAdjuster
+                初回を判定する移動量 (この値以下は無視する)
+        switchingThreshold: 10-500 (default: 50) # VHAdjuster
+                この値を超える入力で、方向を切り替える
                 
         wheelDelta: 10-500 (default: 120) # RealWheelMode
                 RealWheelModeでの一回分のホイール値
@@ -213,7 +229,7 @@ URL:
                 CustomTableで使われるMultiplier
                 
         keyboardHook: bool (default: false) # Keyboard
-                キーボードのトリガーを有効にする
+                キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー 
                 

@@ -216,16 +216,11 @@ object Windows {
         }
     }
         
-    private def setVScrollDirection(d: Int) =
-        if (ctx.isReverseScroll) d else -d
-        
     private def getVWheelDelta(input: Int) = {
         val delta = ctx.getWheelDelta
+        val res = if (input > 0) -delta else delta
         
-        if (ctx.isReverseScroll)
-            if (input > 0) delta else -delta
-        else
-            if (input > 0) -delta else delta
+        if (ctx.isReverseScroll) -res else res
     }
     
     private def getHWheelDelta(input: Int) = {
@@ -237,6 +232,9 @@ object Windows {
         case Plus() => d < 0
         case Minus() => d > 0
     }
+    
+    //@volatile private var sendVWheel: (POINT, Int) => Unit = null
+    //@volatile private var sendHWheel: (POINT, Int) => Unit = null
     
     private def sendRealVWheel(pt: POINT, d: Int) {
         def send = sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
@@ -252,18 +250,13 @@ object Windows {
         vLastMove = if (d > 0) Plus() else Minus() 
     }
     
-    def sendVerticalWheel(pt: POINT, d: Int) {
+    def sendVWheel(pt: POINT, d: Int) {
         if (ctx.isRealWheelMode)
             sendRealVWheel(pt, d)
         else {
-            //logger.debug(s"d = $d")
-            val data = setVScrollDirection(addAccel(d))
-            sendInput(pt, data,  MOUSEEVENTF_WHEEL, 0, 0)
+            def rev(d: Int) = if (ctx.isReverseScroll) d else -d
+            sendInput(pt, rev(addAccel(d)),  MOUSEEVENTF_WHEEL, 0, 0)
         }
-    }
-    
-    private def setHScrollDirection(d: Int) = {
-        if (ctx.isReverseScroll) -d else d
     }
     
     private def sendRealHWheel(pt: POINT, d: Int) {
@@ -280,34 +273,100 @@ object Windows {
         hLastMove = if (d > 0) Plus() else Minus() 
     }
     
-    def sendHorizontalWheel(pt: POINT, d: Int) {
+    def sendHWheel(pt: POINT, d: Int) {
         if (ctx.isRealWheelMode)
             sendRealHWheel(pt, d)
         else {
-            val data = setHScrollDirection(addAccel(d))
-            sendInput(pt, data, MOUSEEVENTF_HWHEEL, 0, 0)
+            def rev(d: Int) = if (ctx.isReverseScroll) -d else d
+            sendInput(pt, rev(addAccel(d)), MOUSEEVENTF_HWHEEL, 0, 0)
+        }
+    }
+    
+    /*
+    def changeScrollMode {
+        sendVWheel = if (ctx.isRealWheelMode) sendRealVWheel else sendNormalVWheel
+        sendHWheel = if (ctx.isRealWheelMode) sendRealHWheel else sendNormalHWheel
+    }
+    */
+    
+    abstract class VHDirection
+    case class Vertical() extends VHDirection
+    case class Horizontal() extends VHDirection
+    
+    private var vhDirection: VHDirection = null
+    
+    private def resetVHA {
+        vhDirection = null
+    }
+    
+    def initScroll {
+        if (ctx.isRealWheelMode)
+            startWheelCount
+        if (ctx.isVhAdjusterMode)
+            resetVHA
+    }
+    
+    private def setVerticalVHA {
+        vhDirection = Vertical()
+        if (ctx.isCursorChange) changeCursorV
+    }
+    
+    private def setHorizontalVHA {
+        vhDirection = Horizontal()    
+        if (ctx.isCursorChange) changeCursorH
+    }
+    
+    private def checkFirstVHA(adx: Int, ady: Int) {
+        val mthr = ctx.getFirstMinThreshold
+        if (adx > mthr || ady > mthr) {
+            val iy = if (ctx.isFirstPreferVertical) ady * 2 else ady
+            if (iy >= adx) setVerticalVHA else setHorizontalVHA
+        }
+    }
+    
+    private def checkSwitchingVHA(adx: Int, ady: Int) {
+        val sthr = ctx.getSwitchingThreshold
+        if (ady > sthr) setVerticalVHA else if (adx > sthr) setHorizontalVHA
+    }
+    
+    private def sendWheelVHA(wspt: POINT, dx: Int, dy: Int) {        
+        val adx = Math.abs(dx)
+        val ady = Math.abs(dy)
+    
+        if (vhDirection == null) // first
+            checkFirstVHA(adx, ady)
+        else {
+            if (ctx.isVhAdjusterSwitching)
+                checkSwitchingVHA(adx, ady)
+        }
+        
+        vhDirection match {
+            case null => {}
+            case Vertical() => if (dy != 0) sendVWheel(wspt, dy)
+            case Horizontal() =>if (dx != 0) sendHWheel(wspt, dx)
         }
     }
     
     def sendWheel(pt: POINT) {
         val (sx, sy) = ctx.getScrollStartPoint
         
-        val tx = pt.x - sx
-        val ty = pt.y - sy
+        def swap(x: Int, y: Int) = if (ctx.isSwapScroll) (y, x) else (x, y)
+        val (dx, dy) = swap(pt.x - sx, pt.y - sy)
         
-        val dx = if (ctx.isSwapScroll) ty else tx  
-        val dy = if (ctx.isSwapScroll) tx else ty
-        
-        val spt = new POINT(sx, sy)
-        
-        if (Math.abs(dy) > ctx.getVerticalThreshold) {
-            //logger.debug(s"dy: $dy")
-            sendVerticalWheel(spt, dy)
+        val wspt = new POINT(sx, sy)
+       
+        if (ctx.isVhAdjusterMode && ctx.isHorizontalScroll) {
+            //logger.debug(s"dx: $dx, dy: $dy")
+            sendWheelVHA(wspt, dx, dy)
         }
-        
-        if (ctx.isHorizontalScroll) {
-            if (Math.abs(dx) > ctx.getHorizontalThreshold)
-                sendHorizontalWheel(spt, dx)
+        else {
+            if (Math.abs(dy) > ctx.getVerticalThreshold)
+                sendVWheel(wspt, dy)
+            
+            if (ctx.isHorizontalScroll) {
+                if (Math.abs(dx) > ctx.getHorizontalThreshold)
+                    sendHWheel(wspt, dx)
+            }
         }
     }
     
@@ -330,51 +389,50 @@ object Windows {
     }
     
     def resendClick(mc: MouseClick) = {
-        //ctx.setSkip(mc, true)
         sendInput(createClick(mc, resendTag))
     }
     
     def resendDown(me: MouseEvent) = {
-        val ext = resendTag
-        //ctx.setSkip(me, true)
-        
         me match {
-            case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, ext)
-            case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, ext)
+            case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
+            case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
         }
     }
     
     def resendUp(me: MouseEvent) = {
-        //ctx.setSkip(me, true)
         me match {
             case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
             case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
         }
     }
     
-    private val CURSOR_ID = IDC_SIZENS
-    
     // https://github.com/java-native-access/jna/blob/master/contrib/platform/src/com/sun/jna/platform/win32/Kernel32Util.java
     private def loadCursor(id: Int) = {
-        val id = new Pointer(CURSOR_ID)
-        //ex.LoadCursorW(null, id)
-        u32ex.LoadImageW(null, id, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED)
+        val id_ptr = new Pointer(id)
+        u32ex.LoadImageW(null, id_ptr, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED)
     }
     
-    private val hCur = loadCursor(IDC_SIZENS)
+    private val CURSOR_V = loadCursor(IDC_SIZENS)
+    private val CURSOR_H = loadCursor(IDC_SIZEWE)
     
     private def copyCursor(hCur: Pointer) =
         u32ex.CopyIcon(hCur)
     
     //@volatile private var cursorChanged = false
     
-    def changeCursor = {
+    def changeCursor(hCur: Pointer) = {
         u32ex.SetSystemCursor(copyCursor(hCur), OCR_NORMAL)
         u32ex.SetSystemCursor(copyCursor(hCur), OCR_IBEAM)
         u32ex.SetSystemCursor(copyCursor(hCur), OCR_HAND)
         
         //cursorChanged = true
     }
+    
+    def changeCursorV =
+        changeCursor(CURSOR_V)
+        
+    def changeCursorH =
+        changeCursor(CURSOR_H)
      
     //val SPIF_UPDATEINIFILE = 0x01;
     //val SPIF_SENDCHANGE = 0x02;  
@@ -391,14 +449,17 @@ object Windows {
         cursorChanged
     */
     
-    def getAsyncShiftState =
-        (u32ex.GetAsyncKeyState(VK_SHIFT) & 0xf000) != 0
+    private def checkAsyncKeyState(vKey: Int) =
+        (u32ex.GetAsyncKeyState(vKey) & 0xf000) != 0
     
-    def getAsyncCtrlState =
-        (u32ex.GetAsyncKeyState(VK_CONTROL) & 0xf000) != 0
+    def checkShiftState =
+        checkAsyncKeyState(VK_SHIFT)
     
-    def getAsyncAltState =
-        (u32ex.GetAsyncKeyState(VK_MENU) & 0xf000) != 0
+    def checkCtrlState =
+        checkAsyncKeyState(VK_CONTROL)
+    
+    def checkAltState =
+        checkAsyncKeyState(VK_MENU)
         
     trait Priority {
         def name = this.getClass.getSimpleName

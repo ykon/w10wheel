@@ -15,7 +15,10 @@ object EventHandler {
     private val logger = ctx.logger
     
     private var lastEvent: MouseEvent = null
-    private var lastResendEvent: MouseEvent = null
+    //private var lastResendEvent: MouseEvent = null
+    
+    private var preLeftResendEvent: MouseEvent = null
+    private var preRightResendEvent: MouseEvent = null
     
     private var __callNextHook: () => LRESULT = null
     
@@ -24,18 +27,28 @@ object EventHandler {
     
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
+    
+    private def getPreResendEvent(me: MouseEvent) = me match {
+        case LeftDown(_) | LeftUp(_) => preLeftResendEvent
+        case RightDown(_) | RightUp(_) => preRightResendEvent
+    }
+    
+    private def setPreResendEvent(me: MouseEvent) = me match {
+        case LeftDown(_) | LeftUp(_) => preLeftResendEvent = me
+        case RightDown(_) | RightUp(_) => preRightResendEvent = me
+    }
         
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
         if (Windows.isResendEvent(me)) {
-            (lastResendEvent, me) match {
-                case (LeftUp(_), LeftUp(_)) | (RightUp(_), RightUp(_)) => {
+            (getPreResendEvent(me), me) match {
+                case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) => {
                     logger.warn(s"re-resend event: ${me.name}")
                     Windows.resendUp(me)
                     suppress
                 }
                 case _ => {
                     logger.debug(s"skip resend event: ${me.name}")
-                    lastResendEvent = me
+                    setPreResendEvent(me)
                     callNextHook       
                 }
             }
@@ -192,9 +205,10 @@ object EventHandler {
     }
     
     private def checkKeySendMiddle(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isSendMiddleClick && (Windows.getAsyncShiftState || Windows.getAsyncCtrlState || Windows.getAsyncAltState)) {
+        val w = Windows
+        if (ctx.isSendMiddleClick && (w.checkShiftState || w.checkCtrlState || w.checkAltState)) {
             logger.debug(s"send middle click")
-            Windows.resendClick(MiddleClick(me.info))
+            w.resendClick(MiddleClick(me.info))
             ctx.LastFlags.setSuppressed(me)
             suppress
         }
@@ -485,8 +499,8 @@ object EventHandler {
     private var dragged = false
 
     private def dragStart(info: HookInfo): Unit = {
-        if (ctx.isCursorChange)
-            Windows.changeCursor
+        if (ctx.isCursorChange && !ctx.isVhAdjusterMode)
+            Windows.changeCursorV
         
         drag = dragDefault
         dragged = true

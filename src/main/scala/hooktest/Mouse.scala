@@ -10,7 +10,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 trait MouseEvent {
     val info: HookInfo
-    def name = Mouse.getSimpleName(this)
+    def name = getClass.getSimpleName
 
     def isDown = this match {
         case LeftDown(_) | RightDown(_) | MiddleDown(_) | X1Down(_) | X2Down(_) => true
@@ -78,9 +78,25 @@ case class X2Down (info: HookInfo) extends MouseEvent
 case class X2Up (info: HookInfo) extends MouseEvent
 case class Move (info: HookInfo) extends MouseEvent
 
+/*
+object LeftButton {
+    def unapply(me: MouseEvent) = me match {
+        case LeftDown(_) | LeftUp(_) => Some(me)
+        case _ => None
+    }
+}
+
+object RightButton {
+    def unapply(me: MouseEvent) = me match {
+        case RightDown(_) | RightUp(_) => Some(me)
+        case _ => None
+    }
+}
+*/
+
 trait MouseClick {
     val info: HookInfo
-    def name = Mouse.getSimpleName(this)
+    def name = getClass.getSimpleName
 }
 case class LeftClick (info: HookInfo) extends MouseClick
 case class RightClick (info: HookInfo) extends MouseClick
@@ -89,7 +105,7 @@ case class X1Click (info: HookInfo) extends MouseClick
 case class X2Click (info: HookInfo) extends MouseClick
 
 trait Trigger {
-    def name = Mouse.getSimpleName(this)
+    def name = getClass.getSimpleName
 
     def isSingle = this match {
         case MiddleTrigger() | X1Trigger() | X2Trigger() => true
@@ -151,22 +167,5 @@ object Mouse {
         case "X1Drag" | "X1DragTrigger" => X1DragTrigger()
         case "X2Drag" | "X2DragTrigger" => X2DragTrigger()
         case "None" | "NoneTrigger" => NoneTrigger()
-    }
-    
-    def getSimpleName(obj: Object) = {
-        obj.getClass.getSimpleName
-    }
-    
-    def isAdapted(me1: MouseEvent, me2: MouseEvent) = {
-        me1 match {
-            case LeftDown(_) => me2 match {
-                case LeftUp(_) | RightDown(_) | Move(_) => true
-                case _ => false
-            }
-            case RightDown(_) => me2 match {
-                case RightUp(_) | LeftDown(_) | Move(_) => true
-                case _ => false
-            }
-        }
     }
 }

@@ -32,13 +32,13 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.5.2"
+    val PROGRAM_VERSION = "1.6"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
     
     @volatile private var firstTrigger: Trigger = LRTrigger() // default
-    @volatile private var pollTimeout = 300 // default
+    @volatile private var pollTimeout = 200 // default
     @volatile private var passMode = false
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
     @volatile private var sendMiddleClick = false // default
@@ -46,20 +46,31 @@ object Context {
     @volatile private var keyboardHook = false // default
     @volatile private var targetVKCode = Keyboard.getVKCode("VK_NONCONVERT") // default
     
-    def isKeyboardHook =
-        keyboardHook
-        
-    def getTargetVKCode =
-        targetVKCode
-        
-    def isTriggerKey(ke: KeyboardEvent) =
-        ke.vkCode == targetVKCode
-        
-    def isNoneTriggerKey =
-        targetVKCode == 0
+    def isKeyboardHook = keyboardHook
+    def getTargetVKCode = targetVKCode
+    def isTriggerKey(ke: KeyboardEvent) = ke.vkCode == targetVKCode
+    def isNoneTriggerKey = targetVKCode == 0
     
-    def isSendMiddleClick =
-        sendMiddleClick
+    def isSendMiddleClick = sendMiddleClick
+    
+    trait VHAdjusterMethod {
+        def name = getClass.getSimpleName
+    }
+    case class Fixed() extends VHAdjusterMethod
+    case class Switching() extends VHAdjusterMethod
+    
+    @volatile private var vhAdjusterMode = false // default
+    @volatile private var vhAdjusterMethod: VHAdjusterMethod = Switching() // default
+    @volatile private var firstPreferVertical = true // default
+    @volatile private var firstMinThreshold = 5 // default
+    @volatile private var switchingThreshold = 50 // default
+        
+    def isVhAdjusterMode = vhAdjusterMode
+    def isVhAdjusterSwitching = vhAdjusterMethod == Switching()
+    def isFirstPreferVertical = firstPreferVertical
+    def getFirstMinThreshold = firstMinThreshold
+    def getSwitchingThreshold = switchingThreshold
+    
     
     private object Accel {
         // MouseWorks by Kensington (TD, M5, M6, M7, M8, M9)
@@ -134,7 +145,7 @@ object Context {
         @volatile private var stime = 0
         @volatile private var sx = 0
         @volatile private var sy = 0
-        @volatile var locktime = 300 // default
+        @volatile var locktime = 200 // default
         @volatile var cursorChange = true // default
         @volatile var reverse = false // default
         @volatile var horizontal = true // default
@@ -144,8 +155,7 @@ object Context {
         @volatile var swap = false // default 
         
         def start(info: HookInfo) {
-            if (RealWheel.mode)
-                Windows.startWheelCount
+            Windows.initScroll
             
             stime = info.time
             sx = info.pt.x
@@ -153,12 +163,11 @@ object Context {
             mode = true
             
             if (cursorChange && !firstTrigger.isDrag)
-                Windows.changeCursor
+                Windows.changeCursorV
         }
         
         def start(kinfo: KHookInfo) {
-            if (RealWheel.mode)
-                Windows.startWheelCount
+            Windows.initScroll
             
             stime = kinfo.time
             val pt = Windows.getCursorPos
@@ -167,7 +176,7 @@ object Context {
             mode = true
             
             if (cursorChange)
-                Windows.changeCursor
+                Windows.changeCursorV
         }
         
         def exit = {
@@ -397,14 +406,23 @@ object Context {
             item.setSelection(Keyboard.getVKCode(name) == targetVKCode)
         }
     }
+    
+    private def resetVhAdjusterMenuItems {
+        boolMenuMap("vhAdjusterMode").setEnabled(Scroll.horizontal)
+        
+        vhAdjusterMenuMap.foreach { case (name, item) =>
+            item.setSelection(getVhAdjusterMethod(name) == vhAdjusterMethod)
+        }
+    }
         
     private def resetMenuItem: Unit = {
         resetTriggerMenuItems
+        resetKeyboardMenuItems
         resetAccelMenuItems
         resetPriorityMenuItems
         resetNumberMenuItems
         resetBoolMenuItems
-        resetKeyboardMenuItems
+        resetVhAdjusterMenuItems
     }
     
     private def textToName(s: String): String =
@@ -705,12 +723,13 @@ object Context {
         })
     }
     
-    private def createBoolMenuItem(menu: Menu, vName: String, mName: String, enabled: Boolean = true) {
+    private def createBoolMenuItem(menu: Menu, vName: String, mName: String, enabled: Boolean = true) = {
         val item = new MenuItem(menu, SWT.CHECK)
         item.setText(mName)
         item.setEnabled(enabled)
         item.addListener(SWT.Selection, makeSetBooleanEvent(vName))
         boolMenuMap(vName) = item
+        item
     }
     
     private def createBoolMenuItem(menu: Menu, vName: String) {
@@ -736,6 +755,53 @@ object Context {
         val item = new MenuItem(pMenu, SWT.CASCADE)
         item.setText("Real Wheel Mode")
         item.setMenu(rMenu)
+    }
+    
+    private val vhAdjusterMenuMap = new HashMap[String, MenuItem]
+    
+    private def getVhAdjusterMethod(name: String) = name match {
+        case "Fixed" => Fixed()
+        case "Switching" => Switching()
+    }
+    
+    private def setVhAdjusterMethod(name: String) = {
+        logger.debug(s"setVhAdjusterMethod: $name")
+        vhAdjusterMethod = getVhAdjusterMethod(name)
+    }
+    
+    private def createVhAdjusterMenuItem(menu: Menu, text: String) {
+        val item = new MenuItem(menu, SWT.RADIO)
+        item.setText(text)
+        vhAdjusterMenuMap(text) = item
+        
+        item.addSelectionListener((e: SelectionEvent) => {
+            if(item.getSelection)
+                setVhAdjusterMethod(item.getText)
+            ()
+        })
+    }
+    
+    private def createVhAdjusterMenu(pMenu: Menu) {
+        val aMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createVhAdjusterMenuItem(aMenu, text)
+        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(aMenu, name, low, up)
+        def addBool(name: String) = createBoolMenuItem(aMenu, name)
+        
+        createOnOffMenuItem(aMenu, "vhAdjusterMode")
+        boolMenuMap("vhAdjusterMode").setEnabled(Scroll.horizontal)
+        addSeparator(aMenu)
+        
+        add("Fixed")
+        add("Switching")
+        addSeparator(aMenu)
+        
+        addBool("firstPreferVertical")
+        addNum("firstMinThreshold", 1, 10)
+        addNum("switchingThreshold", 10, 500)
+        
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("VH Adjuster")
+        item.setMenu(aMenu)
     }
     
     private val keyboardMenuMap = new HashMap[String, MenuItem]
@@ -833,7 +899,10 @@ object Context {
     }
     
     private def createHorizontalScrollMenu(menu: Menu) = {
-        createBoolMenuItem(menu, "horizontalScroll", "Horizontal Scroll")
+        val item = createBoolMenuItem(menu, "horizontalScroll", "Horizontal Scroll")
+        item.addListener(SWT.Selection, (e: Event) => {
+            boolMenuMap("vhAdjusterMode").setEnabled(item.getSelection)
+        })
     }
     
     private def createReverseScrollMenu(menu: Menu) = {
@@ -894,11 +963,14 @@ object Context {
         createTrayItem(menu)
         
         createTriggerMenu(menu)
+        createKeyboardMenu(menu)
+        addSeparator(menu)
+        
         createAccelTableMenu(menu)
         createPriorityMenu(menu)
         createNumberMenu(menu)
         createRealWheelModeMenu(menu)
-        createKeyboardMenu(menu)
+        createVhAdjusterMenu(menu)
         addSeparator(menu)
         
         createReloadPropertiesMenu(menu)
@@ -914,8 +986,6 @@ object Context {
         
         createInfoMenu(menu)
         createExitMenu(menu)
-        
-        //systemShell.h
         
         resetMenuItem
     }
@@ -1040,6 +1110,16 @@ object Context {
         }
     }
     
+    private def setVhAdjusterMethodOfProperty {
+        try {
+            setVhAdjusterMethod(prop.getString("vhAdjusterMethod"))
+        }
+        catch {
+            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}")
+            case e: scala.MatchError => logger.warn(s"Match error: ${e.getMessage}")     
+        }
+    }
+    
     private def setDefaultPriority {
         logger.debug("setDefaultPriority")
         Windows.setPriority(processPriority)
@@ -1122,18 +1202,23 @@ object Context {
             setCustomAccelOfProperty
             setPriorityOfProperty
             setVKCodeOfProperty
+            setVhAdjusterMethodOfProperty
             
             BooleanNames.foreach(n => setBooleanOfProperty(n))
             Hook.setOrUnsetKeyboardHook(keyboardHook)
             
-            setNumberOfProperty("pollTimeout", 50, 500)
-            setNumberOfProperty("scrollLocktime", 150, 500)
-            setNumberOfProperty("verticalThreshold" , 0, 500)
-            setNumberOfProperty("horizontalThreshold", 0, 500)
+            def setNum(n: String, l: Int, u: Int) = setNumberOfProperty(n, l, u)
+            setNum("pollTimeout", 50, 500)
+            setNum("scrollLocktime", 150, 500)
+            setNum("verticalThreshold" , 0, 500)
+            setNum("horizontalThreshold", 0, 500)
             
-            setNumberOfProperty("wheelDelta", 10, 500)
-            setNumberOfProperty("vWheelMove", 10, 500)
-            setNumberOfProperty("hWheelMove", 10, 500)
+            setNum("wheelDelta", 10, 500)
+            setNum("vWheelMove", 10, 500)
+            setNum("hWheelMove", 10, 500)
+            
+            setNum("firstMinThreshold", 1, 10)
+            setNum("switchingThreshold", 10, 500)
         }
         catch {
             case _: FileNotFoundException => {
@@ -1154,10 +1239,13 @@ object Context {
         try {
             prop.load(getPropertiesInput)
             
-            prop.getString("firstTrigger") != firstTrigger.name ||
-            prop.getString("accelMultiplier") != Accel.multiplier.name ||
-            prop.getString("processPriority") != processPriority.name ||
-            prop.getString("targetVKCode") != Keyboard.getName(targetVKCode) ||
+            def check(n: String, v: String) = prop.getString(n) != v
+            
+            check("firstTrigger", firstTrigger.name) ||
+            check("accelMultiplier", Accel.multiplier.name) ||
+            check("processPriority", processPriority.name) ||
+            check("targetVKCode", Keyboard.getName(targetVKCode)) ||
+            check("vhAdjusterMethod", vhAdjusterMethod.name) ||
             isChangedBoolean || isChangedNumber
         }
         catch {
@@ -1170,7 +1258,8 @@ object Context {
     private val NumberNames: Array[String] = {
         Array("pollTimeout", "scrollLocktime", 
               "verticalThreshold", "horizontalThreshold",
-              "wheelDelta", "vWheelMove", "hWheelMove")
+              "wheelDelta", "vWheelMove", "hWheelMove",
+              "firstMinThreshold", "switchingThreshold")
     }
     
     private val BooleanNames: Array[String] = {
@@ -1179,7 +1268,8 @@ object Context {
               "quickFirst", "quickTurn",
               "accelTable", "customAccelTable",
               "draggedLock", "swapScroll",
-              "sendMiddleClick", "keyboardHook"
+              "sendMiddleClick", "keyboardHook",
+              "vhAdjusterMode", "firstPreferVertical"
         )
     }
     
@@ -1194,6 +1284,8 @@ object Context {
             case "wheelDelta" => RealWheel.wheelDelta = n
             case "vWheelMove" => RealWheel.vWheelMove = n
             case "hWheelMove" => RealWheel.hWheelMove = n
+            case "firstMinThreshold" => firstMinThreshold = n
+            case "switchingThreshold" => switchingThreshold = n
         }
     }
     
@@ -1205,6 +1297,8 @@ object Context {
         case "wheelDelta" => RealWheel.wheelDelta
         case "vWheelMove" => RealWheel.vWheelMove
         case "hWheelMove" => RealWheel.hWheelMove
+        case "firstMinThreshold" => firstMinThreshold
+        case "switchingThreshold" => switchingThreshold
     }
     
     private def setBooleanOfName(name: String, b: Boolean) = {
@@ -1222,6 +1316,8 @@ object Context {
             case "swapScroll" => Scroll.swap = b
             case "sendMiddleClick" => sendMiddleClick = b
             case "keyboardHook" => keyboardHook = b
+            case "vhAdjusterMode" => vhAdjusterMode = b
+            case "firstPreferVertical" => firstPreferVertical = b
             case "passMode" => passMode = b
         }
     }
@@ -1239,6 +1335,8 @@ object Context {
         case "swapScroll" => Scroll.swap
         case "sendMiddleClick" => sendMiddleClick
         case "keyboardHook" => keyboardHook
+        case "vhAdjusterMode" => vhAdjusterMode
+        case "firstPreferVertical" => firstPreferVertical
         case "passMode" => passMode
     }
     
@@ -1249,10 +1347,13 @@ object Context {
                 return
             }
             
-            prop.setProperty("firstTrigger", firstTrigger.name)
-            prop.setProperty("accelMultiplier", Accel.multiplier.name)
-            prop.setProperty("processPriority", processPriority.name)
-            prop.setProperty("targetVKCode", Keyboard.getName(targetVKCode))
+            def set(n: String, v: String) = prop.setProperty(n, v)
+            
+            set("firstTrigger", firstTrigger.name)
+            set("accelMultiplier", Accel.multiplier.name)
+            set("processPriority", processPriority.name)
+            set("targetVKCode", Keyboard.getName(targetVKCode))
+            set("vhAdjusterMethod", vhAdjusterMethod.name)
             
             BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
             NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))

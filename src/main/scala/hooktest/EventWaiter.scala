@@ -67,15 +67,11 @@ object EventWaiter {
             Windows.resendUp(up)
         }
         
-        down match {
-            case LeftDown(_) => up match {
-                case LeftUp(_) => resendC(LeftClick(down.info))
-                case RightUp(_) => resendUD
-            }
-            case RightDown(_) => up match {
-                case RightUp(_) => resendC(RightClick(down.info))
-                case LeftUp(_) => resendUD
-            }
+        (down, up) match {
+            case (LeftDown(_), LeftUp(_)) => resendC(LeftClick(down.info))
+            case (LeftDown(_), RightUp(_)) => resendUD
+            case (RightDown(_), RightUp(_)) => resendC(RightClick(down.info))
+            case (RightDown(_), LeftUp(_)) => resendUD
         }
     }
     
