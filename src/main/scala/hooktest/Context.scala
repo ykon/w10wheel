@@ -13,16 +13,13 @@ import org.eclipse.swt.SWT
 import org.eclipse.swt.widgets._
 import org.eclipse.swt.events._
 import org.eclipse.swt.graphics.Image
-import org.eclipse.swt.graphics.Point
-import org.eclipse.swt.layout.GridData
-import org.eclipse.swt.layout.GridLayout
 
 //implicit
 import scala.language.implicitConversions
 
-import java.util.Properties
 import java.io.FileNotFoundException
 import java.io.{ File, FileInputStream, FileOutputStream }
+import java.io.IOException
 
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
@@ -30,12 +27,14 @@ import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 import scala.collection.mutable.HashMap
 import java.util.NoSuchElementException
 
-object Context {
+object Context {    
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.6"
+    val PROGRAM_VERSION = "1.7"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
+    
+    @volatile private var selectedProperties = Properties.DEFAULT_DEF // default
     
     @volatile private var firstTrigger: Trigger = LRTrigger() // default
     @volatile private var pollTimeout = 200 // default
@@ -70,7 +69,6 @@ object Context {
     def isFirstPreferVertical = firstPreferVertical
     def getFirstMinThreshold = firstMinThreshold
     def getSwitchingThreshold = switchingThreshold
-    
     
     private object Accel {
         // MouseWorks by Kensington (TD, M5, M6, M7, M8, M9)
@@ -414,8 +412,15 @@ object Context {
             item.setSelection(getVhAdjusterMethod(name) == vhAdjusterMethod)
         }
     }
+    
+    private def resetOnOffMenuItems {
+        OnOffNames.foreach(name => {
+              val item = boolMenuMap(name)
+              item.setText(getOnOffText(getBooleanOfName(name)))
+        })
+    }
         
-    private def resetMenuItem: Unit = {
+    private def resetMenuItems: Unit = {
         resetTriggerMenuItems
         resetKeyboardMenuItems
         resetAccelMenuItems
@@ -423,6 +428,7 @@ object Context {
         resetNumberMenuItems
         resetBoolMenuItems
         resetVhAdjusterMenuItems
+        resetOnOffMenuItems
     }
     
     private def textToName(s: String): String =
@@ -529,113 +535,8 @@ object Context {
         item.setMenu(aMenu)
     }
     
-    private class NumberInputDialog(name: String, low: Int, up: Int) extends Dialog(systemShell) {
-        private def createSpinner(shell: Shell) = {
-            val spinner = new Spinner(shell, SWT.BORDER)
-            spinner.setMinimum(low)
-            spinner.setMaximum(up)
-            spinner.setSelection(getNumberOfName(name))
-            spinner
-        }
-        
-        private def createShell = {
-            val shell = new Shell(getParent, SWT.TITLE | SWT.BORDER | SWT.APPLICATION_MODAL | SWT.ON_TOP)
-            shell.setText("Set Number")
-            shell.setLayout(new GridLayout(2, false))
-            shell
-        }
-        
-        private def createLabel(shell: Shell) = {
-            val label = new Label(shell, SWT.NULL)
-            label.setText(s"$name ($low - $up): ")
-            label
-        }
-        
-        private def createButton(shell: Shell, text: String, gridData: GridData) = {
-            val button = new Button(shell, SWT.PUSH)
-            button.setText(text)
-            button.setLayoutData(gridData)
-            button
-        }
-        
-        private def makeKeyAdapter(ok: Button, cancel: Button) = {
-            new KeyAdapter {
-                override def keyReleased(e: KeyEvent) {
-                    if (e.character == SWT.CR)
-                        ok.notifyListeners(SWT.Selection, null)
-                    else if (e.keyCode == SWT.ESC)
-                        cancel.notifyListeners(SWT.Selection, null)
-                }
-            }
-        }
-        
-        private def messageLoop(shell: Shell) = {
-            val display = getParent.getDisplay
-            while (!shell.isDisposed) {
-                if (!display.readAndDispatch)
-                    display.sleep
-            }            
-        }
-        
-        private def setLocation(shell: Shell) {
-            val pt = Display.getDefault.getCursorLocation
-            shell.setLocation(pt.x - (shell.getBounds.width / 2), pt.y - (shell.getBounds.height / 2))                
-        }
-        
-        private def makeButtonGridData = {
-            val gridData = new GridData(GridData.HORIZONTAL_ALIGN_END)
-            gridData.widthHint = 70
-            gridData
-        }
-        
-        private def isValidNumber(res: Int) =
-            res >= low && res <= up
-            
-        private def errorMessage(input: Int) {
-            val mb = new MessageBox(systemShell, SWT.OK | SWT.ICON_ERROR)
-            mb.setText("Error")
-            mb.setMessage(s"Invalid Number: $input")
-            mb.open()
-        }
-        
-        def open: Option[Int] = {
-            val shell = createShell
-            val label = createLabel(shell)
-            val spinner = createSpinner(shell)
-            
-            val gridData = makeButtonGridData
-            val okButton = createButton(shell, "OK", gridData)
-            val cancelButton = createButton(shell, "Cancel", gridData)
-            
-            spinner.addKeyListener(makeKeyAdapter(okButton, cancelButton))
-            
-            var res: Option[Int] = None
-            okButton.addListener(SWT.Selection, (e: Event) => {
-                val input = spinner.getSelection
-                
-                if (!isValidNumber(input))
-                    errorMessage(input)
-                else {
-                    res = Some(input)
-                    shell.dispose
-                }
-            })
-            
-            cancelButton.addListener(SWT.Selection, (e: Event) => shell.dispose)
-            shell.addListener(SWT.Traverse, (e: Event) => if (e.detail == SWT.TRAVERSE_ESCAPE) e.doit = false)
-
-            shell.pack
-            setLocation(shell)    
-            shell.open
-            
-            messageLoop(shell)
-            res
-        }
-    }
-    
-    // http://www.java2s.com/Code/Java/SWT-JFace-Eclipse/NumberInputDialog.htm
     private def openNumberInputDialog(name: String, low: Int, up: Int) = {
-        val dialog = new NumberInputDialog(name, low, up)
+        val dialog = new Dialog.NumberInputDialog(systemShell, name, low, up)
         dialog.open
     }
     
@@ -708,16 +609,17 @@ object Context {
         item.setText("Set Number")
         item.setMenu(nMenu)
     }
+    
+    private def getOnOffText(b: Boolean) = if (b) "ON" else "OFF"
         
     private def createOnOffMenuItem(menu: Menu, vname: String, action: Boolean => Unit = _ => {}): Unit = {
-        def getOnOff(b: Boolean) = if (b) "ON" else "OFF"
         val item = new MenuItem(menu, SWT.CHECK)
-        item.setText(getOnOff(getBooleanOfName(vname)))
+        item.setText(getOnOffText(getBooleanOfName(vname)))
         boolMenuMap(vname) = item
         
         item.addListener(SWT.Selection, (e: Event) => {
             val b = item.getSelection
-            item.setText(getOnOff(b))
+            item.setText(getOnOffText(b))
             setBooleanOfName(vname, b)
             action(b)
         })
@@ -864,21 +766,137 @@ object Context {
         item.setMenu(kMenu)
     }
     
+    private val DEFAULT_DEF = Properties.DEFAULT_DEF
+    
+    private def setSelectedProperties(name: String) {
+        if (selectedProperties != name) {
+            logger.debug(s"setSelectedProperties: $name")
+        
+            selectedProperties = name
+            loadProperties
+            resetMenuItems
+        }
+    }
+    
+    private def addPropertiesMenu(menu: Menu, name: String) {
+        val item = new MenuItem(menu, SWT.RADIO)
+        item.setText(name)
+        item.setSelection(name == selectedProperties)
+        
+        item.addListener(SWT.Selection, (e: Event) => {
+            if (item.getSelection) {
+                storeProperties
+                setSelectedProperties(name)
+            }
+        })
+    }
+    
+    private def addDefaultPropertiesMenu(menu: Menu) {
+        addPropertiesMenu(menu, DEFAULT_DEF)
+    }
+    
+    private def addPropertiesMenu(menu: Menu, file: File) {
+        addPropertiesMenu(menu, Properties.getUserDefName(file))
+    }
+    
+    private def createOpenDirMenuItem(menu: Menu, dir: String) {
+        val item = new MenuItem(menu, SWT.PUSH)
+        item.setText("Open Dir")
+        item.addListener(SWT.Selection, (e: Event) => {
+            val desk = java.awt.Desktop.getDesktop
+            desk.browse(new File(dir).toURI())
+        })
+    }
+    
+    private def createAddPropertiesMenuItem(menu: Menu) {
+        val item = new MenuItem(menu, SWT.PUSH)
+        item.setText("Add")
+        item.addListener(SWT.Selection, (e: Event) => {            
+            val dialog = new Dialog.TextInputDialog(systemShell, "Properties Name", "Add Properties")
+            val res = dialog.open
+            
+            try {
+                res.foreach(name => {
+                    if (name != DEFAULT_DEF) {
+                        storeProperties
+                        Properties.copyProperties(selectedProperties, name)
+                        selectedProperties = name
+                    }
+                })
+            }
+            catch {
+                case e: Exception =>
+                    Dialog.errorMessage(systemShell, e)
+            }
+        })
+    }
+    
+    private def createDeletePropertiesMenuItem(menu: Menu) {
+        val item = new MenuItem(menu, SWT.PUSH)
+        item.setText("Delete")
+        val name = selectedProperties
+        item.setEnabled(name != DEFAULT_DEF)
+        item.addListener(SWT.Selection, (e: Event) => {            
+            try {
+                if (Dialog.openYesNoMessage(systemShell, s"Delete the '$name' properties?")) {
+                    Properties.deleteProperties(name)
+                    setSelectedProperties(DEFAULT_DEF)
+                }
+            }
+            catch {
+                case e: Exception =>
+                    Dialog.errorMessage(systemShell, e)
+            }
+        })
+    }
+    
+    private def createPropertiesMenu(pMenu: Menu) {
+        val sMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def addDefault = addDefaultPropertiesMenu(sMenu)
+        def add(f: File) = addPropertiesMenu(sMenu, f)
+        
+        sMenu.addMenuListener(new MenuListener() {
+            override def menuHidden(e: MenuEvent) {}
+            override def menuShown(e: MenuEvent) {
+                sMenu.getItems.foreach(_.dispose)
+                
+                createReloadPropertiesMenu(sMenu)
+                createSavePropertiesMenu(sMenu)
+                addSeparator(sMenu)
+        
+                createOpenDirMenuItem(sMenu, Properties.USER_DIR)
+                createAddPropertiesMenuItem(sMenu)
+                createDeletePropertiesMenuItem(sMenu)
+                addSeparator(sMenu)
+                
+                addDefault
+                addSeparator(sMenu)
+                
+                Properties.getPropFiles.foreach(add)
+            }
+        })
+        
+        
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("Properties")
+        item.setMenu(sMenu)
+    }
+    
     private def setUnhook: Unit =
         W10Wheel.unhook.success(true)
     
     private def createReloadPropertiesMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Reload Properties")
+        item.setText("Reload")
         item.addListener(SWT.Selection, (e: Event) => {
             loadProperties
-            resetMenuItem
+            resetMenuItems
         })        
     }
     
     private def createSavePropertiesMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Save Properties")
+        item.setText("Save")
         item.addListener(SWT.Selection, (e: Event) => {
             storeProperties
         })  
@@ -973,8 +991,7 @@ object Context {
         createVhAdjusterMenu(menu)
         addSeparator(menu)
         
-        createReloadPropertiesMenu(menu)
-        createSavePropertiesMenu(menu)
+        createPropertiesMenu(menu)
         addSeparator(menu)
         
         createCursorChangeMenu(menu)
@@ -987,20 +1004,8 @@ object Context {
         createInfoMenu(menu)
         createExitMenu(menu)
         
-        resetMenuItem
+        resetMenuItems
     }
-    
-    val PROP_NAME = s".$PROGRAM_NAME.properties" 
-    val USER_DIR = System.getProperty("user.home")  
-        
-    private def getPropertiesFile =
-        new File(USER_DIR, PROP_NAME)
-    
-    private def getPropertiesInput =
-        new FileInputStream(getPropertiesFile)
-    
-    private def getPropertiesOutput =
-        new FileOutputStream(getPropertiesFile)
     
     private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
         try {
@@ -1125,77 +1130,14 @@ object Context {
         Windows.setPriority(processPriority)
     }
     
-    private class SProperties extends Properties {
-        // http://stackoverflow.com/questions/17011108/how-can-i-write-java-properties-in-a-defined-order
-        override def keys(): java.util.Enumeration[Object] = synchronized {
-            java.util.Collections.enumeration(new java.util.TreeSet[Object](super.keySet))
-        }
-        
-        override def load(inStream: java.io.InputStream) = synchronized {
-            super.load(inStream)
-            inStream.close
-        }
-        
-        override def load(reader: java.io.Reader) = synchronized {
-            super.load(reader)
-            reader.close
-        }
-        
-        def getPropertyE(key: String): String = synchronized {
-            val res = super.getProperty(key)
-            if (res != null) res else throw new NoSuchElementException(key)
-        }
-        
-        def getString(key: String) = synchronized {
-            getPropertyE(key)
-        }
-        
-        def getInt(key: String) = synchronized {
-            getString(key).toInt
-        }
-        
-        def getBoolean(key: String) = synchronized {
-            getString(key).toBoolean
-        }
-        
-        def getArray(key: String): Array[String] = synchronized {
-            getString(key).split(",").map(_.trim).filter(!_.isEmpty)
-        }
-        
-        def getIntArray(key: String): Array[Int] = synchronized {
-            getArray(key).map(_.toInt)
-        }
-        
-        def getDoubleArray(key: String): Array[Double] = synchronized {
-            getArray(key).map(_.toDouble)
-        }
-        
-        def store(out: java.io.OutputStream) = synchronized {
-            super.store(out, null)
-            out.close
-        }
-        
-        def store(writer: java.io.Writer) = synchronized {
-            super.store(writer, null)
-            writer.close
-        }
-        
-        def setInt(key: String, n: Int) = synchronized {
-            super.setProperty(key, n.toString)
-        }
-        
-        def setBoolean(key: String, b: Boolean) = synchronized {
-            super.setProperty(key, b.toString)
-        }
-    }
+    private val prop = new Properties.SProperties
     
-    private val prop = new SProperties
-    private var loaded = false
+    private def getSelectedPropertiesPath =
+        Properties.getPath(selectedProperties)
     
     def loadProperties = {
-        loaded = true
         try {
-            prop.load(getPropertiesInput)
+            prop.load(getSelectedPropertiesPath)
             
             setTriggerOfProperty
             setAccelOfProperty
@@ -1237,7 +1179,7 @@ object Context {
     
     private def isChangedProperties: Boolean = {
         try {
-            prop.load(getPropertiesInput)
+            prop.load(getSelectedPropertiesPath)
             
             def check(n: String, v: String) = prop.getString(n) != v
             
@@ -1273,6 +1215,10 @@ object Context {
         )
     }
     
+    private val OnOffNames: Array[String] = {
+        Array("realWheelMode", "accelTable", "keyboardHook", "vhAdjusterMode")
+    }
+    
     private def setNumberOfName(name: String, n: Int): Unit = {
         logger.debug(s"setNumber: $name = $n")
         
@@ -1289,7 +1235,7 @@ object Context {
         }
     }
     
-    private def getNumberOfName(name: String): Int = name match {
+    def getNumberOfName(name: String): Int = name match {
         case "pollTimeout" => pollTimeout
         case "scrollLocktime" => Scroll.locktime
         case "verticalThreshold" => Threshold.vertical
@@ -1342,7 +1288,7 @@ object Context {
     
     def storeProperties: Unit = {          
         try {   
-            if (!loaded || !isChangedProperties) {
+            if (!prop.isLoaded || !isChangedProperties) {
                 logger.debug("Not changed properties")
                 return
             }
@@ -1358,7 +1304,7 @@ object Context {
             BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
             NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))
             
-            prop.store(getPropertiesOutput)
+            prop.store(getSelectedPropertiesPath)
         }
         catch {
             case e: Exception => logger.warn(s"store: ${e.toString}")

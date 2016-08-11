@@ -343,7 +343,7 @@ object Windows {
         vhDirection match {
             case null => {}
             case Vertical() => if (dy != 0) sendVWheel(wspt, dy)
-            case Horizontal() =>if (dx != 0) sendHWheel(wspt, dx)
+            case Horizontal() => if (dx != 0) sendHWheel(wspt, dx)
         }
     }
     
