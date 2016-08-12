@@ -774,7 +774,7 @@ object Context {
     
     private def setProperties(name: String) {
         if (selectedProperties != name) {
-            logger.debug(s"setSelectedProperties: $name")
+            logger.debug(s"setProperties: $name")
         
             selectedProperties = name
             loadProperties
