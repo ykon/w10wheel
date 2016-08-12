@@ -87,7 +87,8 @@ object Properties {
         }
     }
     
-    val PROP_NAME = s".${Context.PROGRAM_NAME}"
+    val PROGRAM_NAME = Context.PROGRAM_NAME
+    val PROP_NAME = s".$PROGRAM_NAME"
     val PROP_EXT = "properties"
     val DEFAULT_PROP_NAME = s"$PROP_NAME.$PROP_EXT" 
     val USER_DIR = System.getProperty("user.home")
@@ -95,7 +96,7 @@ object Properties {
     val DEFAULT_DEF = "Default"
     
     private val BAD_DEFAULT_NAME = s"$PROP_NAME.$DEFAULT_DEF.$PROP_EXT"
-    private val userDefPat = s"^$PROP_NAME.(.+).$PROP_EXT$$".r
+    private val userDefPat = s"^\\.$PROGRAM_NAME\\.(.+)\\.$PROP_EXT$$".r
     
     private def isPropFile(f: File): Boolean = {
         val name = f.getName
@@ -121,14 +122,17 @@ object Properties {
             Paths.get(USER_DIR, s"$PROP_NAME.$name.$PROP_EXT")
     }
     
-    def copyProperties(srcName: String, destName: String) = {
+    def exists(name: String): Boolean =
+        Files.exists(getPath(name))
+    
+    def copy(srcName: String, destName: String) = {
         val srcPath = getPath(srcName)
         val destPath = getPath(destName)
         
         Files.copy(srcPath, destPath)
     }
     
-    def deleteProperties(name: String) = {        
+    def delete(name: String) = {        
         Files.delete(getPath(name))
     }
 }

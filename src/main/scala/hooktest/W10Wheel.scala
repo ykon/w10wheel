@@ -23,10 +23,6 @@ object W10Wheel {
     private val logger = ctx.logger
     val unhook: Promise[Boolean] = Promise[Boolean]
     
-    private def errorMessage(msg: String) {
-        JOptionPane.showMessageDialog(null, msg, "Error", JOptionPane.ERROR_MESSAGE)
-    }
-    
     private val REPLACE_SWT_NAME = "ReplaceSWT.exe"
     
     private def getSelfPath = {
@@ -68,10 +64,7 @@ object W10Wheel {
     }
     
     private def messageDoubleLaunch {
-        val mb = new MessageBox(shell, SWT.OK | SWT.ICON_ERROR)
-        mb.setText("Error")
-        mb.setMessage("Double Launch?")
-        mb.open()
+        Dialog.errorMessage(shell, "Double Launch?")
     }
     
     private def messageLoop {
@@ -83,12 +76,22 @@ object W10Wheel {
     
     private val shutdown = new Thread {
         override def run {
-            logger.debug("Shutdown Hook");
+            logger.debug("Shutdown Hook")
             procExit
         }
     }
      
-    Runtime.getRuntime.addShutdownHook(shutdown);
+    Runtime.getRuntime.addShutdownHook(shutdown)
+    
+    private def procArgs(args: Array[String]) {
+        if (args.length == 1) {
+            val name = args(0)
+            if (Properties.exists(name))
+                Context.setSelectedProperties(name)
+            else
+                Dialog.errorMessage(shell, s"'$name' properties does not exist.")
+        }
+    }
 
     def main(args: Array[String]) {
         if (!PreventMultiInstance.tryLock) {
@@ -96,10 +99,9 @@ object W10Wheel {
             System.exit(0)
         }
         
-        unhook.future.foreach(_ => {
-            System.exit(0)
-        })
+        unhook.future.foreach(_ => System.exit(0))
         
+        procArgs(args)
         ctx.loadProperties
         ctx.setSystemTray
         

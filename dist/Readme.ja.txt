@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        1.7
+        1.8
 
 URL:
         https://github.com/ykon/w10wheel
@@ -11,6 +11,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2016-08-12: Version 1.8.0: コマンドライン引数でPropertiesを指定可能、他
         2016-08-11: Version 1.7.0: Propertiesを選択できるように変更、他
         2016-08-08: Version 1.6.0: VHAdjusterを追加、他
         2016-08-05: Version 1.5.2: キーボードのフラグ変更

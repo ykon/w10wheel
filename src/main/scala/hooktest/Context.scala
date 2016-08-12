@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {    
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.7"
+    val PROGRAM_VERSION = "1.8"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -44,6 +44,9 @@ object Context {
     
     @volatile private var keyboardHook = false // default
     @volatile private var targetVKCode = Keyboard.getVKCode("VK_NONCONVERT") // default
+    
+    def setSelectedProperties(name: String) =
+        selectedProperties = name
     
     def isKeyboardHook = keyboardHook
     def getTargetVKCode = targetVKCode
@@ -536,7 +539,8 @@ object Context {
     }
     
     private def openNumberInputDialog(name: String, low: Int, up: Int) = {
-        val dialog = new Dialog.NumberInputDialog(systemShell, name, low, up)
+        val cur = getNumberOfName(name)
+        val dialog = new Dialog.NumberInputDialog(systemShell, name, low, up, cur)
         dialog.open
     }
     
@@ -768,7 +772,7 @@ object Context {
     
     private val DEFAULT_DEF = Properties.DEFAULT_DEF
     
-    private def setSelectedProperties(name: String) {
+    private def setProperties(name: String) {
         if (selectedProperties != name) {
             logger.debug(s"setSelectedProperties: $name")
         
@@ -786,7 +790,7 @@ object Context {
         item.addListener(SWT.Selection, (e: Event) => {
             if (item.getSelection) {
                 storeProperties
-                setSelectedProperties(name)
+                setProperties(name)
             }
         })
     }
@@ -819,7 +823,7 @@ object Context {
                 res.foreach(name => {
                     if (name != DEFAULT_DEF) {
                         storeProperties
-                        Properties.copyProperties(selectedProperties, name)
+                        Properties.copy(selectedProperties, name)
                         selectedProperties = name
                     }
                 })
@@ -839,8 +843,8 @@ object Context {
         item.addListener(SWT.Selection, (e: Event) => {            
             try {
                 if (Dialog.openYesNoMessage(systemShell, s"Delete the '$name' properties?")) {
-                    Properties.deleteProperties(name)
-                    setSelectedProperties(DEFAULT_DEF)
+                    Properties.delete(name)
+                    setProperties(DEFAULT_DEF)
                 }
             }
             catch {
@@ -1235,7 +1239,7 @@ object Context {
         }
     }
     
-    def getNumberOfName(name: String): Int = name match {
+    private def getNumberOfName(name: String): Int = name match {
         case "pollTimeout" => pollTimeout
         case "scrollLocktime" => Scroll.locktime
         case "verticalThreshold" => Threshold.vertical

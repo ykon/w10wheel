@@ -38,12 +38,12 @@ object Dialog {
         mb.open() == SWT.YES
     }
     
-    class NumberInputDialog(parent: Shell, name: String, low: Int, up: Int) extends Dialog(parent) {
+    class NumberInputDialog(parent: Shell, name: String, low: Int, up: Int, cur: Int) extends Dialog(parent) {
         private def createSpinner(shell: Shell) = {
             val spinner = new Spinner(shell, SWT.BORDER)
             spinner.setMinimum(low)
             spinner.setMaximum(up)
-            spinner.setSelection(Context.getNumberOfName(name))
+            spinner.setSelection(cur)
             spinner
         }
         
