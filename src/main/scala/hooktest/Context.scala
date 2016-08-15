@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {    
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.8"
+    val PROGRAM_VERSION = "1.8.1"
     val ICON_NAME = "icon_016.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
@@ -61,17 +61,19 @@ object Context {
     case class Fixed() extends VHAdjusterMethod
     case class Switching() extends VHAdjusterMethod
     
-    @volatile private var vhAdjusterMode = false // default
-    @volatile private var vhAdjusterMethod: VHAdjusterMethod = Switching() // default
-    @volatile private var firstPreferVertical = true // default
-    @volatile private var firstMinThreshold = 5 // default
-    @volatile private var switchingThreshold = 50 // default
+    private object VHAdjuster {
+        @volatile var mode = false // default
+        @volatile var method: VHAdjusterMethod = Switching() // default
+        @volatile var firstPreferVertical = true // default
+        @volatile var firstMinThreshold = 5 // default
+        @volatile var switchingThreshold = 50 // default
+    }
         
-    def isVhAdjusterMode = vhAdjusterMode
-    def isVhAdjusterSwitching = vhAdjusterMethod == Switching()
-    def isFirstPreferVertical = firstPreferVertical
-    def getFirstMinThreshold = firstMinThreshold
-    def getSwitchingThreshold = switchingThreshold
+    def isVhAdjusterMode = VHAdjuster.mode
+    def isVhAdjusterSwitching = VHAdjuster.method == Switching()
+    def isFirstPreferVertical = VHAdjuster.firstPreferVertical
+    def getFirstMinThreshold = VHAdjuster.firstMinThreshold
+    def getSwitchingThreshold = VHAdjuster.switchingThreshold
     
     private object Accel {
         // MouseWorks by Kensington (TD, M5, M6, M7, M8, M9)
@@ -92,7 +94,7 @@ object Context {
         @volatile var customThreshold: Array[Int] = null
         @volatile var customMultiplier: Array[Double] = null
         
-        @volatile var table = false // default
+        @volatile var table = false // default 
         @volatile var threshold: Array[Int] = TD // default
         @volatile var multiplier: Multiplier = M5() // default
             
@@ -130,54 +132,46 @@ object Context {
     def getVerticalThreshold = Threshold.vertical
     def getHorizontalThreshold = Threshold.horizontal
     
-    /*
-    private object Skip {
-        @volatile var rightDown = false
-        @volatile var rightUp = false
-        @volatile var leftDown = false
-        @volatile var leftUp = false
-        @volatile var middleDown = false
-        @volatile var middleUp = false
-    }
-    */
-    
     private object Scroll {
         @volatile private var mode = false
         @volatile private var stime = 0
         @volatile private var sx = 0
         @volatile private var sy = 0
         @volatile var locktime = 200 // default
-        @volatile var cursorChange = true // default
-        @volatile var reverse = false // default
-        @volatile var horizontal = true // default
         @volatile var draggedLock = false // default
         
-        // Vertical <-> Horizontall
-        @volatile var swap = false // default 
+        @volatile var cursorChange = true // default
+        @volatile var horizontal = true // default
+        @volatile var reverse = false // default
         
-        def start(info: HookInfo) {
-            Windows.initScroll
-            
+        // Vertical <-> Horizontall
+        @volatile var swap = false // default
+        
+        def start(info: HookInfo) { 
             stime = info.time
             sx = info.pt.x
             sy = info.pt.y
-            mode = true
+            
+            Windows.initScroll
             
             if (cursorChange && !firstTrigger.isDrag)
                 Windows.changeCursorV
+                
+            mode = true
         }
         
         def start(kinfo: KHookInfo) {
-            Windows.initScroll
-            
             stime = kinfo.time
             val pt = Windows.getCursorPos
             sx = pt.x
             sy = pt.y
-            mode = true
+            
+            Windows.initScroll
             
             if (cursorChange)
                 Windows.changeCursorV
+                
+            mode = true
         }
         
         def exit = {
@@ -229,49 +223,6 @@ object Context {
     def getPollTimeout = pollTimeout
     def isCursorChange = Scroll.cursorChange
     def isPassMode = passMode
-        
-    /*
-    def checkSkip(me: MouseEvent): Boolean = {
-        if (!Windows.isResendEvent(me))
-            return false;
-        
-        val res = me match {
-            case LeftDown(_) => Skip.leftDown
-            case LeftUp(_) => Skip.leftUp
-            case RightDown(_) => Skip.rightDown
-            case RightUp(_) => Skip.rightUp
-            case MiddleDown(_) => Skip.middleDown
-            case MiddleUp(_) => Skip.middleUp
-        }
-        
-        setSkip(me, false)
-        res
-    }
-    
-    def setSkip(me: MouseEvent, enabled: Boolean): Unit = me match {    
-        case LeftDown(_) => Skip.leftDown = enabled
-        case LeftUp(_) => Skip.leftUp = enabled
-        case RightDown(_) => Skip.rightDown = enabled
-        case RightUp(_) => Skip.rightUp = enabled
-        case MiddleDown(_) => Skip.middleDown = enabled
-        case MiddleUp(_) => Skip.middleUp = enabled
-    }
-    
-    def setSkip(mc: MouseClick, enabled: Boolean): Unit = mc match {
-        case LeftClick(_) => {
-            setSkip(LeftDown(mc.info), enabled)
-            setSkip(LeftUp(mc.info), enabled)
-        }
-        case RightClick(_) => {
-            setSkip(RightDown(mc.info), enabled)
-            setSkip(RightUp(mc.info), enabled)
-        }
-        case MiddleClick(_) => {
-            setSkip(MiddleDown(mc.info), enabled)
-            setSkip(MiddleUp(mc.info), enabled)
-        }
-    }
-    */
     
     object LastFlags {
         // R = Resent
@@ -353,15 +304,6 @@ object Context {
     def isNoneTrigger = firstTrigger.isNone
     
     // http://stackoverflow.com/questions/3239106/scala-actionlistener-anonymous-function-type-mismatch
-    /*
-    implicit def toActionListener(f: ActionEvent => Unit) = new ActionListener {
-        override def actionPerformed(e: ActionEvent) { f(e) }
-    }
-    
-    implicit def toItemListener(f: ItemEvent => Unit) = new ItemListener {
-        override def itemStateChanged(e: ItemEvent) { f(e) }
-    }
-    */
     
     implicit def toListener(f: Event => Unit) = new Listener {
         override def handleEvent(e: Event) { f(e) }
@@ -412,7 +354,7 @@ object Context {
         boolMenuMap("vhAdjusterMode").setEnabled(Scroll.horizontal)
         
         vhAdjusterMenuMap.foreach { case (name, item) =>
-            item.setSelection(getVhAdjusterMethod(name) == vhAdjusterMethod)
+            item.setSelection(getVhAdjusterMethod(name) == VHAdjuster.method)
         }
     }
     
@@ -672,7 +614,7 @@ object Context {
     
     private def setVhAdjusterMethod(name: String) = {
         logger.debug(s"setVhAdjusterMethod: $name")
-        vhAdjusterMethod = getVhAdjusterMethod(name)
+        VHAdjuster.method = getVhAdjusterMethod(name)
     }
     
     private def createVhAdjusterMenuItem(menu: Menu, text: String) {
@@ -1191,7 +1133,7 @@ object Context {
             check("accelMultiplier", Accel.multiplier.name) ||
             check("processPriority", processPriority.name) ||
             check("targetVKCode", Keyboard.getName(targetVKCode)) ||
-            check("vhAdjusterMethod", vhAdjusterMethod.name) ||
+            check("vhAdjusterMethod", VHAdjuster.method.name) ||
             isChangedBoolean || isChangedNumber
         }
         catch {
@@ -1234,8 +1176,8 @@ object Context {
             case "wheelDelta" => RealWheel.wheelDelta = n
             case "vWheelMove" => RealWheel.vWheelMove = n
             case "hWheelMove" => RealWheel.hWheelMove = n
-            case "firstMinThreshold" => firstMinThreshold = n
-            case "switchingThreshold" => switchingThreshold = n
+            case "firstMinThreshold" => VHAdjuster.firstMinThreshold = n
+            case "switchingThreshold" => VHAdjuster.switchingThreshold = n
         }
     }
     
@@ -1247,8 +1189,8 @@ object Context {
         case "wheelDelta" => RealWheel.wheelDelta
         case "vWheelMove" => RealWheel.vWheelMove
         case "hWheelMove" => RealWheel.hWheelMove
-        case "firstMinThreshold" => firstMinThreshold
-        case "switchingThreshold" => switchingThreshold
+        case "firstMinThreshold" => VHAdjuster.firstMinThreshold
+        case "switchingThreshold" => VHAdjuster.switchingThreshold
     }
     
     private def setBooleanOfName(name: String, b: Boolean) = {
@@ -1266,8 +1208,8 @@ object Context {
             case "swapScroll" => Scroll.swap = b
             case "sendMiddleClick" => sendMiddleClick = b
             case "keyboardHook" => keyboardHook = b
-            case "vhAdjusterMode" => vhAdjusterMode = b
-            case "firstPreferVertical" => firstPreferVertical = b
+            case "vhAdjusterMode" => VHAdjuster.mode = b
+            case "firstPreferVertical" => VHAdjuster.firstPreferVertical = b
             case "passMode" => passMode = b
         }
     }
@@ -1285,8 +1227,8 @@ object Context {
         case "swapScroll" => Scroll.swap
         case "sendMiddleClick" => sendMiddleClick
         case "keyboardHook" => keyboardHook
-        case "vhAdjusterMode" => vhAdjusterMode
-        case "firstPreferVertical" => firstPreferVertical
+        case "vhAdjusterMode" => VHAdjuster.mode
+        case "firstPreferVertical" => VHAdjuster.firstPreferVertical
         case "passMode" => passMode
     }
     
@@ -1303,7 +1245,7 @@ object Context {
             set("accelMultiplier", Accel.multiplier.name)
             set("processPriority", processPriority.name)
             set("targetVKCode", Keyboard.getName(targetVKCode))
-            set("vhAdjusterMethod", vhAdjusterMethod.name)
+            set("vhAdjusterMethod", VHAdjuster.method.name)
             
             BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
             NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))

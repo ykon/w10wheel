@@ -24,12 +24,12 @@
     <runtimeBits>64/32</runtimeBits>
   </jre>
   <versionInfo>
-    <fileVersion>1.8.0.0</fileVersion>
-    <txtFileVersion>1.8</txtFileVersion>
+    <fileVersion>1.8.1.0</fileVersion>
+    <txtFileVersion>1.8.1</txtFileVersion>
     <fileDescription>Mouse Wheel Simulator</fileDescription>
     <copyright>Copyright (c) 2016 Yuki Ono</copyright>
-    <productVersion>1.8.0.0</productVersion>
-    <txtProductVersion>1.8</txtProductVersion>
+    <productVersion>1.8.1.0</productVersion>
+    <txtProductVersion>1.8.1</txtProductVersion>
     <productName>W10Wheel</productName>
     <companyName></companyName>
     <internalName>W10Wheel</internalName>
