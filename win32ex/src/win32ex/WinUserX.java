@@ -11,10 +11,13 @@ import java.util.List;
 import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
+import com.sun.jna.win32.StdCallLibrary;
+import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.platform.win32.BaseTSD.ULONG_PTR;
 import com.sun.jna.platform.win32.User32;
 import com.sun.jna.platform.win32.Kernel32;
 import com.sun.jna.platform.win32.WinUser;
+import com.sun.jna.platform.win32.WinNT.HRESULT;
 
 public interface WinUserX extends WinUser
 {
@@ -127,6 +130,12 @@ public interface WinUserX extends WinUser
         public boolean SetSystemCursor(Pointer hcur, int id);
         public Pointer CopyIcon(Pointer hIcon);
         public boolean GetCursorPos(POINT p);
+        public boolean GetPhysicalCursorPos(POINT lpPoint);
+        public boolean SetProcessDPIAware();
+        
+        public HMONITOR MonitorFromPoint(POINT pt, int dwFlags);
+        
+        //public int SetThreadDpiAwarenessContext(int value);
     }
     
     // https://msdn.microsoft.com/library/windows/desktop/ms686219.aspx
@@ -138,5 +147,41 @@ public interface WinUserX extends WinUser
         Kernel32ex INSTANCE = (Kernel32ex)Native.loadLibrary("kernel32", Kernel32ex.class);
         
         public boolean SetPriorityClass(HANDLE hProcess, int dwPriorityClass);
+    }
+    
+    public static interface PROCESS_DPI_AWARENESS { 
+        public static final int PROCESS_DPI_UNAWARE            = 0;
+        public static final int PROCESS_SYSTEM_DPI_AWARE       = 1;
+        public static final int PROCESS_PER_MONITOR_DPI_AWARE  = 2;
+    }
+    
+    public static interface DPI_AWARENESS_CONTEXT { 
+        public static final int DPI_AWARENESS_CONTEXT_DEFAULT            = 0;
+        public static final int DPI_AWARENESS_CONTEXT_UNAWARE            = 1;
+        public static final int DPI_AWARENESS_CONTEXT_SYSTEM_AWARE       = 2;
+        public static final int DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE  = 3;
+    }
+    
+    public static interface DpiType {
+        public static final int Effective = 0;
+        public static final int Angular = 1;
+        public static final int Raw = 2; 
+    }
+ 
+    /*
+    public int MONITOR_DEFAULTTONEAREST = 0x00000002;
+    public int MONITOR_DEFAULTTONULL = 0x00000000;
+    public int MONITOR_DEFAULTTOPRIMARY = 0x00000001;
+    */
+    
+    public int S_OK = 0x00000000;
+    public int E_INVALIDARG = 0x80070057;
+    public int E_ACCESSDENIED = 0x80070005;
+    
+    public interface Shcore extends StdCallLibrary {
+        Shcore INSTANCE = (Shcore)Native.loadLibrary("Shcore", Shcore.class);
+        
+        public HRESULT SetProcessDpiAwareness(int value);
+        public HRESULT GetDpiForMonitor(HMONITOR hmonitor, int dpiType, IntByReference dpiX, IntByReference dpiY);
     }
 }

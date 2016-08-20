@@ -21,7 +21,7 @@ import java.nio.file.Paths
 object W10Wheel {
     private val ctx = Context
     private val logger = ctx.logger
-    val unhook: Promise[Boolean] = Promise[Boolean]
+    val exit: Promise[Boolean] = Promise[Boolean]
     
     private val REPLACE_SWT_NAME = "ReplaceSWT.exe"
     
@@ -51,7 +51,7 @@ object W10Wheel {
     
     val shell = new Shell(display)
     
-    def procExit = {
+    def procExit {
         logger.debug("procExit")
         
         Hook.unhook
@@ -77,19 +77,51 @@ object W10Wheel {
     private val shutdown = new Thread {
         override def run {
             logger.debug("Shutdown Hook")
-            procExit
+            
+            if (!shell.isDisposed)
+                procExit
         }
     }
      
     Runtime.getRuntime.addShutdownHook(shutdown)
     
+    /*
+    private def command_sendPassMode(enabled: Array[String]) {
+        logger.debug("command_sendPassMode")
+        val b = if (enabled.length == 0) true else enabled(0).toBoolean
+        Windows.sendPassMode(b)
+    }
+    
+    private def command_sendExit {
+        logger.debug("command_sendExit")
+        Windows.sendExit
+    }
+    */
+    
+    private def setSelectedProperties(name: String) {
+        if (Properties.exists(name))
+            Context.setSelectedProperties(name)
+        else
+            Dialog.errorMessage(shell, s"'$name' properties does not exist.")
+    }
+    
     private def procArgs(args: Array[String]) {
+        logger.debug("procArgs")
+        
         if (args.length == 1) {
-            val name = args(0)
-            if (Properties.exists(name))
-                Context.setSelectedProperties(name)
-            else
-                Dialog.errorMessage(shell, s"'$name' properties does not exist.")
+            args(0) match {
+                //case "--sendExit" => command_sendExit
+                //case "--sendPassMode" => command_sendPassMode(args.drop(1))
+                case name => setSelectedProperties(name)
+            }
+            
+            /*
+            if (args(0).startsWith("--send")) {
+                Thread.sleep(100)
+                exitProcess
+                System.exit(0)
+            }
+            */
         }
     }
 
@@ -99,14 +131,22 @@ object W10Wheel {
             System.exit(0)
         }
         
-        unhook.future.foreach(_ => System.exit(0))
+        exit.future.foreach(_ => {
+            procExit
+            System.exit(0)
+        })
         
         procArgs(args)
+        
         ctx.loadProperties
         ctx.setSystemTray
         
         Hook.setMouseHook
         logger.debug("Mouse hook installed")
+        
+        //println(s"depth: ${display.getDepth}")
+        //println(s"dpi: ${display.getDPI}")
+        
         
         //Windows.messageLoop
         //logger.debug("exit message loop")

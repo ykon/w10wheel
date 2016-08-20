@@ -40,9 +40,26 @@ object Hook {
                 case WM_MBUTTONUP => eh.middleUp(info)
                 case WM_XBUTTONDOWN => eh.xDown(info)
                 case WM_XBUTTONUP => eh.xUp(info)
-                case WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-                    //logger.debug(s"mouseData: ${info.mouseData}")
+                case WM_MOUSEWHEEL => callNextHook()
+                case WM_MOUSEHWHEEL => {
                     callNextHook()
+                    
+                    /*
+                    info.dwExtraInfo.intValue() match {
+                        case Windows.W10_MESSAGE_EXIT => {
+                            logger.debug("W10_MESSAGE_EXIT")
+                            W10Wheel.exit.success(true)
+                            new LRESULT(1)
+                        }
+                        case msg if (msg & 0x0FFFFFFF) == Windows.W10_MESSAGE_PASSMODE => {
+                            logger.debug("W10_MESSAGE_PASSMODE") 
+                            val b = (msg & 0xF0000000) != 0
+                            Context.setPassMode(b)
+                            new LRESULT(1)
+                        }
+                        case _ => callNextHook()
+                    }
+                    */
                 }
             }
         }

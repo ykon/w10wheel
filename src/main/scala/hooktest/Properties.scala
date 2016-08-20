@@ -9,9 +9,7 @@ import java.io._
 import java.nio.file._
 
 object Properties {
-    class SProperties extends java.util.Properties {
-        private var loaded = false
-        
+    class SProperties extends java.util.Properties {        
         // http://stackoverflow.com/questions/17011108/how-can-i-write-java-properties-in-a-defined-order
         override def keys(): java.util.Enumeration[Object] = synchronized {
             java.util.Collections.enumeration(new java.util.TreeSet[Object](super.keySet))
@@ -20,20 +18,16 @@ object Properties {
         override def load(inStream: java.io.InputStream) = synchronized {
             super.load(inStream)
             inStream.close
-            loaded = true
         }
         
         override def load(reader: java.io.Reader) = synchronized {
             super.load(reader)
             reader.close
-            loaded = true
         }
         
         def load(path: Path): Unit = synchronized {
-            load(new FileInputStream(path.toFile))
+            this.load(new FileInputStream(path.toFile))
         }
-        
-        def isLoaded = loaded
         
         def getPropertyE(key: String): String = synchronized {
             val res = super.getProperty(key)
@@ -46,6 +40,10 @@ object Properties {
         
         def getInt(key: String) = synchronized {
             getString(key).toInt
+        }
+        
+        def getDouble(key: String) = synchronized {
+            getString(key).toDouble
         }
         
         def getBoolean(key: String) = synchronized {
@@ -80,6 +78,10 @@ object Properties {
         
         def setInt(key: String, n: Int) = synchronized {
             super.setProperty(key, n.toString)
+        }
+        
+        def setDouble(key: String, d: Double) = synchronized {
+            super.setProperty(key, ("%.2f" format d))
         }
         
         def setBoolean(key: String, b: Boolean) = synchronized {

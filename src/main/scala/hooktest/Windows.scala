@@ -12,6 +12,7 @@ import java.util.concurrent.ArrayBlockingQueue
 
 import com.sun.jna.Pointer
 import com.sun.jna.WString
+import com.sun.jna.ptr.IntByReference
 import com.sun.jna.platform.win32._
 import com.sun.jna.platform.win32.BaseTSD.ULONG_PTR
 import com.sun.jna.platform.win32.WinDef._
@@ -29,6 +30,7 @@ object Windows {
     private val u32ex = User32ex.INSTANCE
     private val k32 = Kernel32.INSTANCE
     private val k32ex = Kernel32ex.INSTANCE
+    //private val shcore = Shcore.INSTANCE
     
     def messageLoop: Unit = {
         val msg = new MSG
@@ -134,6 +136,24 @@ object Windows {
         val ext = me.info.dwExtraInfo.intValue()
         ext == resendTag
     }
+    
+    /*
+    val W10_MESSAGE_EXIT = -1593895973
+    val W10_MESSAGE_PASSMODE = 264816059 & 0x0FFFFFFF
+    
+    def sendExit {
+        val input = createInputArray(1)
+        setInput(input(0), getCursorPos, 0, WM_MOUSEHWHEEL, 0, W10_MESSAGE_EXIT)
+        sendInput(input)
+    }
+    
+    def sendPassMode(b: Boolean) {
+        val input = createInputArray(1)
+        val extra = W10_MESSAGE_PASSMODE | (if (b) 0x10000000 else 0x00000000)
+        setInput(input(0), getCursorPos, 0, WM_MOUSEHWHEEL, 0, extra)
+        sendInput(input)
+    }
+    */
     
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
@@ -259,6 +279,7 @@ object Windows {
     }
     
     private def sendDirectVWheel(pt: POINT, d: Int) {
+        //println(s"d: $d")
         sendInput(pt, reverseIfV(addAccelIf(d)),  MOUSEEVENTF_WHEEL, 0, 0)
     }
     
@@ -415,6 +436,9 @@ object Windows {
     
     def sendWheel(pt: POINT) {
         val (sx, sy) = scrollStartPoint
+        //logger.debug(s"sy: $sy")
+        //logger.debug(s"pt.y: ${pt.y}")
+        
         val (dx, dy) = swapIf(pt.x - sx, pt.y - sy)
         val wspt = new POINT(sx, sy)
         
@@ -527,8 +551,47 @@ object Windows {
     }
     
     def getCursorPos = {
-        val cursorPos = new POINT;
-        u32ex.GetCursorPos(cursorPos)
-        cursorPos
-    }    
+        val pos = new POINT
+        u32ex.GetCursorPos(pos)
+        pos
+    }
+    
+    def getPhysicalCursorPos = {
+        val pos = new POINT
+        u32ex.GetPhysicalCursorPos(pos)
+        pos
+    }
+    
+    /*
+    def setProcessDPIAware {
+        u32ex.SetProcessDPIAware()
+    }
+    */
+    
+    /*
+    def setProcessPerMonitorDpiAware = {
+        shcore.SetProcessDpiAwareness(PROCESS_DPI_AWARENESS.PROCESS_PER_MONITOR_DPI_AWARE).intValue()
+    }
+    */
+    
+    /*
+    def setThreadDpiAwarenessContext = {
+        u32ex.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)
+    }
+    */
+    
+    /*
+    private def getMonitor(pt: POINT) = {
+        u32ex.MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST)
+    }
+    
+    def getDpi(pt: POINT) = {
+        val dpiX = new IntByReference
+        val dpiY = new IntByReference
+        
+        shcore.GetDpiForMonitor(getMonitor(pt), DpiType.Effective, dpiX, dpiY)
+        
+        (dpiX.getValue, dpiY.getValue)
+    }
+    */
 }

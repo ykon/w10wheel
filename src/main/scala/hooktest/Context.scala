@@ -27,10 +27,11 @@ import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 import scala.collection.mutable.HashMap
 import java.util.NoSuchElementException
 
-object Context {    
+object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.8.1"
-    val ICON_NAME = "icon_016.png"
+    val PROGRAM_VERSION = "1.9"
+    val ICON_RUN_NAME = "TrayIcon-Run.png"
+    val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
     lazy val systemShell = W10Wheel.shell
     
@@ -38,12 +39,48 @@ object Context {
     
     @volatile private var firstTrigger: Trigger = LRTrigger() // default
     @volatile private var pollTimeout = 200 // default
-    @volatile private var passMode = false
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
     @volatile private var sendMiddleClick = false // default
     
     @volatile private var keyboardHook = false // default
     @volatile private var targetVKCode = Keyboard.getVKCode("VK_NONCONVERT") // default
+    
+    @volatile private var dpiCorrection = 1.00 // default
+    
+    private def getImage(name: String) = {
+        val stream = getClass.getClassLoader.getResourceAsStream(name)
+        new Image(Display.getDefault, stream)
+    }
+    
+    private def getTrayIcon(b: Boolean): Image = {
+        getImage(if (b) ICON_STOP_NAME else ICON_RUN_NAME)
+    }
+    
+    private def getTrayText(b: Boolean) = {
+        s"$PROGRAM_NAME - ${if (b) "Stopped" else "Runnable"}"   
+    }
+    
+    private def changeTrayMode(b: Boolean) {
+        trayItem.setToolTipText(getTrayText(b))
+        trayItem.setImage(getTrayIcon(b))
+    }
+    
+    private object Pass {
+        @volatile private var __mode = false
+        def mode = __mode
+        def mode_= (b: Boolean) {
+            __mode = b
+            changeTrayMode(b)
+            passModeMenuItem.setSelection(b)
+        }
+        
+        def toggleMode {
+            mode = !mode
+        }
+    }
+    
+    def isPassMode = Pass.mode
+    def setPassMode(b: Boolean) = Pass.mode = b
     
     def setSelectedProperties(name: String) =
         selectedProperties = name
@@ -147,11 +184,15 @@ object Context {
         // Vertical <-> Horizontall
         @volatile var swap = false // default
         
+        private def setStartPoint {
+            val pt = Windows.getCursorPos
+            sx = (pt.x * dpiCorrection).toInt
+            sy = (pt.y * dpiCorrection).toInt
+        }
+        
         def start(info: HookInfo) { 
             stime = info.time
-            sx = info.pt.x
-            sy = info.pt.y
-            
+            setStartPoint
             Windows.initScroll
             
             if (cursorChange && !firstTrigger.isDrag)
@@ -162,10 +203,7 @@ object Context {
         
         def start(kinfo: KHookInfo) {
             stime = kinfo.time
-            val pt = Windows.getCursorPos
-            sx = pt.x
-            sy = pt.y
-            
+            setStartPoint
             Windows.initScroll
             
             if (cursorChange)
@@ -222,7 +260,6 @@ object Context {
     
     def getPollTimeout = pollTimeout
     def isCursorChange = Scroll.cursorChange
-    def isPassMode = passMode
     
     object LastFlags {
         // R = Resent
@@ -364,6 +401,12 @@ object Context {
               item.setText(getOnOffText(getBooleanOfName(name)))
         })
     }
+    
+    private def resetDpiCorrectionMenuItems {
+        dpiCorrectionMenuMap.foreach { case (name, item) =>
+            item.setSelection(name == toString2F(dpiCorrection))
+        }
+    }
         
     private def resetMenuItems: Unit = {
         resetTriggerMenuItems
@@ -374,6 +417,7 @@ object Context {
         resetBoolMenuItems
         resetVhAdjusterMenuItems
         resetOnOffMenuItems
+        resetDpiCorrectionMenuItems
     }
     
     private def textToName(s: String): String =
@@ -652,6 +696,40 @@ object Context {
         item.setMenu(aMenu)
     }
     
+    private val dpiCorrectionMenuMap = new HashMap[String, MenuItem]
+    
+    private def toString2F(d: Double) =
+        ("%.2f" format d)
+    
+    private def addDpiCorrectionMenuItem(menu: Menu, scale: Double) {
+        val item = new MenuItem(menu, SWT.RADIO)
+        val text = toString2F(scale)
+        
+        item.setText(text)
+        dpiCorrectionMenuMap(text) = item
+        
+        item.addSelectionListener((e: SelectionEvent) => {
+            if(item.getSelection)
+                dpiCorrection = scale
+            ()
+        })
+    }
+    
+    private def createDpiCorrectionMenu(pMenu: Menu) {
+        val dMenu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(scale: Double) = addDpiCorrectionMenuItem(dMenu, scale)
+        
+        add(1.00)
+        add(1.25)
+        add(1.50)
+        add(1.75)
+        add(2.00)
+        
+        val item = new MenuItem(pMenu, SWT.CASCADE)
+        item.setText("DPI Correction")
+        item.setMenu(dMenu)        
+    }
+    
     private val keyboardMenuMap = new HashMap[String, MenuItem]
     
     private def setTargetVKCode(name: String) {
@@ -828,9 +906,6 @@ object Context {
         item.setMenu(sMenu)
     }
     
-    private def setUnhook: Unit =
-        W10Wheel.unhook.success(true)
-    
     private def createReloadPropertiesMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
         item.setText("Reload")
@@ -877,10 +952,13 @@ object Context {
         createBoolMenuItem(menu, "swapScroll", "Swap Scroll (V.H)")
     }
     
+    private var passModeMenuItem: MenuItem = null
+    
     private def createPassModeMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.CHECK)
         item.setText("Pass Mode")
         item.addListener(SWT.Selection, makeSetBooleanEvent("passMode"))
+        passModeMenuItem = item
     }
     
     private def createInfoMenu(menu: Menu) {
@@ -903,28 +981,28 @@ object Context {
     private def createExitMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
         item.setText("Exit")
-        item.addListener(SWT.Selection, (e: Event) => setUnhook)        
+        item.addListener(SWT.Selection, (e: Event) => {
+            W10Wheel.exit.success(true)
+            ()
+        })
     }
     
-    def getIconImage = {
-        val stream = getClass.getClassLoader.getResourceAsStream(ICON_NAME)
-        new Image(Display.getDefault, stream)
+    private def createTrayItem(menu: Menu) = {
+        val tray = new TrayItem(Display.getDefault.getSystemTray, SWT.NONE)
+        tray.setToolTipText(getTrayText(false))
+        tray.setImage(getTrayIcon(false))
+        
+        tray.addListener(SWT.MenuDetect, (e: Event) => menu.setVisible(true))        
+        tray.addListener(SWT.DefaultSelection, (e: Event) => Pass.toggleMode)
+        
+        tray
     }
     
-    def createTrayItem(menu: Menu) = {
-        val trayItem = new TrayItem(Display.getDefault.getSystemTray, SWT.NONE)
-        trayItem.setToolTipText(PROGRAM_NAME)
-        trayItem.setImage(getIconImage)
-        
-        trayItem.addListener(SWT.MenuDetect, (e: Event) => menu.setVisible(true))        
-        trayItem.addListener(SWT.DefaultSelection, (e: Event) => setUnhook)
-        
-        trayItem
-    }
+    private var trayItem: TrayItem = null
     
     def setSystemTray {
         val menu = new Menu(systemShell, SWT.POP_UP)
-        createTrayItem(menu)
+        trayItem = createTrayItem(menu)
         
         createTriggerMenu(menu)
         createKeyboardMenu(menu)
@@ -935,6 +1013,7 @@ object Context {
         createNumberMenu(menu)
         createRealWheelModeMenu(menu)
         createVhAdjusterMenu(menu)
+        createDpiCorrectionMenu(menu)
         addSeparator(menu)
         
         createPropertiesMenu(menu)
@@ -1076,12 +1155,29 @@ object Context {
         Windows.setPriority(processPriority)
     }
     
+    private def setDefaultTrigger {
+        setTrigger(firstTrigger.name)
+    }
+    
+    private def setDpiCorrectionOfProperty {
+        try {
+            dpiCorrection = prop.getDouble("dpiCorrection")
+        }
+        catch {
+            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}")
+            case e: scala.MatchError => logger.warn(s"Match error: ${e.getMessage}")     
+        }
+    }
+    
     private val prop = new Properties.SProperties
     
     private def getSelectedPropertiesPath =
         Properties.getPath(selectedProperties)
+        
+    private var loaded = false
     
-    def loadProperties = {
+    def loadProperties {
+        loaded = true
         try {
             prop.load(getSelectedPropertiesPath)
             
@@ -1091,6 +1187,8 @@ object Context {
             setPriorityOfProperty
             setVKCodeOfProperty
             setVhAdjusterMethodOfProperty
+            
+            setDpiCorrectionOfProperty
             
             BooleanNames.foreach(n => setBooleanOfProperty(n))
             Hook.setOrUnsetKeyboardHook(keyboardHook)
@@ -1111,7 +1209,8 @@ object Context {
         catch {
             case _: FileNotFoundException => {
                 logger.debug("Properties file not found")
-                setDefaultPriority                
+                setDefaultPriority
+                setDefaultTrigger
             }
             case e: Exception => logger.warn(s"load: ${e.toString}")
         }
@@ -1124,6 +1223,8 @@ object Context {
         NumberNames.map(n => prop.getInt(n) != getNumberOfName(n)).contains(true)
     
     private def isChangedProperties: Boolean = {
+        logger.debug("isChangedProperties")
+        
         try {
             prop.load(getSelectedPropertiesPath)
             
@@ -1134,10 +1235,11 @@ object Context {
             check("processPriority", processPriority.name) ||
             check("targetVKCode", Keyboard.getName(targetVKCode)) ||
             check("vhAdjusterMethod", VHAdjuster.method.name) ||
+            check("dpiCorrection", toString2F(dpiCorrection)) ||
             isChangedBoolean || isChangedNumber
         }
         catch {
-            case _: FileNotFoundException => logger.debug("First write"); true
+            case _: FileNotFoundException => logger.debug("First write properties"); true
             case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}"); true
             case e: Exception => logger.warn(s"isChanged: ${e.toString}"); true
         }
@@ -1210,7 +1312,7 @@ object Context {
             case "keyboardHook" => keyboardHook = b
             case "vhAdjusterMode" => VHAdjuster.mode = b
             case "firstPreferVertical" => VHAdjuster.firstPreferVertical = b
-            case "passMode" => passMode = b
+            case "passMode" => Pass.mode = b
         }
     }
     
@@ -1229,12 +1331,15 @@ object Context {
         case "keyboardHook" => keyboardHook
         case "vhAdjusterMode" => VHAdjuster.mode
         case "firstPreferVertical" => VHAdjuster.firstPreferVertical
-        case "passMode" => passMode
+        case "passMode" => Pass.mode
     }
     
-    def storeProperties: Unit = {          
-        try {   
-            if (!prop.isLoaded || !isChangedProperties) {
+    def storeProperties: Unit = {
+        logger.debug("storeProperties")
+        
+        try {
+            //(Properties.exists(selectedProperties) &&
+            if (!loaded || !isChangedProperties) {
                 logger.debug("Not changed properties")
                 return
             }
@@ -1246,6 +1351,8 @@ object Context {
             set("processPriority", processPriority.name)
             set("targetVKCode", Keyboard.getName(targetVKCode))
             set("vhAdjusterMethod", VHAdjuster.method.name)
+            
+            prop.setDouble("dpiCorrection", dpiCorrection)
             
             BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
             NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))
