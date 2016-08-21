@@ -104,6 +104,11 @@ object W10Wheel {
             Dialog.errorMessage(shell, s"'$name' properties does not exist.")
     }
     
+    private def unknownCommand(name: String) {
+        Dialog.errorMessage(shell, "Unknown Command: " + name, "Command Error")
+        System.exit(0)
+    }
+    
     private def procArgs(args: Array[String]) {
         logger.debug("procArgs")
         
@@ -111,6 +116,7 @@ object W10Wheel {
             args(0) match {
                 case "--sendExit" => W10Message.sendExit
                 case "--sendPassMode" => W10Message.sendPassMode(getBool(args, 1))
+                case name if name.startsWith("--") => unknownCommand(name)
                 case name => setSelectedProperties(name)
             }
             

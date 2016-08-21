@@ -98,7 +98,7 @@ object Properties {
     val DEFAULT_DEF = "Default"
     
     private val BAD_DEFAULT_NAME = s"$PROP_NAME.$DEFAULT_DEF.$PROP_EXT"
-    private val userDefPat = s"^\\.$PROGRAM_NAME\\.(.+)\\.$PROP_EXT$$".r
+    private val userDefPat = s"^\\.$PROGRAM_NAME\\.(?!--)(.+)\\.$PROP_EXT$$".r
     
     private def isPropFile(f: File): Boolean = {
         val name = f.getName

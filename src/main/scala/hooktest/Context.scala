@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0"
+    val PROGRAM_VERSION = "2.0.1"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
