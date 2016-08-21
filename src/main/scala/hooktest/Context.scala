@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "1.9"
+    val PROGRAM_VERSION = "2.0"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -978,13 +978,15 @@ object Context {
         })
     }
     
+    def exitAction(e: Event) {
+        trayItem.setVisible(false)
+        W10Wheel.exitMessageLoop
+    }
+    
     private def createExitMenu(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
         item.setText("Exit")
-        item.addListener(SWT.Selection, (e: Event) => {
-            W10Wheel.exit.success(true)
-            ()
-        })
+        item.addListener(SWT.Selection, exitAction _)
     }
     
     private def createTrayItem(menu: Menu) = {

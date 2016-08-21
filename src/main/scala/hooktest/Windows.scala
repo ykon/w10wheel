@@ -5,9 +5,6 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-//import scala.concurrent._
-//import ExecutionContext.Implicits.global
-
 import java.util.concurrent.ArrayBlockingQueue
 
 import com.sun.jna.Pointer
@@ -115,7 +112,7 @@ object Windows {
         u32.CallNextHookEx(hhk, nCode, wParam, new LPARAM(peer))
     }
     
-    private def createInputArray(size: Int) =
+    def createInputArray(size: Int) =
         new INPUT().toArray(size).asInstanceOf[Array[INPUT]]
     
     private val rand = new Random
@@ -136,24 +133,6 @@ object Windows {
         val ext = me.info.dwExtraInfo.intValue()
         ext == resendTag
     }
-    
-    /*
-    val W10_MESSAGE_EXIT = -1593895973
-    val W10_MESSAGE_PASSMODE = 264816059 & 0x0FFFFFFF
-    
-    def sendExit {
-        val input = createInputArray(1)
-        setInput(input(0), getCursorPos, 0, WM_MOUSEHWHEEL, 0, W10_MESSAGE_EXIT)
-        sendInput(input)
-    }
-    
-    def sendPassMode(b: Boolean) {
-        val input = createInputArray(1)
-        val extra = W10_MESSAGE_PASSMODE | (if (b) 0x10000000 else 0x00000000)
-        setInput(input(0), getCursorPos, 0, WM_MOUSEHWHEEL, 0, extra)
-        sendInput(input)
-    }
-    */
     
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
@@ -177,6 +156,12 @@ object Windows {
         catch {
             case e: Exception => logger.warn(e.toString())
         }
+    }
+    
+    def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
+        val input = createInputArray(1)
+        setInput(input(0), pt, data, flags, time, extra)
+        u32.SendInput(new DWORD(1), input, input(0).size())
     }
     
     def sendInput(msgs: Array[INPUT]) {

@@ -21,14 +21,41 @@ object Hook {
     @volatile private var mouseHhk: HHOOK = null
     @volatile private var keyboardHhk: HHOOK = null
     
+    private def procCommand(info: HookInfo): Boolean = {
+        logger.debug("procCommand")
+        if ((info.mouseData >>> 16) != 1)
+            return false
+        
+        logger.debug("receive (mouseData >>> 16) = 1")
+        val msg = info.dwExtraInfo.intValue()
+        W10Message.getFlag(msg) match {
+            case W10Message.W10_MESSAGE_EXIT => {
+                logger.debug("receive W10_MESSAGE_EXIT")
+                Context.exitAction(null)
+                true
+            }
+            case W10Message.W10_MESSAGE_PASSMODE => {
+                logger.debug("receive W10_MESSAGE_PASSMODE") 
+                Context.setPassMode(W10Message.getBoolBit(msg))
+                true
+            }
+            case _ => false
+        }
+    }
+    
     private val mouseProc = new LowLevelMouseProc() {
         override def callback(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
             val eh = EventHandler
             val callNextHook = () => Windows.callNextHook(mouseHhk, nCode, wParam, info.getPointer)
             eh.setCallNextHook(callNextHook)
             
-            if (nCode < 0 || ctx.isPassMode)
+            if (nCode < 0)
                 return callNextHook()
+                
+            if (ctx.isPassMode) {
+                return if (wParam.intValue == WM_MOUSEHWHEEL && procCommand(info))
+                    new LRESULT(1) else callNextHook()
+            }
             
             wParam.intValue match {
                 case WM_MOUSEMOVE => eh.move(info)
@@ -41,26 +68,8 @@ object Hook {
                 case WM_XBUTTONDOWN => eh.xDown(info)
                 case WM_XBUTTONUP => eh.xUp(info)
                 case WM_MOUSEWHEEL => callNextHook()
-                case WM_MOUSEHWHEEL => {
-                    callNextHook()
-                    
-                    /*
-                    info.dwExtraInfo.intValue() match {
-                        case Windows.W10_MESSAGE_EXIT => {
-                            logger.debug("W10_MESSAGE_EXIT")
-                            W10Wheel.exit.success(true)
-                            new LRESULT(1)
-                        }
-                        case msg if (msg & 0x0FFFFFFF) == Windows.W10_MESSAGE_PASSMODE => {
-                            logger.debug("W10_MESSAGE_PASSMODE") 
-                            val b = (msg & 0xF0000000) != 0
-                            Context.setPassMode(b)
-                            new LRESULT(1)
-                        }
-                        case _ => callNextHook()
-                    }
-                    */
-                }
+                case WM_MOUSEHWHEEL =>
+                    if (procCommand(info)) new LRESULT(1) else callNextHook()
             }
         }
     }

@@ -444,10 +444,10 @@ object EventHandler {
         getResult(cs, me)
     }
     
-    @volatile private var procDownLR: MouseEvent => LRESULT = null
-    @volatile private var procUpLR: MouseEvent => LRESULT = null
-    @volatile private var procDownS: MouseEvent => LRESULT = null
-    @volatile private var procUpS: MouseEvent => LRESULT = null
+    @volatile private var procDownLR: MouseEvent => LRESULT = lrDown
+    @volatile private var procUpLR: MouseEvent => LRESULT = lrUp
+    @volatile private var procDownS: MouseEvent => LRESULT = noneDown
+    @volatile private var procUpS: MouseEvent => LRESULT = noneUp
     
     def leftDown(info: HookInfo): LRESULT = {
         //logger.debug("leftDown")

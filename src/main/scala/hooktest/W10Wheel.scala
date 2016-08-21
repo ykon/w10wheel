@@ -5,8 +5,6 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import scala.concurrent._
-import ExecutionContext.Implicits.global
 import scala.collection.immutable.List
 
 // SWT
@@ -21,7 +19,6 @@ import java.nio.file.Paths
 object W10Wheel {
     private val ctx = Context
     private val logger = ctx.logger
-    val exit: Promise[Boolean] = Promise[Boolean]
     
     private val REPLACE_SWT_NAME = "ReplaceSWT.exe"
     
@@ -57,10 +54,6 @@ object W10Wheel {
         Hook.unhook
         ctx.storeProperties
         PreventMultiInstance.unlock
-        
-        display.syncExec(new Runnable() {
-            override def run() = display.dispose
-        })
     }
     
     private def messageDoubleLaunch {
@@ -74,29 +67,35 @@ object W10Wheel {
         }
     }
     
+    def exitMessageLoop {
+        display.dispose()
+    }
+    
+    /*
     private val shutdown = new Thread {
         override def run {
             logger.debug("Shutdown Hook")
             
-            if (!shell.isDisposed)
-                procExit
+            if (!display.isDisposed)
+                exitMessageLoop
         }
     }
      
     Runtime.getRuntime.addShutdownHook(shutdown)
-    
-    /*
-    private def command_sendPassMode(enabled: Array[String]) {
-        logger.debug("command_sendPassMode")
-        val b = if (enabled.length == 0) true else enabled(0).toBoolean
-        Windows.sendPassMode(b)
-    }
-    
-    private def command_sendExit {
-        logger.debug("command_sendExit")
-        Windows.sendExit
-    }
     */
+    
+    private def getBool(args: Array[String], i: Int) = {
+        try {
+            if (args.length == 1) true else args(i).toBoolean
+        }
+        catch {
+            case e: IllegalArgumentException => {
+                Dialog.errorMessage(shell, e)
+                System.exit(0)
+                false
+            }
+        }
+    }
     
     private def setSelectedProperties(name: String) {
         if (Properties.exists(name))
@@ -108,35 +107,27 @@ object W10Wheel {
     private def procArgs(args: Array[String]) {
         logger.debug("procArgs")
         
-        if (args.length == 1) {
+        if (args.length > 0) {
             args(0) match {
-                //case "--sendExit" => command_sendExit
-                //case "--sendPassMode" => command_sendPassMode(args.drop(1))
+                case "--sendExit" => W10Message.sendExit
+                case "--sendPassMode" => W10Message.sendPassMode(getBool(args, 1))
                 case name => setSelectedProperties(name)
             }
             
-            /*
             if (args(0).startsWith("--send")) {
-                Thread.sleep(100)
-                exitProcess
+                Thread.sleep(1000)
                 System.exit(0)
             }
-            */
         }
     }
 
     def main(args: Array[String]) {
+        procArgs(args)
+        
         if (!PreventMultiInstance.tryLock) {
             messageDoubleLaunch
             System.exit(0)
         }
-        
-        exit.future.foreach(_ => {
-            procExit
-            System.exit(0)
-        })
-        
-        procArgs(args)
         
         ctx.loadProperties
         ctx.setSystemTray
@@ -152,5 +143,7 @@ object W10Wheel {
         //logger.debug("exit message loop")
         
         messageLoop
+        logger.debug("Exit message loop")
+        procExit
     }
 }
