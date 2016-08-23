@@ -30,11 +30,13 @@ object KEventHandler {
             None
     }
     
+    /*
     private def resetLastFlags(ke: KeyboardEvent): Option[LRESULT] = {
         logger.debug(s"reset last flag: ${ke.name}")
         ctx.LastFlags.reset(ke)
         None
     }
+    */
     
     private def checkSameLastEvent(ke: KeyboardEvent): Option[LRESULT] = {
         if (ke.same(lastEvent) && ctx.isScrollMode) {
@@ -92,11 +94,9 @@ object KEventHandler {
             None
     }
     
-    private def checkDownSuppressed(up: KeyboardEvent): Option[LRESULT] = {
-        val suppressed = ctx.LastFlags.isDownSuppressed(up)
-        
-        if (suppressed) {
-            logger.debug(s"after suppressed down event: ${up.name}")
+    private def checkSuppressedDown(up: KeyboardEvent): Option[LRESULT] = {     
+        if (ctx.LastFlags.getAndReset_SuppressedDown(up)) {
+            logger.debug(s"suppress (checkSuppressedDown(K)): ${up.name}")
             suppress
         }
         else
@@ -131,7 +131,7 @@ object KEventHandler {
     private def singleDown(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
                 checkSameLastEvent,
-                resetLastFlags,
+                //resetLastFlags,
                 checkExitScrollDown,
                 passNotTrigger,
                 checkTriggerScrollStart,
@@ -145,7 +145,7 @@ object KEventHandler {
         val cs: Checkers = List(
                 skipFirstUp,
                 checkSameLastEvent,
-                checkDownSuppressed,
+                checkSuppressedDown,
                 passNotTrigger,
                 checkExitScrollUp,
                 endIllegalState

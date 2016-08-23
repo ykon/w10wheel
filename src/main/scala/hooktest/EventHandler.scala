@@ -136,6 +136,7 @@ object EventHandler {
             None
     }
     
+    /*
     private def checkSingleSuppressed(up: MouseEvent): Option[LRESULT] = {
         if (up.isSingle) {
             if (ctx.LastFlags.isDownSuppressed(up)) {
@@ -150,6 +151,7 @@ object EventHandler {
         else
             None
     }
+    */
     
     private def checkExitScrollUp(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isScrollMode) {
@@ -175,22 +177,18 @@ object EventHandler {
             None
     }
     
-    private def checkDownSuppressed(up: MouseEvent): Option[LRESULT] = {
-        val suppressed = ctx.LastFlags.isDownSuppressed(up)
-        
-        if (suppressed) {
-            logger.debug(s"suppress (checkDownSuppressed): ${up.name}")
+    private def checkSuppressedDown(up: MouseEvent): Option[LRESULT] = {        
+        if (ctx.LastFlags.getAndReset_SuppressedDown(up)) {
+            logger.debug(s"suppress (checkSuppressedDown): ${up.name}")
             suppress
         }
         else
             None
     }
     
-    private def checkDownResent(up: MouseEvent): Option[LRESULT] = {
-        val resent = ctx.LastFlags.isDownResent(up)
-        
-        if (resent) {
-            logger.debug(s"resendUp and suppress (checkDownResent): ${up.name}")
+    private def checkResentDown(up: MouseEvent): Option[LRESULT] = {        
+        if (ctx.LastFlags.getAndReset_ResentDown(up)) {
+            logger.debug(s"resendUp and suppress (checkResentDown): ${up.name}")
             Windows.resendUp(up)
             suppress
         }
@@ -358,9 +356,9 @@ object EventHandler {
             checkSameLastEvent,
             //checkSingleSuppressed,
             checkExitScrollUp,
-            checkDownResent,
+            checkResentDown,
             offerEventWaiter,
-            checkDownSuppressed,
+            checkSuppressedDown,
             endNotTrigger
         )
                 
@@ -372,7 +370,7 @@ object EventHandler {
         val cs: Checkers = List(
             skipResendEventSingle,
             checkSameLastEvent,
-            resetLastFlags,
+            //resetLastFlags,
             checkExitScrollDown,
             passNotTrigger,
             checkKeySendMiddle,
@@ -389,7 +387,7 @@ object EventHandler {
             skipResendEventSingle,
             skipFirstUp,
             checkSameLastEvent,
-            checkDownSuppressed,
+            checkSuppressedDown,
             passNotTrigger,
             checkExitScrollUp,
             endIllegalState
@@ -403,7 +401,7 @@ object EventHandler {
         val cs: Checkers = List(
             skipResendEventSingle,
             checkSameLastEvent,
-            resetLastFlags,
+            //resetLastFlags,
             checkExitScrollDown,
             passNotDragTrigger,
             startScrollDrag
@@ -418,7 +416,7 @@ object EventHandler {
             skipResendEventSingle,
             skipFirstUp,
             checkSameLastEvent,
-            checkDownSuppressed,
+            checkSuppressedDown,
             passNotDragTrigger,
             continueScrollDrag,
             exitAndResendDrag
@@ -430,7 +428,7 @@ object EventHandler {
     private def noneDown(me: MouseEvent): LRESULT = {
         //logger.debug("noneDown")
         val cs: Checkers = List(
-            resetLastFlags,
+            //resetLastFlags,
             checkExitScrollDown,
             endPass
         )
@@ -441,7 +439,7 @@ object EventHandler {
     private def noneUp(me: MouseEvent): LRESULT = {
         //logger.debug("noneUp")
         val cs: Checkers = List(
-            checkDownSuppressed,
+            checkSuppressedDown,
             endPass
         )
         

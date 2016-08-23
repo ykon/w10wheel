@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.2"
+    val PROGRAM_VERSION = "2.0.3"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -271,7 +271,7 @@ object Context {
         @volatile private var rdS = false
         @volatile private var sdS = false
         
-        private val kdSArray = new Array[Boolean](256)
+        private val kdS = new Array[Boolean](256)
         
         def setResent(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = true
@@ -279,9 +279,9 @@ object Context {
             case _ => {}
         }
         
-        def isDownResent(up: MouseEvent) = up match {
-            case LeftUp(_) => ldR
-            case RightUp(_) => rdR
+        def getAndReset_ResentDown(up: MouseEvent) = up match {
+            case LeftUp(_) => val res = ldR; ldR = false; res
+            case RightUp(_) => val res = rdR; rdR = false; res
             case _ => false
         }
         
@@ -293,19 +293,19 @@ object Context {
         }
         
         def setSuppressed(down: KeyboardEvent) = down match {
-            case KeyDown(_) => kdSArray(down.vkCode) = true
+            case KeyDown(_) => kdS(down.vkCode) = true
             case _ => {}
         }
         
-        def isDownSuppressed(up: MouseEvent) = up match {
-            case LeftUp(_) => ldS
-            case RightUp(_) => rdS
-            case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS
+        def getAndReset_SuppressedDown(up: MouseEvent) = up match {
+            case LeftUp(_) => val res = ldS; ldS = false; res
+            case RightUp(_) => val res = rdS; rdS = false; res
+            case MiddleUp(_) | X1Up(_) | X2Up(_) => val res = sdS; sdS = false; res
             case _ => false
         }
         
-        def isDownSuppressed(up: KeyboardEvent) = up match {
-            case KeyUp(_) => kdSArray(up.vkCode)
+        def getAndReset_SuppressedDown(up: KeyboardEvent) = up match {
+            case KeyUp(_) => val res = kdS(up.vkCode); kdS(up.vkCode) = false; res 
             case _ => false
         }
         
@@ -316,10 +316,12 @@ object Context {
             case _ => {}
         }
         
+        /*
         def reset(down: KeyboardEvent) = down match {
-            case KeyDown(_) => kdSArray(down.vkCode) = false
+            case KeyDown(_) => kdS(down.vkCode) = false
             case _ => {}
         }
+        */
     }
     
     def isTrigger(e: Trigger) = firstTrigger == e
