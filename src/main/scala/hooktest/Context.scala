@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.1"
+    val PROGRAM_VERSION = "2.0.2"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -832,6 +832,9 @@ object Context {
         })
     }
     
+    private def isValidPropertiesName(name: String) =
+        (name != DEFAULT_DEF) && !(name.startsWith("--"))
+    
     private def createAddPropertiesMenuItem(menu: Menu) {
         val item = new MenuItem(menu, SWT.PUSH)
         item.setText("Add")
@@ -841,11 +844,13 @@ object Context {
             
             try {
                 res.foreach(name => {
-                    if (name != DEFAULT_DEF) {
+                    if (isValidPropertiesName(name)) {
                         storeProperties
                         Properties.copy(selectedProperties, name)
                         selectedProperties = name
                     }
+                    else
+                        Dialog.errorMessage(systemShell, s"Invalid Name: $name", "Name Error")
                 })
             }
             catch {

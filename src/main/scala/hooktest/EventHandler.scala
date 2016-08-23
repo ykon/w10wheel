@@ -39,20 +39,24 @@ object EventHandler {
     }
         
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
+        def pass = {
+            logger.debug(s"pass resend event: ${me.name}")
+            setPreResendEvent(me)
+            callNextHook  
+        }
+        
         if (Windows.isResendEvent(me)) {
             (getPreResendEvent(me), me) match {
                 case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) => {
                     logger.warn(s"re-resend event: ${me.name}")
-                    Windows.resendUp(me)
+                    Windows.reResendUp(me)
                     suppress
                 }
-                case _ => {
-                    logger.debug(s"skip resend event: ${me.name}")
-                    setPreResendEvent(me)
-                    callNextHook       
-                }
+                case _ => pass
             }
         }
+        else if (Windows.isReResendEvent(me))
+            pass
         else
             None
     }
@@ -510,6 +514,7 @@ object EventHandler {
         if (ctx.isScrollMode) {
             drag(info)
             Windows.sendWheel(info.pt)
+            //Windows.sendWheel(info.pt.x, info.pt.y)
             suppress.get
         }
         else if (EventWaiter.offer(Move(info))) {

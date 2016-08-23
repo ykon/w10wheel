@@ -128,10 +128,14 @@ object Windows {
     }
     
     private val resendTag = createRandomNumber
+    private val reResendTag = createRandomNumber
     
     def isResendEvent(me: MouseEvent): Boolean = {
-        val ext = me.info.dwExtraInfo.intValue()
-        ext == resendTag
+        me.info.dwExtraInfo.intValue() == resendTag
+    }
+    
+    def isReResendEvent(me: MouseEvent): Boolean = {
+        me.info.dwExtraInfo.intValue() == reResendTag 
     }
     
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
@@ -419,12 +423,9 @@ object Windows {
     
     private var scrollStartPoint: (Int, Int) = null
     
-    def sendWheel(pt: POINT) {
-        val (sx, sy) = scrollStartPoint
-        //logger.debug(s"sy: $sy")
-        //logger.debug(s"pt.y: ${pt.y}")
-        
-        val (dx, dy) = swapIf(pt.x - sx, pt.y - sy)
+    def sendWheel(movePt: POINT) {
+        val (sx, sy) = scrollStartPoint        
+        val (dx, dy) = swapIf(movePt.x - sx, movePt.y - sy)
         val wspt = new POINT(sx, sy)
         
         sendWheelIf(wspt, dx, dy)
@@ -448,22 +449,26 @@ object Windows {
         input
     }
     
-    def resendClick(mc: MouseClick) = {
+    def resendClick(mc: MouseClick) {
         sendInput(createClick(mc, resendTag))
     }
     
-    def resendDown(me: MouseEvent) = {
+    def resendDown(me: MouseEvent) {
         me match {
             case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
             case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
         }
     }
     
-    def resendUp(me: MouseEvent) = {
+    def resendUp(me: MouseEvent, extra: Int = resendTag) {
         me match {
-            case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
-            case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
+            case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, extra)
+            case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, extra)
         }
+    }
+    
+    def reResendUp(me: MouseEvent) {
+        resendUp(me, reResendTag)
     }
     
     // https://github.com/java-native-access/jna/blob/master/contrib/platform/src/com/sun/jna/platform/win32/Kernel32Util.java
