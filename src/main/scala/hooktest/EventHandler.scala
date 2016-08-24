@@ -17,10 +17,13 @@ object EventHandler {
     private var lastEvent: MouseEvent = null
     //private var lastResendEvent: MouseEvent = null
     
-    private var preLeftResendEvent: MouseEvent = null
-    private var preRightResendEvent: MouseEvent = null
+    private var preResendLeftEvent: MouseEvent = null
+    private var preResendRightEvent: MouseEvent = null
     
     private var __callNextHook: () => LRESULT = null
+    
+    private var stagingLeftUp: MouseEvent = null
+    private var stagingRightUp: MouseEvent = null
     
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
@@ -29,13 +32,23 @@ object EventHandler {
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
     
     private def getPreResendEvent(me: MouseEvent) = me match {
-        case LeftDown(_) | LeftUp(_) => preLeftResendEvent
-        case RightDown(_) | RightUp(_) => preRightResendEvent
+        case LeftEvent(_) => preResendLeftEvent
+        case RightEvent(_) => preResendRightEvent
     }
     
     private def setPreResendEvent(me: MouseEvent) = me match {
-        case LeftDown(_) | LeftUp(_) => preLeftResendEvent = me
-        case RightDown(_) | RightUp(_) => preRightResendEvent = me
+        case LeftEvent(_) => preResendLeftEvent = me
+        case RightEvent(_) => preResendRightEvent = me
+    }
+    
+    private def getStagingUp(me: MouseEvent) = me match {
+        case LeftEvent(_) => stagingLeftUp
+        case RightEvent(_) => stagingRightUp
+    }
+    
+    private def setStagingUp(me: MouseEvent, up: MouseEvent) = me match {
+        case LeftEvent(_) => stagingLeftUp = up
+        case RightEvent(_) => stagingRightUp = up
     }
         
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
@@ -46,17 +59,23 @@ object EventHandler {
         }
         
         if (Windows.isResendEvent(me)) {
+            val stagingUp = getStagingUp(me)
+            
             (getPreResendEvent(me), me) match {
                 case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) => {
-                    logger.warn(s"re-resend event: ${me.name}")
-                    Windows.reResendUp(me)
+                    logger.warn(s"set stagingUp: ${me.name}")
+                    setStagingUp(me, me)
+                    suppress
+                }
+                case (_, LeftDown(_)) | (_, RightDown(_)) if stagingUp != null => {
+                    logger.debug(s"resend Click: ${me.name}")
+                    Windows.resendClick(me, stagingUp)
+                    setStagingUp(me, null)
                     suppress
                 }
                 case _ => pass
             }
         }
-        else if (Windows.isReResendEvent(me))
-            pass
         else
             None
     }

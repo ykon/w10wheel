@@ -78,21 +78,19 @@ case class X2Down (info: HookInfo) extends MouseEvent
 case class X2Up (info: HookInfo) extends MouseEvent
 case class Move (info: HookInfo) extends MouseEvent
 
-/*
-object LeftButton {
+object LeftEvent {
     def unapply(me: MouseEvent) = me match {
-        case LeftDown(_) | LeftUp(_) => Some(me)
+        case LeftDown(_) | LeftUp(_) => Some(me.info)
         case _ => None
     }
 }
 
-object RightButton {
+object RightEvent {
     def unapply(me: MouseEvent) = me match {
-        case RightDown(_) | RightUp(_) => Some(me)
+        case RightDown(_) | RightUp(_) => Some(me.info)
         case _ => None
     }
 }
-*/
 
 trait MouseClick {
     val info: HookInfo

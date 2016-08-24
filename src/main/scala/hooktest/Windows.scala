@@ -128,14 +128,9 @@ object Windows {
     }
     
     private val resendTag = createRandomNumber
-    private val reResendTag = createRandomNumber
     
     def isResendEvent(me: MouseEvent): Boolean = {
         me.info.dwExtraInfo.intValue() == resendTag
-    }
-    
-    def isReResendEvent(me: MouseEvent): Boolean = {
-        me.info.dwExtraInfo.intValue() == reResendTag 
     }
     
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
@@ -453,6 +448,13 @@ object Windows {
         sendInput(createClick(mc, resendTag))
     }
     
+    def resendClick(down: MouseEvent, up: MouseEvent) {
+        (down, up) match {
+            case (LeftDown(_), LeftUp(_)) => resendClick(LeftClick(down.info))
+            case (RightDown(_), RightUp(_)) => resendClick(RightClick(down.info))
+        }
+    }
+    
     def resendDown(me: MouseEvent) {
         me match {
             case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
@@ -465,10 +467,6 @@ object Windows {
             case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, extra)
             case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, extra)
         }
-    }
-    
-    def reResendUp(me: MouseEvent) {
-        resendUp(me, reResendTag)
     }
     
     // https://github.com/java-native-access/jna/blob/master/contrib/platform/src/com/sun/jna/platform/win32/Kernel32Util.java
