@@ -128,10 +128,13 @@ object Windows {
     }
     
     private val resendTag = createRandomNumber
+    private val resendClickTag = createRandomNumber
     
-    def isResendEvent(me: MouseEvent): Boolean = {
+    def isResendEvent(me: MouseEvent): Boolean =
         me.info.dwExtraInfo.intValue() == resendTag
-    }
+
+    def isResendClickEvent(me: MouseEvent): Boolean =
+        me.info.dwExtraInfo.intValue() == resendClickTag
     
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
@@ -426,7 +429,8 @@ object Windows {
         sendWheelIf(wspt, dx, dy)
     }
     
-    private def createClick(mc: MouseClick, extra: Int) = {
+    private def createClick(mc: MouseClick) = {
+        val extra = resendClickTag
         val input = createInputArray(2)
         
         def set(mouseData: Int, down: Int, up: Int) {
@@ -445,7 +449,7 @@ object Windows {
     }
     
     def resendClick(mc: MouseClick) {
-        sendInput(createClick(mc, resendTag))
+        sendInput(createClick(mc))
     }
     
     def resendClick(down: MouseEvent, up: MouseEvent) {
@@ -462,10 +466,10 @@ object Windows {
         }
     }
     
-    def resendUp(me: MouseEvent, extra: Int = resendTag) {
+    def resendUp(me: MouseEvent) {
         me match {
-            case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, extra)
-            case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, extra)
+            case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
+            case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
         }
     }
     

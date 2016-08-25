@@ -16,12 +16,19 @@ object EventWaiter {
     private val ctx = Context
     private val logger = ctx.logger
     private val sync = new SynchronousQueue[MouseEvent](true)
-    @volatile private var waitingEvent: MouseEvent = null
+    
+    @volatile private var waiting = false
+    private var waitingEvent: MouseEvent = null
     
     private def setFlagsOffer(me: MouseEvent) {
+        //logger.debug("setFlagsOffer")
         me match {
-            case Move(_) | LeftUp(_) | RightUp(_) => ctx.LastFlags.setResent(waitingEvent)
+            case Move(_) | LeftUp(_) | RightUp(_) => {
+                logger.debug(s"setFlagsOffer - setResent: ${waitingEvent.name}")
+                ctx.LastFlags.setResent(waitingEvent)
+            }
             case LeftDown(_) | RightDown(_) => {
+                logger.debug(s"setFlagsOffer - setSuppressed: ${waitingEvent.name}")
                 ctx.LastFlags.setSuppressed(waitingEvent)
                 ctx.LastFlags.setSuppressed(me)
             }
@@ -29,7 +36,7 @@ object EventWaiter {
         }
     }
     
-    private def isWaiting = waitingEvent != null
+    private def isWaiting = waiting
     
     def offer(me: MouseEvent): Boolean = {
         if (isWaiting && sync.offer(me)) {
@@ -89,10 +96,8 @@ object EventWaiter {
         override def run {
             while (true) {
                 val down = waiterQueue.take
-                
-                //logger.debug("EventWaiter: poll")
                 val res = sync.poll(Context.getPollTimeout, TimeUnit.MILLISECONDS)
-                waitingEvent = null
+                waiting = false
             
                 res match {
                     case null => fromTimeout(down)
@@ -112,6 +117,7 @@ object EventWaiter {
         if (!down.isDown)
             throw new IllegalArgumentException
         
+        waiting = true
         waitingEvent = down
         waiterQueue.put(down)
     }

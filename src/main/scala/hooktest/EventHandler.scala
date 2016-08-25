@@ -58,6 +58,11 @@ object EventHandler {
             callNextHook  
         }
         
+        def passClick = {
+            logger.debug(s"pass resendClick event: ${me.name}")
+            callNextHook
+        }
+        
         if (Windows.isResendEvent(me)) {
             val stagingUp = getStagingUp(me)
             
@@ -76,13 +81,15 @@ object EventHandler {
                 case _ => pass
             }
         }
+        else if (Windows.isResendClickEvent(me))
+            passClick
         else
             None
     }
     
     private def skipResendEventSingle(me: MouseEvent): Option[LRESULT] = {
-        if (Windows.isResendEvent(me)) {
-            logger.debug(s"skip resend event: ${me.name}")
+        if (Windows.isResendClickEvent(me)) {
+            logger.debug(s"pass resendClick event: ${me.name}")
             callNextHook
         }
         else
@@ -118,9 +125,9 @@ object EventHandler {
     }
     */
     
-    private def resetLastFlags(me: MouseEvent): Option[LRESULT] = {
+    private def resetLastFlagsLR(me: MouseEvent): Option[LRESULT] = {
         logger.debug(s"reset last flag: ${me.name}")
-        ctx.LastFlags.reset(me)
+        ctx.LastFlags.resetLR(me)
         None
     }
     
@@ -356,7 +363,7 @@ object EventHandler {
         val cs: Checkers = List(
             skipResendEventLR,
             checkSameLastEvent,
-            resetLastFlags,
+            resetLastFlagsLR,
             checkExitScrollDown,
             //passSingleEvent,
             offerEventWaiter,

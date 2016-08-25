@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.4"
+    val PROGRAM_VERSION = "2.0.5"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -276,44 +276,44 @@ object Context {
         def setResent(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = true
             case RightDown(_) => rdR = true
-            case _ => {}
+            //case _ => {}
         }
         
         def getAndReset_ResentDown(up: MouseEvent) = up match {
             case LeftUp(_) => val res = ldR; ldR = false; res
             case RightUp(_) => val res = rdR; rdR = false; res
-            case _ => false
+            //case _ => false
         }
         
         def setSuppressed(down: MouseEvent) = down match {
             case LeftDown(_) => ldS = true
             case RightDown(_) => rdS = true 
             case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = true
-            case _ => {}
+            //case _ => {}
         }
         
         def setSuppressed(down: KeyboardEvent) = down match {
             case KeyDown(_) => kdS(down.vkCode) = true
-            case _ => {}
+            //case _ => {}
         }
         
         def getAndReset_SuppressedDown(up: MouseEvent) = up match {
             case LeftUp(_) => val res = ldS; ldS = false; res
             case RightUp(_) => val res = rdS; rdS = false; res
             case MiddleUp(_) | X1Up(_) | X2Up(_) => val res = sdS; sdS = false; res
-            case _ => false
+            //case _ => false
         }
         
         def getAndReset_SuppressedDown(up: KeyboardEvent) = up match {
             case KeyUp(_) => val res = kdS(up.vkCode); kdS(up.vkCode) = false; res 
-            case _ => false
+            //case _ => false
         }
         
-        def reset(down: MouseEvent) = down match {
+        def resetLR(down: MouseEvent) = down match {
             case LeftDown(_) => ldR = false; ldS = false
             case RightDown(_) => rdR = false; rdS = false
-            case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
-            case _ => {}
+            //case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
+            //case _ => {}
         }
         
         /*
