@@ -13,6 +13,9 @@ import java.util.concurrent.TimeUnit
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object EventWaiter {
+    // http://hsmemo.github.io/articles/no3059sSJ.html
+    private val THREAD_PRIORITY = 7 // THREAD_PRIORITY_ABOVE_NORMAL
+    
     private val ctx = Context
     private val logger = ctx.logger
     private val sync = new SynchronousQueue[MouseEvent](true)
@@ -75,9 +78,19 @@ object EventWaiter {
         }
         
         (down, up) match {
-            case (LeftDown(_), LeftUp(_)) => resendC(LeftClick(down.info))
+            case (LeftDown(_), LeftUp(_)) => {
+                if (Mouse.samePoint(down, up))
+                    resendC(LeftClick(down.info))
+                else
+                    resendUD
+            }
             case (LeftDown(_), RightUp(_)) => resendUD
-            case (RightDown(_), RightUp(_)) => resendC(RightClick(down.info))
+            case (RightDown(_), RightUp(_)) => {
+                if (Mouse.samePoint(down, up))
+                    resendC(RightClick(down.info))
+                else
+                    resendUD
+            }
             case (RightDown(_), LeftUp(_)) => resendUD
         }
     }
@@ -96,9 +109,14 @@ object EventWaiter {
         override def run {
             while (true) {
                 val down = waiterQueue.take
-                val res = sync.poll(Context.getPollTimeout, TimeUnit.MILLISECONDS)
+                var res = sync.poll(Context.getPollTimeout, TimeUnit.MILLISECONDS)
                 waiting = false
-            
+                
+                if (res == null) {
+                    Thread.sleep(0)
+                    res = sync.poll()
+                }
+                
                 res match {
                     case null => fromTimeout(down)
                     case Move(_) => fromMove(down)
@@ -110,6 +128,7 @@ object EventWaiter {
     })
     
     waiterThread.setDaemon(true)
+    waiterThread.setPriority(THREAD_PRIORITY)
     waiterThread.start
     
     // RightDown or LeftDown

@@ -166,4 +166,7 @@ object Mouse {
         case "X2Drag" | "X2DragTrigger" => X2DragTrigger()
         case "None" | "NoneTrigger" => NoneTrigger()
     }
+    
+    def samePoint(me1: MouseEvent, me2: MouseEvent) =
+        (me1.info.pt.x == me2.info.pt.x) && (me1.info.pt.y == me2.info.pt.y)
 }

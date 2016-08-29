@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.5"
+    val PROGRAM_VERSION = "2.0.6"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -1161,7 +1161,8 @@ object Context {
     
     private def setDefaultPriority {
         logger.debug("setDefaultPriority")
-        Windows.setPriority(processPriority)
+        //Windows.setPriority(processPriority)
+        setPriority(processPriority.name)
     }
     
     private def setDefaultTrigger {

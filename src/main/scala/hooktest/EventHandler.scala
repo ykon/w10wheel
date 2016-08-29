@@ -19,11 +19,12 @@ object EventHandler {
     
     private var preResendLeftEvent: MouseEvent = null
     private var preResendRightEvent: MouseEvent = null
+    private var resentDownUp = false
     
     private var __callNextHook: () => LRESULT = null
     
-    private var stagingLeftUp: MouseEvent = null
-    private var stagingRightUp: MouseEvent = null
+    //private var stagingLeftUp: MouseEvent = null
+    //private var stagingRightUp: MouseEvent = null
     
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
@@ -41,6 +42,7 @@ object EventHandler {
         case RightEvent(_) => preResendRightEvent = me
     }
     
+    /*
     private def getStagingUp(me: MouseEvent) = me match {
         case LeftEvent(_) => stagingLeftUp
         case RightEvent(_) => stagingRightUp
@@ -50,7 +52,8 @@ object EventHandler {
         case LeftEvent(_) => stagingLeftUp = up
         case RightEvent(_) => stagingRightUp = up
     }
-        
+    */
+    
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
         def pass = {
             logger.debug(s"pass resend event: ${me.name}")
@@ -64,6 +67,7 @@ object EventHandler {
         }
         
         if (Windows.isResendEvent(me)) {
+            /*
             val stagingUp = getStagingUp(me)
             
             (getPreResendEvent(me), me) match {
@@ -72,7 +76,7 @@ object EventHandler {
                     setStagingUp(me, me)
                     suppress
                 }
-                case (_, LeftDown(_)) | (_, RightDown(_)) if stagingUp != null => {
+                case (_, LeftDown(_)) | (_, RightDown(_)) if (stagingUp != null) => {
                     logger.debug(s"resend Click: ${me.name}")
                     Windows.resendClick(me, stagingUp)
                     setStagingUp(me, null)
@@ -80,6 +84,24 @@ object EventHandler {
                 }
                 case _ => pass
             }
+            */
+            
+            if (resentDownUp) {
+                logger.debug(s"isResendEvent - resentDownUp: ${me.name}")
+                resentDownUp = false
+                
+                (getPreResendEvent(me), me) match {
+                    case (LeftUp(_), LeftUp(_)) | (RightUp(_), RightUp(_)) => {
+                        logger.warn(s"sleep(0) and resendUp: ${me.name}")
+                        Thread.sleep(0)
+                        Windows.resendUp(me)
+                        suppress
+                    }
+                    case _ => pass
+                }
+            }
+            else
+                pass
         }
         else if (Windows.isResendClickEvent(me))
             passClick
@@ -215,6 +237,7 @@ object EventHandler {
     private def checkResentDown(up: MouseEvent): Option[LRESULT] = {        
         if (ctx.LastFlags.getAndReset_ResentDown(up)) {
             logger.debug(s"resendUp and suppress (checkResentDown): ${up.name}")
+            resentDownUp = true
             Windows.resendUp(up)
             suppress
         }
