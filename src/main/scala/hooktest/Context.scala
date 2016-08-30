@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.6"
+    val PROGRAM_VERSION = "2.0.7"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -330,11 +330,11 @@ object Context {
     def isTriggerEvent(e: MouseEvent): Boolean = isTrigger(Mouse.getTrigger(e))
     
     def isDragTriggerEvent(e: MouseEvent): Boolean = e match {
-        case LeftDown(_) | LeftUp(_) => isTrigger(LeftDragTrigger())
-        case RightDown(_) | RightUp(_) => isTrigger(RightDragTrigger())
-        case MiddleDown(_) | MiddleUp(_) => isTrigger(MiddleDragTrigger())
-        case X1Down(_) | X1Up(_) => isTrigger(X1DragTrigger())
-        case X2Down(_) | X2Up(_) => isTrigger(X2DragTrigger())
+        case LeftEvent(_) => isTrigger(LeftDragTrigger())
+        case RightEvent(_) => isTrigger(RightDragTrigger())
+        case MiddleEvent(_) => isTrigger(MiddleDragTrigger())
+        case X1Event(_) => isTrigger(X1DragTrigger())
+        case X2Event(_) => isTrigger(X2DragTrigger())
     }
     
     def isSingleTrigger = firstTrigger.isSingle

@@ -506,17 +506,23 @@ object Windows {
         u32ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
     }
     
-    private def checkAsyncKeyState(vKey: Int) =
+    private def getAsyncKeyState(vKey: Int) =
         (u32ex.GetAsyncKeyState(vKey) & 0xf000) != 0
     
-    def checkShiftState =
-        checkAsyncKeyState(VK_SHIFT)
+    def getShiftState =
+        getAsyncKeyState(VK_SHIFT)
     
-    def checkCtrlState =
-        checkAsyncKeyState(VK_CONTROL)
+    def getCtrlState =
+        getAsyncKeyState(VK_CONTROL)
     
-    def checkAltState =
-        checkAsyncKeyState(VK_MENU)
+    def getAltState =
+        getAsyncKeyState(VK_MENU)
+        
+    def getLeftState =
+        getAsyncKeyState(VK_LBUTTON)
+        
+    def getRightState =
+        getAsyncKeyState(VK_RBUTTON)
         
     trait Priority {
         def name = this.getClass.getSimpleName

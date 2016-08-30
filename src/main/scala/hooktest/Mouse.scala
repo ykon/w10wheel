@@ -36,32 +36,22 @@ trait MouseEvent {
     
     def sameEvent(me2: MouseEvent) = {
         (this, me2) match {
-            case (LeftDown(_), LeftDown(_)) => true
-            case (LeftUp(_), LeftUp(_)) => true
-            case (RightDown(_), RightDown(_)) => true
-            case (RightUp(_), RightUp(_)) => true
-            case (MiddleDown(_), MiddleDown(_)) => true
-            case (MiddleUp(_), MiddleUp(_)) => true
-            case (X1Down(_), X1Down(_)) => true
-            case (X1Up(_), X1Up(_)) => true
-            case (X2Down(_), X2Down(_)) => true
-            case (X2Up(_), X2Up(_)) => true
+            case (LeftDown(_), LeftDown(_)) | (LeftUp(_), LeftUp(_)) => true
+            case (RightDown(_), RightDown(_)) | (RightUp(_), RightUp(_)) => true
+            case (MiddleDown(_), MiddleDown(_)) | (MiddleUp(_), MiddleUp(_)) => true
+            case (X1Down(_), X1Down(_)) | (X1Up(_), X1Up(_)) => true
+            case (X2Down(_), X2Down(_)) | (X2Up(_), X2Up(_)) => true
             case _ => false
         }
     }
     
     def sameButton(me2: MouseEvent) = {
         (this, me2) match {
-            case (LeftDown(_), LeftUp(_)) => true
-            case (LeftUp(_), LeftDown(_)) => true
-            case (RightDown(_), RightUp(_)) => true
-            case (RightUp(_), RightDown(_)) => true
-            case (MiddleDown(_), MiddleUp(_)) => true
-            case (MiddleUp(_), MiddleDown(_)) => true
-            case (X1Down(_), X1Up(_)) => true
-            case (X1Up(_), X1Down(_)) => true
-            case (X2Down(_), X2Up(_)) => true
-            case (X2Up(_), X2Down(_)) => true
+            case (LeftDown(_), LeftUp(_)) | (LeftUp(_), LeftDown(_)) => true
+            case (RightDown(_), RightUp(_)) | (RightUp(_), RightDown(_)) => true
+            case (MiddleDown(_), MiddleUp(_)) | (MiddleUp(_), MiddleDown(_)) => true
+            case (X1Down(_), X1Up(_)) | (X1Up(_), X1Down(_)) => true
+            case (X2Down(_), X2Up(_)) | (X2Up(_), X2Down(_)) => true
             case _ => false
         }
     }
@@ -88,6 +78,27 @@ object LeftEvent {
 object RightEvent {
     def unapply(me: MouseEvent) = me match {
         case RightDown(_) | RightUp(_) => Some(me.info)
+        case _ => None
+    }
+}
+
+object MiddleEvent {
+    def unapply(me: MouseEvent) = me match {
+        case MiddleDown(_) | MiddleUp(_) => Some(me.info)
+        case _ => None
+    }
+}
+
+object X1Event {
+    def unapply(me: MouseEvent) = me match {
+        case X1Down(_) | X1Up(_) => Some(me.info)
+        case _ => None
+    }
+}
+
+object X2Event {
+    def unapply(me: MouseEvent) = me match {
+        case X2Down(_) | X2Up(_) => Some(me.info)
         case _ => None
     }
 }
@@ -145,11 +156,11 @@ object Mouse {
         !isXButton1(mouseData)
         
     def getTrigger(me: MouseEvent): Trigger = me match {
-        case LeftDown(_) | LeftUp(_) => LeftTrigger()
-        case RightDown(_) | RightUp(_) => RightTrigger()
-        case MiddleDown(_) | MiddleUp(_) => MiddleTrigger()
-        case X1Down(_) | X1Up(_) => X1Trigger()
-        case X2Down(_) | X2Up(_) => X2Trigger()
+        case LeftEvent(_) => LeftTrigger()
+        case RightEvent(_) => RightTrigger()
+        case MiddleEvent(_) => MiddleTrigger()
+        case X1Event(_) => X1Trigger()
+        case X2Event(_) => X2Trigger()
     }
     
     def getTrigger(s: String): Trigger = s match {

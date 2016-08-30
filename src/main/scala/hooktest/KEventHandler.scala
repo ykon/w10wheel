@@ -13,6 +13,7 @@ object KEventHandler {
     private val ctx = Context
     private val logger = ctx.logger
     private var lastEvent: KeyboardEvent = null
+    private var pressedTriggerKey = false
     
     private var __callNextHook: () => LRESULT = null
     def setCallNextHook(f: () => LRESULT) =
@@ -62,6 +63,7 @@ object KEventHandler {
         if (ctx.isTriggerKey(ke)) {
             logger.debug(s"start scroll mode: ${ke.name}");
             ctx.startScrollMode(ke.info)
+            pressedTriggerKey = true
             suppress
         }
         else
@@ -69,7 +71,7 @@ object KEventHandler {
     }
     
     private def checkExitScrollDown(ke: KeyboardEvent): Option[LRESULT] = {
-        if (ctx.isScrollMode) {
+        if (ctx.isScrollMode && !pressedTriggerKey) {
             logger.debug(s"exit scroll mode: ${ke.name}");
             ctx.exitScrollMode
             ctx.LastFlags.setSuppressed(ke)
@@ -88,6 +90,7 @@ object KEventHandler {
             else
                 logger.debug(s"continue scroll mode: ${ke.name}")
 
+            pressedTriggerKey = false
             suppress
         }
         else
