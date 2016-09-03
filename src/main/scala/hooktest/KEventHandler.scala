@@ -13,7 +13,6 @@ object KEventHandler {
     private val ctx = Context
     private val logger = ctx.logger
     private var lastEvent: KeyboardEvent = null
-    private var pressedTriggerKey = false
     
     private var __callNextHook: () => LRESULT = null
     def setCallNextHook(f: () => LRESULT) =
@@ -63,7 +62,6 @@ object KEventHandler {
         if (ctx.isTriggerKey(ke)) {
             logger.debug(s"start scroll mode: ${ke.name}");
             ctx.startScrollMode(ke.info)
-            pressedTriggerKey = true
             suppress
         }
         else
@@ -71,8 +69,8 @@ object KEventHandler {
     }
     
     private def checkExitScrollDown(ke: KeyboardEvent): Option[LRESULT] = {
-        if (ctx.isScrollMode && !pressedTriggerKey) {
-            logger.debug(s"exit scroll mode: ${ke.name}");
+        if (ctx.isReleasedScrollMode) {
+            logger.debug(s"exit scroll mode (Released): ${ke.name}");
             ctx.exitScrollMode
             ctx.LastFlags.setSuppressed(ke)
             suppress
@@ -82,15 +80,16 @@ object KEventHandler {
     }
     
     private def checkExitScrollUp(ke: KeyboardEvent): Option[LRESULT] = {
-        if (ctx.isScrollMode) {
+        if (ctx.isPressedScrollMode) {
             if (ctx.checkExitScroll(ke.info.time)) {
-                logger.debug(s"exit scroll mode: ${ke.name}")
+                logger.debug(s"exit scroll mode (Pressed): ${ke.name}")
                 ctx.exitScrollMode
             }
-            else
-                logger.debug(s"continue scroll mode: ${ke.name}")
+            else {
+                logger.debug(s"continue scroll mode (Released): ${ke.name}")
+                ctx.setReleasedScrollMode
+            }
 
-            pressedTriggerKey = false
             suppress
         }
         else
@@ -99,7 +98,7 @@ object KEventHandler {
     
     private def checkSuppressedDown(up: KeyboardEvent): Option[LRESULT] = {     
         if (ctx.LastFlags.getAndReset_SuppressedDown(up)) {
-            logger.debug(s"suppress (checkSuppressedDown(K)): ${up.name}")
+            logger.debug(s"suppress (checkSuppressedDown): ${up.name}")
             suppress
         }
         else
@@ -134,9 +133,7 @@ object KEventHandler {
     private def singleDown(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
                 checkSameLastEvent,
-                //resetLastFlags,
                 checkExitScrollDown,
-                passNotTrigger,
                 checkTriggerScrollStart,
                 endIllegalState
         )
@@ -149,7 +146,6 @@ object KEventHandler {
                 skipFirstUp,
                 checkSameLastEvent,
                 checkSuppressedDown,
-                passNotTrigger,
                 checkExitScrollUp,
                 endIllegalState
         )
@@ -157,10 +153,8 @@ object KEventHandler {
         getResult(cs, ke)
     }
     
-    /*
     private def noneDown(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
-            resetLastFlags,
             checkExitScrollDown,
             endPass
         )
@@ -170,26 +164,25 @@ object KEventHandler {
     
     private def noneUp(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
-            checkDownSuppressed,
+            checkSuppressedDown,
             endPass
         )
         
         getResult(cs, ke)        
     }
-    */
     
     def keyDown(info: KHookInfo): LRESULT = {
         //logger.debug(s"keyDown: ${info.vkCode}")
         
         val kd = KeyDown(info)
-        singleDown(kd)
+        if (ctx.isTriggerKey(kd)) singleDown(kd) else noneDown(kd)
     }
     
     def keyUp(info: KHookInfo): LRESULT = {
         //logger.debug(s"keyUp: ${info.vkCode}")
         
         val ku = KeyUp(info)
-        singleUp(ku)
+        if (ctx.isTriggerKey(ku)) singleUp(ku) else noneUp(ku)
     }
     
     /*

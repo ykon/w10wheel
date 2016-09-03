@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.7"
+    val PROGRAM_VERSION = "2.0.8"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -183,6 +183,7 @@ object Context {
         
         // Vertical <-> Horizontall
         @volatile var swap = false // default
+        @volatile var releasedMode = false // not pressed
         
         private def setStartPoint {
             val pt = Windows.getCursorPos
@@ -214,6 +215,7 @@ object Context {
         
         def exit = {
             mode = false
+            releasedMode = false
             
             if (cursorChange)
                 Windows.restoreCursor
@@ -242,6 +244,10 @@ object Context {
     def isDraggedLock = Scroll.draggedLock
     def isSwapScroll = Scroll.swap
     
+    def isReleasedScrollMode = Scroll.releasedMode
+    def isPressedScrollMode = Scroll.isMode && !Scroll.releasedMode
+    def setReleasedScrollMode = Scroll.releasedMode = true
+    
     private object RealWheel {
         @volatile var mode = false // default
         @volatile var wheelDelta = 120 // default
@@ -266,6 +272,10 @@ object Context {
         @volatile private var ldR = false
         @volatile private var rdR = false
         
+        // P = Passed
+        @volatile private var ldP = false
+        @volatile private var rdP = false
+        
         // S = Suppressed
         @volatile private var ldS = false
         @volatile private var rdS = false
@@ -283,6 +293,16 @@ object Context {
             case LeftUp(_) => val res = ldR; ldR = false; res
             case RightUp(_) => val res = rdR; rdR = false; res
             //case _ => false
+        }
+        
+        def setPassed(down: MouseEvent) = down match {
+            case LeftDown(_) => ldP = true
+            case RightDown(_) => rdP = true
+        }
+        
+        def getAndReset_PassedDown(up: MouseEvent) = up match {
+            case LeftUp(_) => val res = ldP; ldP = false; res
+            case RightUp(_) => val res = rdP; rdP = false; res
         }
         
         def setSuppressed(down: MouseEvent) = down match {
@@ -310,8 +330,8 @@ object Context {
         }
         
         def resetLR(down: MouseEvent) = down match {
-            case LeftDown(_) => ldR = false; ldS = false
-            case RightDown(_) => rdR = false; rdS = false
+            case LeftDown(_) => ldR = false; ldS = false; ldP = false
+            case RightDown(_) => rdR = false; rdS = false; rdP = false
             //case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
             //case _ => {}
         }

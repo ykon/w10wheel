@@ -22,7 +22,6 @@ object Hook {
     @volatile private var keyboardHhk: HHOOK = null
     
     private def procCommand(info: HookInfo): Boolean = {
-        logger.debug("procCommand")
         if ((info.mouseData >>> 16) != 1)
             return false
         

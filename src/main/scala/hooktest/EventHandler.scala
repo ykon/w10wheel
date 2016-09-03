@@ -15,14 +15,13 @@ object EventHandler {
     private val logger = ctx.logger
     
     private var lastEvent: MouseEvent = null
-    //private var lastResendEvent: MouseEvent = null
+    private var lastResendLeftEvent: MouseEvent = null
+    private var lastResendRightEvent: MouseEvent = null
     
-    private var preResendLeftEvent: MouseEvent = null
-    private var preResendRightEvent: MouseEvent = null
     private var resentDownUp = false
+    private var secondTriggerUp = false
     
     private var __callNextHook: () => LRESULT = null
-    private var pressedTriggerButton = false
     
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
@@ -30,20 +29,20 @@ object EventHandler {
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
     
-    private def getPreResendEvent(me: MouseEvent) = me match {
-        case LeftEvent(_) => preResendLeftEvent
-        case RightEvent(_) => preResendRightEvent
+    private def getLastResendEvent(me: MouseEvent) = me match {
+        case LeftEvent(_) => lastResendLeftEvent
+        case RightEvent(_) => lastResendRightEvent
     }
     
-    private def setPreResendEvent(me: MouseEvent) = me match {
-        case LeftEvent(_) => preResendLeftEvent = me
-        case RightEvent(_) => preResendRightEvent = me
+    private def setLastResendEvent(me: MouseEvent) = me match {
+        case LeftEvent(_) => lastResendLeftEvent = me
+        case RightEvent(_) => lastResendRightEvent = me
     }
     
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
         def pass = {
             logger.debug(s"pass resend event: ${me.name}")
-            setPreResendEvent(me)
+            setLastResendEvent(me)
             callNextHook  
         }
         
@@ -57,7 +56,7 @@ object EventHandler {
                 logger.debug(s"isResendEvent - resentDownUp: ${me.name}")
                 resentDownUp = false
                 
-                (getPreResendEvent(me), me) match {
+                (getLastResendEvent(me), me) match {
                     case (LeftUp(_), LeftUp(_)) | (RightUp(_), RightUp(_)) => {
                         logger.warn(s"sleep(0) and resendUp: ${me.name}")
                         Thread.sleep(0)
@@ -131,9 +130,9 @@ object EventHandler {
         }
     }
     
-    private def checkExitScrollDownLR(me: MouseEvent): Option[LRESULT] = {        
-        if (ctx.isScrollMode) {
-            logger.debug(s"exit scroll mode: ${me.name}")
+    private def checkExitScrollDown(me: MouseEvent): Option[LRESULT] = {        
+        if (ctx.isReleasedScrollMode) {
+            logger.debug(s"exit scroll mode (Released): ${me.name}")
             ctx.exitScrollMode
             ctx.LastFlags.setSuppressed(me)
             suppress
@@ -142,12 +141,11 @@ object EventHandler {
             None
     }
     
-    private def checkExitScrollDown(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isScrollMode && !pressedTriggerButton) {
-            logger.debug(s"exit scroll mode: ${me.name}")
-            ctx.exitScrollMode
-            ctx.LastFlags.setSuppressed(me)
-            suppress
+    private def passPressedScrollMode(down: MouseEvent): Option[LRESULT] = {
+        if (ctx.isPressedScrollMode) {
+            logger.debug(s"pass scroll mode (Pressed): ${down.name}")
+            ctx.LastFlags.setPassed(down)
+            callNextHook
         }
         else
             None
@@ -163,15 +161,40 @@ object EventHandler {
     }
     
     private def checkExitScrollUp(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isScrollMode) {
+        if (ctx.isPressedScrollMode) {
             if (ctx.checkExitScroll(me.info.time)) {
-                logger.debug(s"exit scroll mode: ${me.name}")
+                logger.debug(s"exit scroll mode (Pressed): ${me.name}")
                 ctx.exitScrollMode
             }
-            else
-                logger.debug(s"continue scroll mode: ${me.name}")
+            else {
+                logger.debug(s"continue scroll mode (Released): ${me.name}")
+                ctx.setReleasedScrollMode
+            }
 
-            pressedTriggerButton = false
+            suppress
+        }
+        else
+            None
+    }
+    
+    private def checkExitScrollUpLR(me: MouseEvent): Option[LRESULT] = {
+        if (ctx.isPressedScrollMode) {
+            if (!secondTriggerUp) {
+                logger.debug(s"continue scroll mode (FirstUp): ${me.name}")
+                secondTriggerUp = true
+            }
+            else {
+                secondTriggerUp = false
+                if (ctx.checkExitScroll(me.info.time)) {
+                    logger.debug(s"exit scroll mode (Pressed): ${me.name}")
+                    ctx.exitScrollMode
+                }
+                else {
+                    logger.debug(s"continue scroll mode (Released): ${me.name}")
+                    ctx.setReleasedScrollMode
+                }
+            }
+            
             suppress
         }
         else
@@ -207,6 +230,15 @@ object EventHandler {
             None
     }
     
+    private def checkPassedDown(up: MouseEvent): Option[LRESULT] = {
+        if (ctx.LastFlags.getAndReset_PassedDown(up)) {
+            logger.debug(s"pass (checkPassedDown): ${up.name}")
+            callNextHook
+        }
+        else
+            None
+    }
+    
     private def checkTriggerWaitStart(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isLRTrigger || ctx.isTriggerEvent(me)) {
             logger.debug(s"start wait trigger: ${me.name}")
@@ -233,7 +265,6 @@ object EventHandler {
         if (ctx.isTriggerEvent(me)) {
             logger.debug(s"start scroll mode: ${me.name}");
             ctx.startScrollMode(me.info)
-            pressedTriggerButton = true
             suppress
         }
         else
@@ -250,9 +281,8 @@ object EventHandler {
     }
     
     private def startScrollDrag(me: MouseEvent): Option[LRESULT] = {
-        logger.debug(s"start scroll mode: ${me.name}");
+        logger.debug(s"start scroll mode (Drag): ${me.name}");
         ctx.startScrollMode(me.info)
-        pressedTriggerButton = true
         
         drag = dragStart
         dragged = false
@@ -260,10 +290,10 @@ object EventHandler {
         suppress
     }
     
-    private def continueScrollDrag(me: MouseEvent): Option[LRESULT] = {
+    private def continueScrollDrag(up: MouseEvent): Option[LRESULT] = {
         if (ctx.isDraggedLock && dragged) {
-            logger.debug(s"continueScrollDrag: ${me.name}")
-            pressedTriggerButton = false
+            logger.debug(s"continueScrollDrag (Released): ${up.name}")
+            ctx.setReleasedScrollMode
             suppress
         }
         else
@@ -271,9 +301,8 @@ object EventHandler {
     }
     
     private def exitAndResendDrag(me: MouseEvent): Option[LRESULT] = {
-        logger.debug(s"exit scroll mode: ${me.name}")
+        logger.debug(s"exit scroll mode (Drag): ${me.name}")
         ctx.exitScrollMode
-        pressedTriggerButton = false
         
         if (!dragged) {
             logger.debug(s"resend click: ${me.name}")
@@ -353,7 +382,8 @@ object EventHandler {
             skipResendEventLR,
             checkSameLastEvent,
             resetLastFlagsLR,
-            checkExitScrollDownLR,
+            checkExitScrollDown,
+            passPressedScrollMode,
             //passSingleEvent,
             offerEventWaiter,
             checkTriggerWaitStart,
@@ -370,7 +400,8 @@ object EventHandler {
             skipFirstUp,
             checkSameLastEvent,
             //checkSingleSuppressed,
-            checkExitScrollUp,
+            checkPassedDown,
+            checkExitScrollUpLR,
             checkResentDown,
             offerEventWaiter,
             checkSuppressedDown,
