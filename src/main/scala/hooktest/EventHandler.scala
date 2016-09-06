@@ -177,22 +177,44 @@ object EventHandler {
             None
     }
     
-    private def checkExitScrollUpLR(me: MouseEvent): Option[LRESULT] = {
+    private def checkExitScrollUpLR(up: MouseEvent): Option[LRESULT] = {
         if (ctx.isPressedScrollMode) {
             if (!secondTriggerUp) {
-                logger.debug(s"continue scroll mode (FirstUp): ${me.name}")
+                logger.debug(s"ignore first up: ${up.name}")
                 secondTriggerUp = true
             }
             else {
                 secondTriggerUp = false
-                if (ctx.checkExitScroll(me.info.time)) {
-                    logger.debug(s"exit scroll mode (Pressed): ${me.name}")
+                if (ctx.checkExitScroll(up.info.time)) {
+                    logger.debug(s"exit scroll mode (Pressed): ${up.name}")
                     ctx.exitScrollMode
                 }
                 else {
-                    logger.debug(s"continue scroll mode (Released): ${me.name}")
+                    logger.debug(s"continue scroll mode (Released): ${up.name}")
                     ctx.setReleasedScrollMode
                 }
+            }
+            
+            suppress
+        }
+        else
+            None
+    }
+    
+    private def checkStartingScroll(up: MouseEvent): Option[LRESULT] = {
+        if (ctx.isStartingScrollMode) {
+            logger.debug("check starting scroll")
+            
+            if (!secondTriggerUp) {
+                logger.debug(s"ignore first up (starting): ${up.name}")
+                secondTriggerUp = true
+                Thread.sleep(0)
+            }
+            else {
+                logger.debug(s"exit scroll mode (starting): ${up.name}")
+                secondTriggerUp = false
+                Thread.sleep(0)
+                ctx.exitScrollMode
             }
             
             suppress
@@ -402,6 +424,7 @@ object EventHandler {
             //checkSingleSuppressed,
             checkPassedDown,
             checkExitScrollUpLR,
+            checkStartingScroll,
             checkResentDown,
             offerEventWaiter,
             checkSuppressedDown,

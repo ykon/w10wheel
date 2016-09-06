@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.8"
+    val PROGRAM_VERSION = "2.0.9"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -170,6 +170,7 @@ object Context {
     def getHorizontalThreshold = Threshold.horizontal
     
     private object Scroll {
+        @volatile private var starting = false
         @volatile private var mode = false
         @volatile private var stime = 0
         @volatile private var sx = 0
@@ -191,7 +192,7 @@ object Context {
             sy = (pt.y * dpiCorrection).toInt
         }
         
-        def start(info: HookInfo) { 
+        def start(info: HookInfo) = synchronized { 
             stime = info.time
             setStartPoint
             Windows.initScroll
@@ -200,9 +201,10 @@ object Context {
                 Windows.changeCursorV
                 
             mode = true
+            starting = false
         }
         
-        def start(kinfo: KHookInfo) {
+        def start(kinfo: KHookInfo) = synchronized {
             stime = kinfo.time
             setStartPoint
             Windows.initScroll
@@ -211,9 +213,10 @@ object Context {
                 Windows.changeCursorV
                 
             mode = true
+            starting = false
         }
         
-        def exit = {
+        def exit = synchronized {
             mode = false
             releasedMode = false
             
@@ -229,7 +232,10 @@ object Context {
         
         def isMode = mode
         def getStartTime = stime
-        def getStartPoint = (sx, sy) 
+        def getStartPoint = (sx, sy)
+        
+        def setStarting = starting = true
+        def isStarting = starting
     }
     
     def startScrollMode(info: HookInfo) = Scroll.start(info)
@@ -247,6 +253,9 @@ object Context {
     def isReleasedScrollMode = Scroll.releasedMode
     def isPressedScrollMode = Scroll.isMode && !Scroll.releasedMode
     def setReleasedScrollMode = Scroll.releasedMode = true
+    
+    def setStartingScrollMode = Scroll.setStarting
+    def isStartingScrollMode = Scroll.isStarting 
     
     private object RealWheel {
         @volatile var mode = false // default

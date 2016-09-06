@@ -34,6 +34,7 @@ object EventWaiter {
                 logger.debug(s"setFlagsOffer - setSuppressed: ${waitingEvent.name}")
                 ctx.LastFlags.setSuppressed(waitingEvent)
                 ctx.LastFlags.setSuppressed(me)
+                ctx.setStartingScrollMode
             }
             case _ => throw new IllegalStateException(me.name)
         }
