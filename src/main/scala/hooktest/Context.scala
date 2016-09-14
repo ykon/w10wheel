@@ -29,7 +29,7 @@ import java.util.NoSuchElementException
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.0.9"
+    val PROGRAM_VERSION = "2.0.10"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -234,7 +234,10 @@ object Context {
         def getStartTime = stime
         def getStartPoint = (sx, sy)
         
-        def setStarting = starting = true
+        def setStarting = synchronized {
+            starting = !mode
+        }
+        
         def isStarting = starting
     }
     

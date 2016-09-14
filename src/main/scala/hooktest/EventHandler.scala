@@ -423,9 +423,9 @@ object EventHandler {
             checkSameLastEvent,
             //checkSingleSuppressed,
             checkPassedDown,
+            checkResentDown,
             checkExitScrollUpLR,
             checkStartingScroll,
-            checkResentDown,
             offerEventWaiter,
             checkSuppressedDown,
             endNotTrigger
