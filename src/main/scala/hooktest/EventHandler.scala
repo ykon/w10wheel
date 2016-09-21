@@ -57,7 +57,7 @@ object EventHandler {
                 resentDownUp = false
                 
                 (getLastResendEvent(me), me) match {
-                    case (LeftUp(_), LeftUp(_)) | (RightUp(_), RightUp(_)) => {
+                    case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) => {
                         logger.warn(s"sleep(0) and resendUp: ${me.name}")
                         Thread.sleep(0)
                         Windows.resendUp(me)

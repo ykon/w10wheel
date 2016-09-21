@@ -26,8 +26,13 @@ object EventWaiter {
     private def setFlagsOffer(me: MouseEvent) {
         //logger.debug("setFlagsOffer")
         me match {
-            case Move(_) | LeftUp(_) | RightUp(_) => {
-                logger.debug(s"setFlagsOffer - setResent: ${waitingEvent.name}")
+            case Move(_) => {
+                logger.debug(s"setFlagsOffer - setResent (Move): ${waitingEvent.name}")
+                ctx.LastFlags.setResent(waitingEvent)
+                Thread.sleep(0)
+            }
+            case LeftUp(_) | RightUp(_) => {
+                logger.debug(s"setFlagsOffer - setResent (Up): ${waitingEvent.name}")
                 ctx.LastFlags.setResent(waitingEvent)
             }
             case LeftDown(_) | RightDown(_) => {
