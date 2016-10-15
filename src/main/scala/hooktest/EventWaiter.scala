@@ -29,7 +29,7 @@ object EventWaiter {
             case Move(_) => {
                 logger.debug(s"setFlagsOffer - setResent (Move): ${waitingEvent.name}")
                 ctx.LastFlags.setResent(waitingEvent)
-                Thread.sleep(0)
+                //Thread.sleep(1)
             }
             case LeftUp(_) | RightUp(_) => {
                 logger.debug(s"setFlagsOffer - setResent (Up): ${waitingEvent.name}")
@@ -45,15 +45,33 @@ object EventWaiter {
         }
     }
     
-    private def isWaiting = waiting
-    
     def offer(me: MouseEvent): Boolean = {
-        if (isWaiting && sync.offer(me)) {
-            setFlagsOffer(me)
-            true
+        if (waiting) {
+            var res = sync.offer(me)
+            
+            if (!res && waiting) {
+                Thread.sleep(1)
+                res = sync.offer(me)
+            }
+            
+            if (res) {
+                setFlagsOffer(me)
+                true
+            }
+            else
+                false
         }
         else
             false
+    }
+    
+    private def poll(timeout: Long): Option[MouseEvent] = {
+        try {
+            Option(sync.poll(timeout, TimeUnit.MILLISECONDS))
+        }
+        finally {
+            waiting = false
+        }
     }
     
     private def fromTimeout(down: MouseEvent) {
@@ -109,25 +127,22 @@ object EventWaiter {
         Context.startScrollMode(d2.info)
     }
     
+    private def dispatchEvent(down: MouseEvent, res: MouseEvent) = res match {
+        case Move(_) => fromMove(down)
+        case LeftUp(_) | RightUp(_) => fromUp(down, res)
+        case LeftDown(_) | RightDown(_) => fromDown(down, res)
+    }
+    
     private val waiterQueue = new SynchronousQueue[MouseEvent](true)
     
     private val waiterThread = new Thread(new Runnable {
         override def run {
             while (true) {
                 val down = waiterQueue.take
-                var res = sync.poll(Context.getPollTimeout, TimeUnit.MILLISECONDS)
-                waiting = false
                 
-                if (res == null) {
-                    Thread.sleep(0)
-                    res = sync.poll()
-                }
-                
-                res match {
-                    case null => fromTimeout(down)
-                    case Move(_) => fromMove(down)
-                    case LeftUp(_) | RightUp(_) => fromUp(down, res)
-                    case LeftDown(_) | RightDown(_) => fromDown(down, res)
+                poll(Context.getPollTimeout) match {
+                    case Some(res) => dispatchEvent(down, res)
+                    case None => fromTimeout(down)
                 }
             }
         }
@@ -142,8 +157,8 @@ object EventWaiter {
         if (!down.isDown)
             throw new IllegalArgumentException
         
-        waiting = true
         waitingEvent = down
         waiterQueue.put(down)
+        waiting = true
     }
 }

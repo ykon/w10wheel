@@ -53,13 +53,13 @@ object EventHandler {
         
         if (Windows.isResendEvent(me)) {
             if (resentDownUp) {
-                logger.debug(s"isResendEvent - resentDownUp: ${me.name}")
+                logger.debug(s"ResendEvent: resentDownUp: ${me.name}")
                 resentDownUp = false
                 
                 (getLastResendEvent(me), me) match {
                     case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) => {
-                        logger.warn(s"sleep(0) and resendUp: ${me.name}")
-                        Thread.sleep(0)
+                        logger.warn(s"Bad: resendUp retry: ${me.name}")
+                        Thread.sleep(1)
                         Windows.resendUp(me)
                         suppress
                     }
@@ -208,12 +208,12 @@ object EventHandler {
             if (!secondTriggerUp) {
                 logger.debug(s"ignore first up (starting): ${up.name}")
                 secondTriggerUp = true
-                Thread.sleep(0)
+                Thread.sleep(1)
             }
             else {
                 logger.debug(s"exit scroll mode (starting): ${up.name}")
                 secondTriggerUp = false
-                Thread.sleep(0)
+                Thread.sleep(1)
                 ctx.exitScrollMode
             }
             
