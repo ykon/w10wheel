@@ -9,6 +9,7 @@ package hooktest
 //import ExecutionContext.Implicits.global
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
@@ -20,8 +21,9 @@ object EventWaiter {
     private val logger = ctx.logger
     private val sync = new SynchronousQueue[MouseEvent](true)
     
-    @volatile private var waiting = false
+    private val waiting = new AtomicBoolean(false)
     private var waitingEvent: MouseEvent = null
+    private val offerThread = Thread.currentThread()
     
     private def setFlagsOffer(me: MouseEvent) {
         //logger.debug("setFlagsOffer")
@@ -46,20 +48,21 @@ object EventWaiter {
     }
     
     def offer(me: MouseEvent): Boolean = {
-        if (waiting) {
-            var res = sync.offer(me)
-            
-            if (!res && waiting) {
-                Thread.sleep(1)
-                res = sync.offer(me)
+        if (waiting.get) {
+            try {
+                val res = sync.offer(me, Context.getPollTimeout, TimeUnit.MILLISECONDS)
+                
+                if (res)
+                    setFlagsOffer(me)
+                    
+                res
             }
-            
-            if (res) {
-                setFlagsOffer(me)
-                true
+            catch {
+                case _: InterruptedException => {
+                    logger.info("offer - InterruptedException")
+                    false
+                }
             }
-            else
-                false
         }
         else
             false
@@ -70,7 +73,8 @@ object EventWaiter {
             Option(sync.poll(timeout, TimeUnit.MILLISECONDS))
         }
         finally {
-            waiting = false
+            waiting.set(false)
+            offerThread.interrupt()
         }
     }
     
@@ -159,6 +163,6 @@ object EventWaiter {
         
         waitingEvent = down
         waiterQueue.put(down)
-        waiting = true
+        waiting.set(true)
     }
 }

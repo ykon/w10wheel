@@ -26,6 +26,7 @@ import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import scala.collection.mutable.HashMap
 import java.util.NoSuchElementException
+import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
@@ -281,71 +282,63 @@ object Context {
     
     object LastFlags {
         // R = Resent
-        @volatile private var ldR = false
-        @volatile private var rdR = false
+        private val ldR = new AtomicBoolean(false)
+        private val rdR = new AtomicBoolean(false)
         
         // P = Passed
-        @volatile private var ldP = false
-        @volatile private var rdP = false
+        private val ldP = new AtomicBoolean(false)
+        private val rdP = new AtomicBoolean(false)
         
         // S = Suppressed
-        @volatile private var ldS = false
-        @volatile private var rdS = false
-        @volatile private var sdS = false
+        private val ldS = new AtomicBoolean(false)
+        private val rdS = new AtomicBoolean(false)
+        private val sdS = new AtomicBoolean(false)
         
-        private val kdS = new Array[Boolean](256)
+        private val kdS = (0 until 256).map(_ => new AtomicBoolean(false));
         
-        def setResent(down: MouseEvent) = down match {
-            case LeftDown(_) => ldR = true
-            case RightDown(_) => rdR = true
-            //case _ => {}
+        def setResent(down: MouseEvent): Unit = down match {
+            case LeftDown(_) => ldR.set(true)
+            case RightDown(_) => rdR.set(true)
         }
         
-        def getAndReset_ResentDown(up: MouseEvent) = up match {
-            case LeftUp(_) => val res = ldR; ldR = false; res
-            case RightUp(_) => val res = rdR; rdR = false; res
-            //case _ => false
+        def getAndReset_ResentDown(up: MouseEvent): Boolean = up match {
+            case LeftUp(_) => ldR.getAndSet(false)
+            case RightUp(_) => rdR.getAndSet(false)
         }
         
-        def setPassed(down: MouseEvent) = down match {
-            case LeftDown(_) => ldP = true
-            case RightDown(_) => rdP = true
+        def setPassed(down: MouseEvent): Unit = down match {
+            case LeftDown(_) => ldP.set(true)
+            case RightDown(_) => rdP.set(true)
         }
         
-        def getAndReset_PassedDown(up: MouseEvent) = up match {
-            case LeftUp(_) => val res = ldP; ldP = false; res
-            case RightUp(_) => val res = rdP; rdP = false; res
+        def getAndReset_PassedDown(up: MouseEvent): Boolean = up match {
+            case LeftUp(_) => ldP.getAndSet(false)
+            case RightUp(_) => rdP.getAndSet(false)
         }
         
-        def setSuppressed(down: MouseEvent) = down match {
-            case LeftDown(_) => ldS = true
-            case RightDown(_) => rdS = true 
-            case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = true
-            //case _ => {}
+        def setSuppressed(down: MouseEvent): Unit = down match {
+            case LeftDown(_) => ldS.set(true)
+            case RightDown(_) => rdS.set(true)
+            case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS.set(true)
         }
         
-        def setSuppressed(down: KeyboardEvent) = down match {
-            case KeyDown(_) => kdS(down.vkCode) = true
-            //case _ => {}
+        def setSuppressed(down: KeyboardEvent): Unit = down match {
+            case KeyDown(_) => kdS(down.vkCode).set(true)
         }
         
-        def getAndReset_SuppressedDown(up: MouseEvent) = up match {
-            case LeftUp(_) => val res = ldS; ldS = false; res
-            case RightUp(_) => val res = rdS; rdS = false; res
-            case MiddleUp(_) | X1Up(_) | X2Up(_) => val res = sdS; sdS = false; res
-            //case _ => false
+        def getAndReset_SuppressedDown(up: MouseEvent): Boolean = up match {
+            case LeftUp(_) => ldS.getAndSet(false)
+            case RightUp(_) => rdS.getAndSet(false)
+            case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS.getAndSet(false)
         }
         
-        def getAndReset_SuppressedDown(up: KeyboardEvent) = up match {
-            case KeyUp(_) => val res = kdS(up.vkCode); kdS(up.vkCode) = false; res 
-            //case _ => false
+        def getAndReset_SuppressedDown(up: KeyboardEvent): Boolean = up match {
+            case KeyUp(_) => kdS(up.vkCode).getAndSet(false)
         }
         
-        def resetLR(down: MouseEvent) = down match {
-            case LeftDown(_) => ldR = false; ldS = false; ldP = false
-            case RightDown(_) => rdR = false; rdS = false; rdP = false
-            //case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS = false
-            //case _ => {}
+        def resetLR(down: MouseEvent): Unit = down match {
+            case LeftDown(_) => ldR.set(false); ldS.set(false); ldP.set(false)
+            case RightDown(_) => rdR.set(false); rdS.set(false); rdP.set(false)
         }
         
         /*
