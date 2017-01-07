@@ -10,6 +10,7 @@ package hooktest
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.annotation.tailrec
 
 import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
@@ -23,7 +24,6 @@ object EventWaiter {
     
     private val waiting = new AtomicBoolean(false)
     private var waitingEvent: MouseEvent = null
-    private val offerThread = Thread.currentThread()
     
     private def setFlagsOffer(me: MouseEvent) {
         //logger.debug("setFlagsOffer")
@@ -49,20 +49,17 @@ object EventWaiter {
     
     def offer(me: MouseEvent): Boolean = {
         if (waiting.get) {
-            try {
-                val res = sync.offer(me, Context.getPollTimeout, TimeUnit.MILLISECONDS)
-                
-                if (res)
+            @tailrec
+            def loop(): Boolean = { 
+                if (sync.offer(me)) {
                     setFlagsOffer(me)
-                    
-                res
-            }
-            catch {
-                case _: InterruptedException => {
-                    logger.info("offer - InterruptedException")
-                    false
+                    true
                 }
+                else
+                    if (waiting.get) loop() else false
             }
+            
+            loop()
         }
         else
             false
@@ -74,7 +71,6 @@ object EventWaiter {
         }
         finally {
             waiting.set(false)
-            offerThread.interrupt()
         }
     }
     
