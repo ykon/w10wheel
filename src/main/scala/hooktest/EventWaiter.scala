@@ -55,8 +55,14 @@ object EventWaiter {
                     setFlagsOffer(me)
                     true
                 }
-                else
-                    if (waiting.get) loop() else false
+                else {
+                    if (waiting.get) {
+                        Thread.sleep(0)
+                        loop()
+                    }
+                    else
+                        false
+                }
             }
             
             loop()
