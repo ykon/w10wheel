@@ -39,6 +39,16 @@ object EventHandler {
         case RightEvent(_) => lastResendRightEvent = me
     }
     
+    private def isCorrectOrder(pre: MouseEvent, cur: MouseEvent): Boolean = (pre, cur) match {
+        case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) =>
+            false
+        case _ => true
+    }
+    
+    private def checkCorrectOrder(me: MouseEvent): Boolean = {
+        isCorrectOrder(getLastResendEvent(me), me)
+    }
+    
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
         def pass = {
             logger.debug(s"pass resend event: ${me.name}")
@@ -56,14 +66,13 @@ object EventHandler {
                 logger.debug(s"ResendEvent: resentDownUp: ${me.name}")
                 resentDownUp = false
                 
-                (getLastResendEvent(me), me) match {
-                    case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) => {
-                        logger.warn(s"Bad: resendUp retry: ${me.name}")
-                        Thread.sleep(1)
-                        Windows.resendUp(me)
-                        suppress
-                    }
-                    case _ => pass
+                if (checkCorrectOrder(me))
+                    pass
+                else {
+                    logger.warn(s"Bad: resendUp retry: ${me.name}")
+                    Thread.sleep(1)
+                    Windows.resendUp(me)
+                    suppress
                 }
             }
             else
@@ -181,20 +190,17 @@ object EventHandler {
         if (ctx.isPressedScrollMode) {
             if (!secondTriggerUp) {
                 logger.debug(s"ignore first up: ${up.name}")
-                secondTriggerUp = true
+            }
+            else if (ctx.checkExitScroll(up.info.time)) {
+                logger.debug(s"exit scroll mode (Pressed): ${up.name}")
+                ctx.exitScrollMode
             }
             else {
-                secondTriggerUp = false
-                if (ctx.checkExitScroll(up.info.time)) {
-                    logger.debug(s"exit scroll mode (Pressed): ${up.name}")
-                    ctx.exitScrollMode
-                }
-                else {
-                    logger.debug(s"continue scroll mode (Released): ${up.name}")
-                    ctx.setReleasedScrollMode
-                }
+                logger.debug(s"continue scroll mode (Released): ${up.name}")
+                ctx.setReleasedScrollMode
             }
             
+            secondTriggerUp = !secondTriggerUp
             suppress
         }
         else
@@ -207,16 +213,15 @@ object EventHandler {
             
             if (!secondTriggerUp) {
                 logger.debug(s"ignore first up (starting): ${up.name}")
-                secondTriggerUp = true
                 Thread.sleep(1)
             }
             else {
                 logger.debug(s"exit scroll mode (starting): ${up.name}")
-                secondTriggerUp = false
                 Thread.sleep(1)
                 ctx.exitScrollMode
             }
             
+            secondTriggerUp = !secondTriggerUp
             suppress
         }
         else
