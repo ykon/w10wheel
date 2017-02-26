@@ -56,12 +56,13 @@ object EventHandler {
             callNextHook  
         }
         
-        def passClick = {
+        if (!Windows.isInjectedEvent(me))
+            None
+        else if (Windows.isResendClickEvent(me)) {
             logger.debug(s"pass resendClick event: ${me.name}")
             callNextHook
         }
-        
-        if (Windows.isResendEvent(me)) {
+        else if (Windows.isResendEvent(me)) {
             if (resentDownUp) {
                 logger.debug(s"ResendEvent: resentDownUp: ${me.name}")
                 resentDownUp = false
@@ -78,10 +79,10 @@ object EventHandler {
             else
                 pass
         }
-        else if (Windows.isResendClickEvent(me))
-            passClick
-        else
-            None
+        else {
+            logger.info(s"pass other software event: ${me.name}")
+            callNextHook
+        }
     }
     
     private def skipResendEventSingle(me: MouseEvent): Option[LRESULT] = {

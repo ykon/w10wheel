@@ -130,6 +130,11 @@ object Windows {
     private val resendTag = createRandomNumber
     private val resendClickTag = createRandomNumber
     
+    // LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED
+    // https://msdn.microsoft.com/en-ca/library/windows/desktop/ms644970(v=vs.85).aspx
+    def isInjectedEvent(me: MouseEvent): Boolean =
+        me.info.flags == 1 || me.info.flags == 2
+    
     def isResendEvent(me: MouseEvent): Boolean =
         me.info.dwExtraInfo.intValue() == resendTag
 
