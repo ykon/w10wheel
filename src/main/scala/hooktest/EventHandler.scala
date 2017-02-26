@@ -86,12 +86,17 @@ object EventHandler {
     }
     
     private def skipResendEventSingle(me: MouseEvent): Option[LRESULT] = {
-        if (Windows.isResendClickEvent(me)) {
+        if (!Windows.isInjectedEvent(me)) {
+            None
+        }
+        else if (Windows.isResendClickEvent(me)) {
             logger.debug(s"pass resendClick event: ${me.name}")
             callNextHook
         }
-        else
-            None
+        else {
+            logger.debug(s"pass other software event: ${me.name}")
+            callNextHook
+        }
     }
     
     private def skipFirstUp(me: MouseEvent): Option[LRESULT] = {
@@ -102,26 +107,6 @@ object EventHandler {
         else
             None
     }
-    
-    /*
-    private def skipFirstUpOrSingle(me: MouseEvent): Option[LRESULT] = {
-        if (lastEvent == null || lastEvent.isSingle) {
-            logger.debug(s"skip first Up or Single: ${me.name}")
-            callNextHook
-        }
-        else
-            None
-    }
-    
-    private def skipFirstUpOrLR(me: MouseEvent): Option[LRESULT] = {
-        if (lastEvent == null || lastEvent.isLR) {
-            logger.debug(s"skip first Up or LR: ${me.name}")
-            callNextHook
-        }
-        else
-            None
-    }
-    */
     
     private def resetLastFlagsLR(me: MouseEvent): Option[LRESULT] = {
         logger.debug(s"reset last flag: ${me.name}")
