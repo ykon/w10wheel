@@ -63,7 +63,7 @@ object Windows {
         }
     
         override def run {
-            val className = new WString(ctx.PROGRAM_NAME + "_Shutdown")
+            val className = new String(ctx.PROGRAM_NAME + "_Shutdown")
          
             val wx = new WNDCLASSEX
             wx.lpszClassName = className
@@ -487,13 +487,14 @@ object Windows {
     private val CURSOR_V = loadCursor(IDC_SIZENS)
     private val CURSOR_H = loadCursor(IDC_SIZEWE)
     
-    private def copyCursor(hCur: Pointer) =
-        u32ex.CopyIcon(hCur)
+    private def copyCursor(icon: HICON) =
+        u32.CopyIcon(icon).getPointer
     
     def changeCursor(hCur: Pointer) = {
-        u32ex.SetSystemCursor(copyCursor(hCur), OCR_NORMAL)
-        u32ex.SetSystemCursor(copyCursor(hCur), OCR_IBEAM)
-        u32ex.SetSystemCursor(copyCursor(hCur), OCR_HAND)
+        val icon = new HICON(hCur)
+        u32ex.SetSystemCursor(copyCursor(icon), OCR_NORMAL)
+        u32ex.SetSystemCursor(copyCursor(icon), OCR_IBEAM)
+        u32ex.SetSystemCursor(copyCursor(icon), OCR_HAND)
     }
     
     def changeCursorV: Unit =
@@ -555,7 +556,7 @@ object Windows {
     
     def getCursorPos = {
         val pos = new POINT
-        u32ex.GetCursorPos(pos)
+        u32.GetCursorPos(pos)
         pos
     }
     

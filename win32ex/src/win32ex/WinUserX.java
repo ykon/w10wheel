@@ -128,8 +128,8 @@ public interface WinUserX extends WinUser
         public Pointer LoadCursorW(HINSTANCE hInstance, Pointer lpCursorName);
         public boolean SystemParametersInfoW(int uiAction, int uiParam, Pointer pvParam, int fWinIni);
         public boolean SetSystemCursor(Pointer hcur, int id);
-        public Pointer CopyIcon(Pointer hIcon);
-        public boolean GetCursorPos(POINT p);
+        //public Pointer CopyIcon(Pointer hIcon);
+        //public boolean GetCursorPos(POINT p);
         public boolean GetPhysicalCursorPos(POINT lpPoint);
         public boolean SetProcessDPIAware();
         
