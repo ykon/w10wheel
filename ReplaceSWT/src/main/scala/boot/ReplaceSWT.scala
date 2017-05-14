@@ -32,8 +32,8 @@ object ReplaceSWT {
     private val is64Bit = getSystemBit == 64
     
     private val SWT_JAR_NAME = "swt.jar"
-    private val SWT_JAR_32BIT_SHA1 = "32473A0D2D6750B00ACFF129E6107F95A2034A64"
-    private val SWT_JAR_64BIT_SHA1 = "F396CFA34B409F343E751F88C34024A36EA4FC54"
+    private val SWT_JAR_32BIT_SHA1 = "3390E449C6A63A68C4DD96A5F741EEDBB0E50967"
+    private val SWT_JAR_64BIT_SHA1 = "4133AE38F6E7E8829C454C48DFF47E6C70B389F9"
     
     private def getSelfPath = {
         Paths.get(getClass.getProtectionDomain().getCodeSource().getLocation().toURI())
