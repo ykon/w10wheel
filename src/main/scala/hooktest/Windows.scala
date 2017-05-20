@@ -19,6 +19,7 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import java.util.Random
+import org.eclipse.swt.widgets.Display
 
 object Windows {
     private val ctx = Context
@@ -52,11 +53,23 @@ object Windows {
     private val WM_QUERYENDSESSION = 0x0011
     private val GWL_WNDPROC = -4
     
-    private val shutdownThread = new Thread {
+    // shutdown and reset sytem tray
+    private val wmThread = new Thread {
+        // https://github.com/EsotericSoftware/clippy/blob/master/src/com/esotericsoftware/clippy/Tray.java
+        val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
+        
         val windowProc = new WindowProc {
             override def callback(hwnd: HWND, uMsg: Int, wParam: WPARAM, lParam: LPARAM): LRESULT = {
-                if (uMsg == WM_QUERYENDSESSION)
-                    W10Wheel.procExit
+                
+                uMsg match {
+                    case WM_QUERYENDSESSION =>
+                        W10Wheel.procExit
+                    case TaskbarCreated => {
+                        logger.debug("TaskbarCreated")
+                        ctx.resetSystemTray
+                    }
+                    case _ => {}
+                }
                 
                 u32.DefWindowProc(hwnd, uMsg, wParam, lParam)
             }
@@ -76,8 +89,8 @@ object Windows {
             }
         }
     }
-    shutdownThread.setDaemon(true)
-    shutdownThread.start
+    wmThread.setDaemon(true)
+    wmThread.start
     
     private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
     

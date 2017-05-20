@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.2"
+    val PROGRAM_VERSION = "2.2.1"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -1064,6 +1064,14 @@ object Context {
         createExitMenu(menu)
         
         resetMenuItems
+    }
+    
+    def resetSystemTray {
+        Display.getDefault.asyncExec(new Runnable {
+            override def run {
+                setSystemTray    
+            }
+        })   
     }
     
     private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
