@@ -19,7 +19,6 @@ import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import java.util.Random
-import org.eclipse.swt.widgets.Display
 
 object Windows {
     private val ctx = Context
@@ -53,7 +52,7 @@ object Windows {
     private val WM_QUERYENDSESSION = 0x0011
     private val GWL_WNDPROC = -4
     
-    // shutdown and reset sytem tray
+    // shutdown and reset system tray
     private val wmThread = new Thread {
         // https://github.com/EsotericSoftware/clippy/blob/master/src/com/esotericsoftware/clippy/Tray.java
         val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
@@ -76,7 +75,7 @@ object Windows {
         }
     
         override def run {
-            val className = new String(ctx.PROGRAM_NAME + "_Shutdown")
+            val className = ctx.PROGRAM_NAME + "_WM"
          
             val wx = new WNDCLASSEX
             wx.lpszClassName = className
@@ -84,6 +83,7 @@ object Windows {
             
             if (u32.RegisterClassEx(wx).intValue() != 0) {
                 val hwnd = u32.CreateWindowEx(0, className, null, 0, 0, 0, 0, 0, null, null, null, null)
+                u32ex.ChangeWindowMessageFilterEx(hwnd, TaskbarCreated, MSGFLT_ALLOW, null);
             
                 messageLoop
             }

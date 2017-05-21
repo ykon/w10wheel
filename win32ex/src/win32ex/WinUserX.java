@@ -117,6 +117,10 @@ public interface WinUserX extends WinUser
     // https://msdn.microsoft.com/library/windows/desktop/ms724947.aspx
     public int SPI_SETCURSORS = 0x0057;
     
+    public int MSGFLT_ALLOW = 1;
+    public int MSGFLT_DISALLOW = 2;
+    public int MSGFLT_RESET = 0;
+    
     public interface User32ex extends User32 {
         User32ex INSTANCE = (User32ex)Native.loadLibrary("user32", User32ex.class);
         
@@ -136,6 +140,8 @@ public interface WinUserX extends WinUser
         public HMONITOR MonitorFromPoint(POINT pt, int dwFlags);
         
         //public int SetThreadDpiAwarenessContext(int value);
+        
+        public boolean ChangeWindowMessageFilterEx(HWND hWnd, int msg, int action, Pointer pcfs);
     }
     
     // https://msdn.microsoft.com/library/windows/desktop/ms686219.aspx
