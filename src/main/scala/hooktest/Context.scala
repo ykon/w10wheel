@@ -21,7 +21,7 @@ import java.io.FileNotFoundException
 import java.io.{ File, FileInputStream, FileOutputStream }
 import java.io.IOException
 
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import scala.collection.mutable.HashMap
@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.2.2"
+    val PROGRAM_VERSION = "2.3"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -1067,11 +1067,7 @@ object Context {
     }
     
     def resetSystemTray {
-        Display.getDefault.asyncExec(new Runnable {
-            override def run {
-                setSystemTray    
-            }
-        })   
+        Display.getDefault.asyncExec(() => setSystemTray)   
     }
     
     private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {

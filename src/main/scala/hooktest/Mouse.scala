@@ -5,8 +5,8 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import win32ex.WinUserX._
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
+import win32ex.User32Ex._
 
 trait MouseEvent {
     val info: HookInfo

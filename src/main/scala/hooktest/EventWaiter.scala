@@ -5,14 +5,10 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-//import scala.concurrent._
-//import ExecutionContext.Implicits.global
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.annotation.tailrec
-
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
 
 object EventWaiter {
     // http://hsmemo.github.io/articles/no3059sSJ.html
@@ -122,6 +118,9 @@ object EventWaiter {
                     resendUD
             }
             case (RightDown(_), LeftUp(_)) => resendUD
+            case x => {
+                throw new IllegalStateException("Not matched: " + x);
+            }
         }
     }
     
@@ -141,18 +140,16 @@ object EventWaiter {
     
     private val waiterQueue = new SynchronousQueue[MouseEvent](true)
     
-    private val waiterThread = new Thread(new Runnable {
-        override def run {
-            while (true) {
-                val down = waiterQueue.take
-                
-                poll(Context.getPollTimeout) match {
-                    case Some(res) => dispatchEvent(down, res)
-                    case None => fromTimeout(down)
-                }
+    private val waiterThread = new Thread(() =>
+        while (true) {
+            val down = waiterQueue.take
+            
+            poll(Context.getPollTimeout) match {
+                case Some(res) => dispatchEvent(down, res)
+                case None => fromTimeout(down)
             }
         }
-    })
+    )
     
     waiterThread.setDaemon(true)
     waiterThread.setPriority(THREAD_PRIORITY)

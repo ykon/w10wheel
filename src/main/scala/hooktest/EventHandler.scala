@@ -8,7 +8,7 @@ package hooktest
 import scala.annotation.tailrec
 
 import com.sun.jna.platform.win32.WinDef.LRESULT
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
 
 object EventHandler {
     private val ctx = Context

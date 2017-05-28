@@ -5,7 +5,7 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import win32ex.WinUserX._
+import win32ex.User32Ex._
 
 object W10Message {
     private val logger = Context.logger

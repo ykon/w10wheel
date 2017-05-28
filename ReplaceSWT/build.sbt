@@ -1,8 +1,8 @@
 lazy val root = (project in file(".")).
   settings(
     name := "ReplaceSWT",
-    version := "0.3",
-    scalaVersion := "2.11.8"
+    version := "0.4",
+    scalaVersion := "2.12.2"
   )
  
 scalacOptions += "-target:jvm-1.8"

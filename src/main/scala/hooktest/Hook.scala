@@ -10,8 +10,10 @@ import com.sun.jna.platform.win32._
 import com.sun.jna.platform.win32.WinDef._
 import com.sun.jna.platform.win32.WinUser._
 
-import win32ex.WinUserX._
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+import win32ex._
+import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
+import win32ex.User32Ex._
+
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 object Hook {

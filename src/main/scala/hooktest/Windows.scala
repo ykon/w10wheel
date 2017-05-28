@@ -14,19 +14,22 @@ import com.sun.jna.platform.win32._
 import com.sun.jna.platform.win32.BaseTSD.ULONG_PTR
 import com.sun.jna.platform.win32.WinDef._
 import com.sun.jna.platform.win32.WinUser._
-import win32ex.WinUserX._
-import win32ex.WinUserX.{ MSLLHOOKSTRUCT => HookInfo }
+
+import win32ex._
+import win32ex.User32Ex._
+import win32ex.Kernel32Ex._
+
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import java.util.Random
 
-object Windows {
+object Windows {    
     private val ctx = Context
     private val logger = ctx.logger
     private val u32 = User32.INSTANCE
-    private val u32ex = User32ex.INSTANCE
+    private val u32ex = User32Ex.INSTANCE
     private val k32 = Kernel32.INSTANCE
-    private val k32ex = Kernel32ex.INSTANCE
+    private val k32ex = Kernel32Ex.INSTANCE
     //private val shcore = Shcore.INSTANCE
     
     def messageLoop: Unit = {
@@ -94,14 +97,12 @@ object Windows {
     
     private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
     
-    private val senderThread = new Thread(new Runnable {
-        override def run {
-            while (true) {
-                val msgs = inputQueue.take()
-                u32.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
-            }
+    private val senderThread = new Thread(() =>
+        while (true) {
+            val msgs = inputQueue.take()
+            u32.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
         }
-    })
+    )
     
     senderThread.setDaemon(true)
     senderThread.start
@@ -474,6 +475,9 @@ object Windows {
         (down, up) match {
             case (LeftDown(_), LeftUp(_)) => resendClick(LeftClick(down.info))
             case (RightDown(_), RightUp(_)) => resendClick(RightClick(down.info))
+            case x => {
+                throw new IllegalStateException("Not matched: " + x)
+            }
         }
     }
     
@@ -573,11 +577,13 @@ object Windows {
         pos
     }
     
+    /*
     def getPhysicalCursorPos = {
         val pos = new POINT
         u32ex.GetPhysicalCursorPos(pos)
         pos
     }
+    */
     
     /*
     def setProcessDPIAware {

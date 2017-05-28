@@ -1,8 +1,9 @@
 lazy val root = (project in file(".")).
   settings(
     name := "W10Wheel",
-    version := "2.2.2",
-    scalaVersion := "2.11.8"
+    version := "2.3",
+    scalaVersion := "2.12.2",
+    compileOrder := CompileOrder.JavaThenScala
   )
  
 scalacOptions += "-target:jvm-1.8"
@@ -15,10 +16,9 @@ val classPath = Seq(
   "lib/logback-classic-1.2.3.jar",
   "lib/logback-core-1.2.3.jar",
   "lib/scala-library.jar",
-  "lib/scala-logging_2.11-3.5.0.jar",
+  "lib/scala-logging_2.12-3.5.0.jar",
   "lib/slf4j-api-1.7.25.jar",
-  "lib/swt.jar",
-  "lib/win32ex.jar"
+  "lib/swt.jar"
 )
 
 packageOptions += Package.ManifestAttributes(
