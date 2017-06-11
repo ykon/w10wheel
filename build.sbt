@@ -1,7 +1,7 @@
 lazy val root = (project in file(".")).
   settings(
     name := "W10Wheel",
-    version := "2.3",
+    version := "2.4",
     scalaVersion := "2.12.2",
     compileOrder := CompileOrder.JavaThenScala
   )

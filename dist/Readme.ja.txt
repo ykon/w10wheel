@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        2.3
+        2.4
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2017-06-11: v2.4.0: RawInputから移動値を取得するように変更、DPIの設定を削除
         2017-05-28: v2.3.0: コンパイラーをScala-2.12.2に更新、JNAの拡張を内部に取り込む
         2017-05-21: v2.2.2: 管理者として実行して、エクスプローラーの再起動でタスクトレイのアイコンが消える問題を修正
         2017-05-20: v2.2.1: エクスプローラーの再起動でタスクトレイのアイコンが消える問題を修正
@@ -173,7 +174,6 @@ URL:
         SetNumber: 数値をセット (設定項目を参照)
         Real Wheel Mode: 実際のホイールに近いスクロール (設定項目を参照)
         VH Adjuster: 垂直、水平の方向固定、切り替え機能
-        DPI Correction: DPI補正 (1.00=100%, 1.25=125%, 1.50=150%, ...)
         Properties: 設定ファイル関連
         Cursor Change: スクロールモードのカーソル変更
         Horizontal Scroll: 水平スクロール
@@ -294,9 +294,6 @@ URL:
                 キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー
-                
-        dpiCorrection: double  (default: 1.00) # DPI Correction
-                DPI補正に使う値 (1.00=100%, 1.25=125%, 1.50=150%, ...)
                 
 ライセンス:
         The MIT License

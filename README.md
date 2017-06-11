@@ -1,7 +1,7 @@
 # W10Wheel
 W10Wheel is the Mouse Wheel Simulator for Windows 10.
 ## Supported
-Windows and Java version 8 Update 101 (8u101) or newer.  
+Windows and Java version 8 Update 101 (8u101) or later.  
 <https://www.java.com/>
 ### Windows 7, 8.1
 Requires software to enable scroll inactive windows, such as WizMouse.  

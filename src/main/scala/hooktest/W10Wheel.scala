@@ -19,20 +19,20 @@ import java.nio.file.Paths
 object W10Wheel {
     private val ctx = Context
     private val logger = ctx.logger
-    
+
     private val REPLACE_SWT_NAME = "ReplaceSWT.exe"
-    
+
     private def getSelfPath = {
         Paths.get(getClass.getProtectionDomain().getCodeSource().getLocation().toURI())
     }
-    
+
     private def exeReplaceSWT {
         val selfPath = getSelfPath
         val replaceSwtPath = selfPath.resolveSibling(REPLACE_SWT_NAME)
         val pb = new ProcessBuilder(replaceSwtPath.toString, selfPath.toString)
         pb.start
     }
-    
+
     private val display = {
         try {
             Display.getDefault
@@ -45,45 +45,45 @@ object W10Wheel {
             }
         }
     }
-    
+
     val shell = new Shell(display)
-    
+
     def procExit {
         logger.debug("procExit")
-        
+
         Hook.unhook
         ctx.storeProperties
         PreventMultiInstance.unlock
     }
-    
+
     private def messageDoubleLaunch {
         Dialog.errorMessage(shell, "Double Launch?")
     }
-    
-    private def messageLoop {
+
+    private def swtMessageLoop {
         while (!shell.isDisposed) {
             if (!display.readAndDispatch)
                 display.sleep
         }
     }
-    
+
     def exitMessageLoop {
         display.dispose()
     }
-    
+
     /*
     private val shutdown = new Thread {
         override def run {
             logger.debug("Shutdown Hook")
-            
+
             if (!display.isDisposed)
                 exitMessageLoop
         }
     }
-     
+
     Runtime.getRuntime.addShutdownHook(shutdown)
     */
-    
+
     private def getBool(args: Array[String], i: Int) = {
         try {
             if (args.length == 1) true else args(i).toBoolean
@@ -96,22 +96,22 @@ object W10Wheel {
             }
         }
     }
-    
+
     private def setSelectedProperties(name: String) {
         if (Properties.exists(name))
             Context.setSelectedProperties(name)
         else
             Dialog.errorMessage(shell, s"'$name' properties does not exist.")
     }
-    
+
     private def unknownCommand(name: String) {
         Dialog.errorMessage(shell, "Unknown Command: " + name, "Command Error")
         System.exit(0)
     }
-    
+
     private def procArgs(args: Array[String]) {
         logger.debug("procArgs")
-        
+
         if (args.length > 0) {
             args(0) match {
                 case "--sendExit" => W10Message.sendExit
@@ -119,7 +119,7 @@ object W10Wheel {
                 case name if name.startsWith("--") => unknownCommand(name)
                 case name => setSelectedProperties(name)
             }
-            
+
             if (args(0).startsWith("--send")) {
                 Thread.sleep(1000)
                 System.exit(0)
@@ -129,26 +129,26 @@ object W10Wheel {
 
     def main(args: Array[String]) {
         procArgs(args)
-        
+
         if (!PreventMultiInstance.tryLock) {
             messageDoubleLaunch
             System.exit(0)
         }
-        
+
         ctx.loadProperties
         ctx.setSystemTray
-        
+
         Hook.setMouseHook
         logger.debug("Mouse hook installed")
-        
+
         //println(s"depth: ${display.getDepth}")
         //println(s"dpi: ${display.getDPI}")
-        
-        
+
+
         //Windows.messageLoop
         //logger.debug("exit message loop")
-        
-        messageLoop
+
+        swtMessageLoop
         logger.debug("Exit message loop")
         procExit
     }

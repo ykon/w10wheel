@@ -13,49 +13,49 @@ import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
 object EventHandler {
     private val ctx = Context
     private val logger = ctx.logger
-    
+
     private var lastEvent: MouseEvent = null
     private var lastResendLeftEvent: MouseEvent = null
     private var lastResendRightEvent: MouseEvent = null
-    
+
     private var resentDownUp = false
     private var secondTriggerUp = false
-    
+
     private var __callNextHook: () => LRESULT = null
-    
+
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
-    
+
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
-    
+
     private def getLastResendEvent(me: MouseEvent) = me match {
         case LeftEvent(_) => lastResendLeftEvent
         case RightEvent(_) => lastResendRightEvent
     }
-    
+
     private def setLastResendEvent(me: MouseEvent) = me match {
         case LeftEvent(_) => lastResendLeftEvent = me
         case RightEvent(_) => lastResendRightEvent = me
     }
-    
+
     private def isCorrectOrder(pre: MouseEvent, cur: MouseEvent): Boolean = (pre, cur) match {
         case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) =>
             false
         case _ => true
     }
-    
+
     private def checkCorrectOrder(me: MouseEvent): Boolean = {
         isCorrectOrder(getLastResendEvent(me), me)
     }
-    
+
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
         def pass = {
             logger.debug(s"pass resend event: ${me.name}")
             setLastResendEvent(me)
-            callNextHook  
+            callNextHook
         }
-        
+
         if (!Windows.isInjectedEvent(me))
             None
         else if (Windows.isResendClickEvent(me)) {
@@ -66,7 +66,7 @@ object EventHandler {
             if (resentDownUp) {
                 logger.debug(s"ResendEvent: resentDownUp: ${me.name}")
                 resentDownUp = false
-                
+
                 if (checkCorrectOrder(me))
                     pass
                 else {
@@ -84,7 +84,7 @@ object EventHandler {
             callNextHook
         }
     }
-    
+
     private def skipResendEventSingle(me: MouseEvent): Option[LRESULT] = {
         if (!Windows.isInjectedEvent(me)) {
             None
@@ -98,7 +98,7 @@ object EventHandler {
             callNextHook
         }
     }
-    
+
     private def skipFirstUp(me: MouseEvent): Option[LRESULT] = {
         if (lastEvent == null) {
             logger.debug(s"skip first Up: ${me.name}")
@@ -107,13 +107,13 @@ object EventHandler {
         else
             None
     }
-    
+
     private def resetLastFlagsLR(me: MouseEvent): Option[LRESULT] = {
         logger.debug(s"reset last flag: ${me.name}")
         ctx.LastFlags.resetLR(me)
         None
     }
-    
+
     private def checkSameLastEvent(me: MouseEvent): Option[LRESULT] = {
         if (me.sameEvent(lastEvent)) {
             logger.warn(s"same last event: ${me.name}")
@@ -124,8 +124,8 @@ object EventHandler {
             None
         }
     }
-    
-    private def checkExitScrollDown(me: MouseEvent): Option[LRESULT] = {        
+
+    private def checkExitScrollDown(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isReleasedScrollMode) {
             logger.debug(s"exit scroll mode (Released): ${me.name}")
             ctx.exitScrollMode
@@ -135,7 +135,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def passPressedScrollMode(down: MouseEvent): Option[LRESULT] = {
         if (ctx.isPressedScrollMode) {
             logger.debug(s"pass scroll mode (Pressed): ${down.name}")
@@ -145,7 +145,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def passSingleEvent(me: MouseEvent): Option[LRESULT] = {
         if (me.isSingle) {
             logger.debug(s"pass single event: ${me.name}")
@@ -154,7 +154,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def checkExitScrollUp(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isPressedScrollMode) {
             if (ctx.checkExitScroll(me.info.time)) {
@@ -171,7 +171,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def checkExitScrollUpLR(up: MouseEvent): Option[LRESULT] = {
         if (ctx.isPressedScrollMode) {
             if (!secondTriggerUp) {
@@ -185,18 +185,18 @@ object EventHandler {
                 logger.debug(s"continue scroll mode (Released): ${up.name}")
                 ctx.setReleasedScrollMode
             }
-            
+
             secondTriggerUp = !secondTriggerUp
             suppress
         }
         else
             None
     }
-    
+
     private def checkStartingScroll(up: MouseEvent): Option[LRESULT] = {
         if (ctx.isStartingScrollMode) {
             logger.debug("check starting scroll")
-            
+
             if (!secondTriggerUp) {
                 logger.debug(s"ignore first up (starting): ${up.name}")
                 Thread.sleep(1)
@@ -206,7 +206,7 @@ object EventHandler {
                 Thread.sleep(1)
                 ctx.exitScrollMode
             }
-            
+
             secondTriggerUp = !secondTriggerUp
             suppress
         }
@@ -222,8 +222,8 @@ object EventHandler {
         else
             None
     }
-    
-    private def checkSuppressedDown(up: MouseEvent): Option[LRESULT] = {        
+
+    private def checkSuppressedDown(up: MouseEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_SuppressedDown(up)) {
             logger.debug(s"suppress (checkSuppressedDown): ${up.name}")
             suppress
@@ -231,8 +231,8 @@ object EventHandler {
         else
             None
     }
-    
-    private def checkResentDown(up: MouseEvent): Option[LRESULT] = {        
+
+    private def checkResentDown(up: MouseEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_ResentDown(up)) {
             logger.debug(s"resendUp and suppress (checkResentDown): ${up.name}")
             resentDownUp = true
@@ -242,7 +242,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def checkPassedDown(up: MouseEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_PassedDown(up)) {
             logger.debug(s"pass (checkPassedDown): ${up.name}")
@@ -251,7 +251,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def checkTriggerWaitStart(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isLRTrigger || ctx.isTriggerEvent(me)) {
             logger.debug(s"start wait trigger: ${me.name}")
@@ -261,7 +261,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def checkKeySendMiddle(me: MouseEvent): Option[LRESULT] = {
         val w = Windows
         if (ctx.isSendMiddleClick && (w.getShiftState || w.getCtrlState || w.getAltState)) {
@@ -273,7 +273,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def checkTriggerScrollStart(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isTriggerEvent(me)) {
             logger.debug(s"start scroll mode: ${me.name}");
@@ -283,7 +283,7 @@ object EventHandler {
         else
             None
     }
-    
+
     private def passNotDragTrigger(me: MouseEvent): Option[LRESULT] = {
         if (!ctx.isDragTriggerEvent(me)) {
             logger.debug(s"pass not trigger: ${me.name}")
@@ -292,17 +292,17 @@ object EventHandler {
         else
             None
     }
-    
+
     private def startScrollDrag(me: MouseEvent): Option[LRESULT] = {
         logger.debug(s"start scroll mode (Drag): ${me.name}");
         ctx.startScrollMode(me.info)
-        
+
         drag = dragStart
         dragged = false
-            
+
         suppress
     }
-    
+
     private def continueScrollDrag(up: MouseEvent): Option[LRESULT] = {
         if (ctx.isDraggedLock && dragged) {
             logger.debug(s"continueScrollDrag (Released): ${up.name}")
@@ -312,14 +312,14 @@ object EventHandler {
         else
             None
     }
-    
+
     private def exitAndResendDrag(me: MouseEvent): Option[LRESULT] = {
         logger.debug(s"exit scroll mode (Drag): ${me.name}")
         ctx.exitScrollMode
-        
+
         if (!dragged) {
             logger.debug(s"resend click: ${me.name}")
-            
+
             me match {
                 case LeftUp(info) => Windows.resendClick(LeftClick(info))
                 case RightUp(info) => Windows.resendClick(RightClick(info))
@@ -328,10 +328,10 @@ object EventHandler {
                 case X2Up(info) => Windows.resendClick(X2Click(info))
             }
         }
-        
+
         suppress
     }
-    
+
     private def passNotTrigger(me: MouseEvent): Option[LRESULT] = {
         if (!ctx.isTriggerEvent(me)) {
             logger.debug(s"pass not trigger: ${me.name}")
@@ -340,7 +340,7 @@ object EventHandler {
         else
             None
     }
-   
+
     private def passNotTriggerLR(me: MouseEvent): Option[LRESULT] = {
         if (!ctx.isLRTrigger && !ctx.isTriggerEvent(me)) {
             logger.debug(s"pass not trigger: ${me.name}")
@@ -349,37 +349,37 @@ object EventHandler {
         else
             None
     }
-    
+
     private def endCallNextHook(me: MouseEvent, msg: String): Option[LRESULT] = {
         logger.debug(msg)
         callNextHook
     }
-    
+
     private def endNotTrigger(me: MouseEvent): Option[LRESULT] = {
         endCallNextHook(me, s"endNotTrigger: ${me.name}")
     }
-    
+
     private def endPass(me: MouseEvent): Option[LRESULT] = {
         endCallNextHook(me, s"endPass: ${me.name}")
     }
-    
+
     private def endUnknownEvent(me: MouseEvent): Option[LRESULT] = {
         logger.warn(s"unknown event: ${me.name}")
         callNextHook
     }
-    
+
     private def endSuppress(me: MouseEvent, msg: Option[String] = None): Option[LRESULT] = {
         msg.foreach(logger.debug(_))
         suppress
     }
-    
+
     private def endIllegalState(me: MouseEvent): Option[LRESULT] = {
         logger.warn(s"illegal state: ${me.name}")
         suppress
     }
-    
+
     type Checkers = List[MouseEvent => Option[LRESULT]]
-    
+
     @tailrec
     private def getResult(cs: Checkers, me: MouseEvent): LRESULT = cs match {
         case f :: fs => {
@@ -388,7 +388,7 @@ object EventHandler {
         }
         case _ => throw new IllegalArgumentException()
     }
-    
+
     private def lrDown(me: MouseEvent): LRESULT = {
         //logger.debug("lrDown")
         val cs: Checkers = List(
@@ -402,10 +402,10 @@ object EventHandler {
             checkTriggerWaitStart,
             endNotTrigger
         )
-        
+
         getResult(cs, me)
     }
-    
+
     private def lrUp(me: MouseEvent): LRESULT = {
         //logger.debug("lrUp")
         val cs: Checkers = List(
@@ -421,10 +421,10 @@ object EventHandler {
             checkSuppressedDown,
             endNotTrigger
         )
-                
+
         getResult(cs, me)
     }
-    
+
     private def singleDown(me: MouseEvent): LRESULT = {
         //logger.debug("singleDown")
         val cs: Checkers = List(
@@ -437,10 +437,10 @@ object EventHandler {
             checkTriggerScrollStart,
             endIllegalState
         )
-        
+
         getResult(cs, me)
     }
-    
+
     private def singleUp(me: MouseEvent): LRESULT = {
         //logger.debug("singleUp")
         val cs: Checkers = List(
@@ -452,10 +452,10 @@ object EventHandler {
             checkExitScrollUp,
             endIllegalState
         )
-                
+
         getResult(cs, me)
     }
-    
+
     private def dragDown(me: MouseEvent): LRESULT = {
         //logger.debug("dragDown")
         val cs: Checkers = List(
@@ -466,10 +466,10 @@ object EventHandler {
             passNotDragTrigger,
             startScrollDrag
         )
-        
+
         getResult(cs, me)
     }
-    
+
     private def dragUp(me: MouseEvent): LRESULT = {
         //logger.debug("dragUp")
         val cs: Checkers = List(
@@ -481,10 +481,10 @@ object EventHandler {
             continueScrollDrag,
             exitAndResendDrag
         )
-        
+
         getResult(cs, me)
     }
-    
+
     private def noneDown(me: MouseEvent): LRESULT = {
         //logger.debug("noneDown")
         val cs: Checkers = List(
@@ -492,86 +492,86 @@ object EventHandler {
             checkExitScrollDown,
             endPass
         )
-        
+
         getResult(cs, me)
     }
-    
+
     private def noneUp(me: MouseEvent): LRESULT = {
         //logger.debug("noneUp")
         val cs: Checkers = List(
             checkSuppressedDown,
             endPass
         )
-        
+
         getResult(cs, me)
     }
-    
+
     @volatile private var procDownLR: MouseEvent => LRESULT = lrDown
     @volatile private var procUpLR: MouseEvent => LRESULT = lrUp
     @volatile private var procDownS: MouseEvent => LRESULT = noneDown
     @volatile private var procUpS: MouseEvent => LRESULT = noneUp
-    
+
     def leftDown(info: HookInfo): LRESULT = {
         //logger.debug("leftDown")
         val ld = LeftDown(info)
         procDownLR(ld)
     }
-    
+
     def leftUp(info: HookInfo): LRESULT = {
         //logger.debug("leftUp");
         val lu = LeftUp(info)
         procUpLR(lu)
     }
-    
+
     def rightDown(info: HookInfo): LRESULT = {
         //logger.debug("rightDown")]
         val rd = RightDown(info)
         procDownLR(rd)
     }
-    
+
     def rightUp(info: HookInfo): LRESULT = {
         //logger.debug("rightUp")
         val ru = RightUp(info)
         procUpLR(ru)
     }
-    
+
     def middleDown(info: HookInfo): LRESULT = {
         val md = MiddleDown(info)
         procDownS(md)
     }
-    
+
     def middleUp(info: HookInfo): LRESULT = {
         val mu = MiddleUp(info)
         procUpS(mu)
     }
-    
+
     def xDown(info: HookInfo): LRESULT = {
         val xd = if (Mouse.isXButton1(info.mouseData)) X1Down(info) else X2Down(info)
         procDownS(xd)
     }
-    
+
     def xUp(info: HookInfo): LRESULT = {
         val xu = if (Mouse.isXButton1(info.mouseData)) X1Up(info) else X2Up(info)
         procUpS(xu)
     }
-    
+
     private def dragDefault(info: HookInfo): Unit = {}
-    
+
     private var drag: HookInfo => Unit = dragDefault
     private var dragged = false
 
     private def dragStart(info: HookInfo): Unit = {
         if (ctx.isCursorChange && !ctx.isVhAdjusterMode)
             Windows.changeCursorV
-        
+
         drag = dragDefault
         dragged = true
     }
-    
-    def move(info: HookInfo): LRESULT = {        
+
+    def move(info: HookInfo): LRESULT = {
         if (ctx.isScrollMode) {
             drag(info)
-            Windows.sendWheel(info.pt)
+            //Windows.sendWheel(info.pt)
             //Windows.sendWheel(info.pt.x, info.pt.y)
             suppress.get
         }
@@ -582,10 +582,10 @@ object EventHandler {
         else
             callNextHook.get
     }
-    
+
     def changeTrigger {
         logger.debug("changeTrigger: EventHandler")
-        
+
         val (downLR, upLR, downS, upS) = if (ctx.isDoubleTrigger) {
             logger.debug("set double down/up")
             (lrDown _, lrUp _, noneDown _, noneUp _)
@@ -602,7 +602,7 @@ object EventHandler {
             logger.debug("set none down/up")
             (noneDown _, noneUp _, noneDown _, noneUp _)
         }
-        
+
         procDownLR = downLR; procUpLR = upLR
         procDownS = downS; procUpS = upS
     }
