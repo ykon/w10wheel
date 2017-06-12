@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.4"
+    val PROGRAM_VERSION = "2.4.1"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -186,22 +186,16 @@ object Context {
         @volatile var releasedMode = false // not pressed
 
         private def setStartPoint(x: Int, y: Int) {
-            //val pt = Windows.getCursorPos
-            //logger.debug("StartPoint: " + x + "," + y)
-
-            //val ppos = Windows.getPhysicalCursorPos
-            //logger.debug("PPos: " + ppos.x + "," + ppos.y)
-
             sx = x;
             sy = y;
         }
 
         def start(info: HookInfo) = synchronized {
-            Windows.registerRawInput
-
             stime = info.time
             setStartPoint(info.pt.x, info.pt.y)
             Windows.initScroll
+
+            Windows.registerRawInput
 
             if (cursorChange && !firstTrigger.isDrag)
                 Windows.changeCursorV
@@ -211,12 +205,12 @@ object Context {
         }
 
         def start(kinfo: KHookInfo) = synchronized {
-            Windows.registerRawInput
-
             stime = kinfo.time
             val pt = Windows.getCursorPos
             setStartPoint(pt.x, pt.y)
             Windows.initScroll
+
+            Windows.registerRawInput
 
             if (cursorChange)
                 Windows.changeCursorV
