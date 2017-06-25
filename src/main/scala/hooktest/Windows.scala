@@ -36,20 +36,23 @@ object Windows {
     // https://github.com/EsotericSoftware/clippy/blob/master/src/com/esotericsoftware/clippy/Tray.java
     private val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
 
-    private def procInput(lParam: LPARAM): Boolean = {
+    private def procRawInput(lParam: LPARAM): Boolean = {
         val pcbSize = new IntByReference
         val cbSizeHeader = new RAWINPUTHEADER().size()
 
-        if (u32ex.GetRawInputData(lParam.toPointer(), RID_INPUT, null, pcbSize, cbSizeHeader) == 0) {
+        def getRawInputData(data: Pointer) =
+            u32ex.GetRawInputData(lParam.toPointer(), RID_INPUT, data, pcbSize, cbSizeHeader)
+
+        def isMouseMoveRelative(ri: RAWINPUT) =
+            ri.header.dwType == RIM_TYPEMOUSE && ri.mouse.usFlags == MOUSE_MOVE_RELATIVE
+
+        if (getRawInputData(null) == 0) {
             val buf = new Memory(pcbSize.getValue)
-            if (u32ex.GetRawInputData(lParam.toPointer(), RID_INPUT, buf, pcbSize, cbSizeHeader) == pcbSize.getValue) {
-                val rawInput = new RAWINPUT(buf)
+            if (getRawInputData(buf) == pcbSize.getValue) {
+                val ri = new RAWINPUT(buf)
 
-                if (rawInput.header.dwType == RIM_TYPEMOUSE && rawInput.mouse.usFlags == MOUSE_MOVE_RELATIVE) {
-                    val x = rawInput.mouse.lLastX
-                    val y = rawInput.mouse.lLastY
-
-                    sendWheelRaw(x, y)
+                if (isMouseMoveRelative(ri)) {
+                    sendWheelRaw(ri.mouse.lLastX, ri.mouse.lLastY)
                     return true
                 }
             }
@@ -62,7 +65,7 @@ object Windows {
         override def callback(hwnd: HWND, uMsg: Int, wParam: WPARAM, lParam: LPARAM): LRESULT = {
             uMsg match {
                 case WM_INPUT => {
-                    if (procInput(lParam))
+                    if (procRawInput(lParam))
                         return new LRESULT(0)
                 }
                 case WM_QUERYENDSESSION =>
@@ -457,9 +460,8 @@ object Windows {
 
         val (sx, sy) = scrollStartPoint
         val (dx, dy) = swapIf(movePt.x - sx, movePt.y - sy)
-        val wspt = new POINT(sx, sy)
 
-        sendWheelIf(wspt, dx, dy)
+        sendWheelIf(new POINT(sx, sy), dx, dy)
     }
 
     def sendWheelRaw(x: Int, y: Int) {
@@ -468,8 +470,7 @@ object Windows {
         val (sx, sy) = scrollStartPoint
         if (sx != x && sy != y) {
             val (dx, dy) = swapIf(x, y)
-            val wspt = new POINT(sx, sy)
-            sendWheelIf(wspt, dx, dy)
+            sendWheelIf(new POINT(sx, sy), dx, dy)
         }
     }
 
