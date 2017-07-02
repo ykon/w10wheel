@@ -72,6 +72,7 @@ object User32Ex {
     val VK_MBUTTON = 0x04
     val VK_XBUTTON1 = 0x05
     val VK_XBUTTON2 = 0x06
+    val VK_ESCAPE = 0x1B
 
     // https://msdn.microsoft.com/library/windows/desktop/ms648395.aspx
     val OCR_APPSTARTING = 32650

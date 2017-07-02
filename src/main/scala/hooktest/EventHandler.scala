@@ -20,6 +20,16 @@ object EventHandler {
 
     private var resentDownUp = false
     private var secondTriggerUp = false
+    private var dragged = false
+
+    private def initState {
+        lastEvent = null
+        lastResendLeftEvent = null
+        lastResendRightEvent = null
+        resentDownUp = false
+        secondTriggerUp = false
+        dragged = false
+    }
 
     private var __callNextHook: () => LRESULT = null
 
@@ -56,8 +66,9 @@ object EventHandler {
             callNextHook
         }
 
-        if (!Windows.isInjectedEvent(me))
+        if (!Windows.isInjectedEvent(me)) {
             None
+        }
         else if (Windows.isResendClickEvent(me)) {
             logger.debug(s"pass resendClick event: ${me.name}")
             callNextHook
@@ -97,6 +108,18 @@ object EventHandler {
             logger.debug(s"pass other software event: ${me.name}")
             callNextHook
         }
+    }
+
+    private def checkEscape(me: MouseEvent): Option[LRESULT] = {
+        if (Windows.getEscState) {
+            logger.debug(s"Esc: init state and exit scroll: ${me.name}")
+            initState
+            ctx.LastFlags.init
+            ctx.exitScrollMode
+            callNextHook
+        }
+        else
+            None
     }
 
     private def skipFirstUp(me: MouseEvent): Option[LRESULT] = {
@@ -410,6 +433,7 @@ object EventHandler {
         //logger.debug("lrUp")
         val cs: Checkers = List(
             skipResendEventLR,
+            checkEscape,
             skipFirstUp,
             checkSameLastEvent,
             //checkSingleSuppressed,
@@ -445,6 +469,7 @@ object EventHandler {
         //logger.debug("singleUp")
         val cs: Checkers = List(
             skipResendEventSingle,
+            checkEscape,
             skipFirstUp,
             checkSameLastEvent,
             checkSuppressedDown,
@@ -474,6 +499,7 @@ object EventHandler {
         //logger.debug("dragUp")
         val cs: Checkers = List(
             skipResendEventSingle,
+            checkEscape,
             skipFirstUp,
             checkSameLastEvent,
             checkSuppressedDown,
@@ -499,6 +525,7 @@ object EventHandler {
     private def noneUp(me: MouseEvent): LRESULT = {
         //logger.debug("noneUp")
         val cs: Checkers = List(
+            checkEscape,
             checkSuppressedDown,
             endPass
         )
@@ -556,9 +583,7 @@ object EventHandler {
     }
 
     private def dragDefault(info: HookInfo): Unit = {}
-
     private var drag: HookInfo => Unit = dragDefault
-    private var dragged = false
 
     private def dragStart(info: HookInfo): Unit = {
         if (ctx.isCursorChange && !ctx.isVhAdjusterMode)

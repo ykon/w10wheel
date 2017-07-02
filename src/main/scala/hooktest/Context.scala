@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.4.1"
+    val PROGRAM_VERSION = "2.5"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -299,6 +299,11 @@ object Context {
         private val sdS = new AtomicBoolean(false)
 
         private val kdS = (0 until 256).map(_ => new AtomicBoolean(false));
+
+        def init {
+            Array(ldR, rdR, ldP, rdP, ldS, rdS, sdS).foreach(f => f.set(false))
+            kdS.foreach(f => f.set(false))
+        }
 
         def setResent(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldR.set(true)
