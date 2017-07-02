@@ -16,7 +16,7 @@ trait MouseEvent {
         case LeftDown(_) | RightDown(_) | MiddleDown(_) | X1Down(_) | X2Down(_) => true
         case _ => false
     }
-    
+
     def isUp = this match {
         case LeftUp(_) | RightUp(_) | MiddleUp(_) | X1Up(_) | X2Up(_) => true
         case _ => false
@@ -28,12 +28,12 @@ trait MouseEvent {
         case X2Down(_) | X2Up(_) => true
         case _ => false
     }
-    
+
     def isLR = this match {
         case LeftDown(_) | LeftUp(_) | RightDown(_) | RightUp(_) => true
         case _ => false
     }
-    
+
     def sameEvent(me2: MouseEvent) = {
         (this, me2) match {
             case (LeftDown(_), LeftDown(_)) | (LeftUp(_), LeftUp(_)) => true
@@ -44,7 +44,7 @@ trait MouseEvent {
             case _ => false
         }
     }
-    
+
     def sameButton(me2: MouseEvent) = {
         (this, me2) match {
             case (LeftDown(_), LeftUp(_)) | (LeftUp(_), LeftDown(_)) => true
@@ -67,6 +67,7 @@ case class X1Up (info: HookInfo) extends MouseEvent
 case class X2Down (info: HookInfo) extends MouseEvent
 case class X2Up (info: HookInfo) extends MouseEvent
 case class Move (info: HookInfo) extends MouseEvent
+case class Cancel (info: HookInfo) extends MouseEvent
 
 object LeftEvent {
     def unapply(me: MouseEvent) = me match {
@@ -151,10 +152,10 @@ case class NoneTrigger () extends Trigger
 object Mouse {
     def isXButton1(mouseData: Int) =
         (mouseData >>> 16) == XBUTTON1
-    
+
     def isXButton2(mouseData: Int) =
         !isXButton1(mouseData)
-        
+
     def getTrigger(me: MouseEvent): Trigger = me match {
         case LeftEvent(_) => LeftTrigger()
         case RightEvent(_) => RightTrigger()
@@ -162,7 +163,7 @@ object Mouse {
         case X1Event(_) => X1Trigger()
         case X2Event(_) => X2Trigger()
     }
-    
+
     def getTrigger(s: String): Trigger = s match {
         case "LR" | "LRTrigger" => LRTrigger()
         case "Left" | "LeftTrigger" => LeftTrigger()
@@ -177,7 +178,7 @@ object Mouse {
         case "X2Drag" | "X2DragTrigger" => X2DragTrigger()
         case "None" | "NoneTrigger" => NoneTrigger()
     }
-    
+
     def samePoint(me1: MouseEvent, me2: MouseEvent) =
         (me1.info.pt.x == me2.info.pt.x) && (me1.info.pt.y == me2.info.pt.y)
 }

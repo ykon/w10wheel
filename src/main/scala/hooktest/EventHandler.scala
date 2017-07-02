@@ -116,6 +116,7 @@ object EventHandler {
             initState
             ctx.LastFlags.init
             ctx.exitScrollMode
+            EventWaiter.offer(Cancel(null))
             callNextHook
         }
         else
