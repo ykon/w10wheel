@@ -114,6 +114,7 @@ object EventHandler {
         if (Windows.getEscState) {
             logger.debug(s"Esc: init state and exit scroll: ${me.name}")
             initState
+            KEventHandler.initState()
             ctx.LastFlags.init
             ctx.exitScrollMode
             EventWaiter.offer(Cancel(null))
@@ -220,14 +221,13 @@ object EventHandler {
     private def checkStartingScroll(up: MouseEvent): Option[LRESULT] = {
         if (ctx.isStartingScrollMode) {
             logger.debug("check starting scroll")
+            Thread.sleep(1)
 
             if (!secondTriggerUp) {
                 logger.debug(s"ignore first up (starting): ${up.name}")
-                Thread.sleep(1)
             }
             else {
                 logger.debug(s"exit scroll mode (starting): ${up.name}")
-                Thread.sleep(1)
                 ctx.exitScrollMode
             }
 
