@@ -52,7 +52,8 @@ object Windows {
                 val ri = new RAWINPUT(buf)
 
                 if (isMouseMoveRelative(ri)) {
-                    sendWheelRaw(ri.mouse.lLastX, ri.mouse.lLastY)
+                    val rm = ri.mouse
+                    sendWheelRaw(rm.lLastX, rm.lLastY)
                     return true
                 }
             }
@@ -173,12 +174,14 @@ object Windows {
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
         msg.input.setType("mi")
-        msg.input.mi.dx = new LONG(pt.x)
-        msg.input.mi.dy = new LONG(pt.y)
-        msg.input.mi.mouseData = new DWORD(data)
-        msg.input.mi.dwFlags = new DWORD(flags)
-        msg.input.mi.time = new DWORD(time)
-        msg.input.mi.dwExtraInfo = new ULONG_PTR(extra)
+
+        val mi = msg.input.mi
+        mi.dx = new LONG(pt.x)
+        mi.dy = new LONG(pt.y)
+        mi.mouseData = new DWORD(data)
+        mi.dwFlags = new DWORD(flags)
+        mi.time = new DWORD(time)
+        mi.dwExtraInfo = new ULONG_PTR(extra)
     }
 
     def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {

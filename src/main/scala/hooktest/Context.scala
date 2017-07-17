@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.5.1"
+    val PROGRAM_VERSION = "2.6"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -376,32 +376,23 @@ object Context {
     def isDragTrigger = firstTrigger.isDrag
     def isNoneTrigger = firstTrigger.isNone
 
-    // http://stackoverflow.com/questions/3239106/scala-actionlistener-anonymous-function-type-mismatch
-
-    implicit def toListener(f: Event => Unit) = new Listener {
-        override def handleEvent(e: Event) { f(e) }
-    }
-
-    implicit def toSelectionAdapter(f: SelectionEvent => Unit) = new SelectionAdapter {
-        override def widgetSelected(e: SelectionEvent) { f(e) }
+    private def resetMapMenuItems(map: HashMap[String, MenuItem], pred: String => Boolean) {
+        logger.debug("resetMapMenuItems")
+        map.foreach { case (name, item) =>
+            item.setSelection(pred(name))
+        }
     }
 
     private def resetTriggerMenuItems {
-        triggerMenuMap.foreach { case (name, item) =>
-            item.setSelection(Mouse.getTrigger(name) == firstTrigger)
-        }
+        resetMapMenuItems(triggerMenuMap, (name => Mouse.getTrigger(name) == firstTrigger))
     }
 
     private def resetAccelMenuItems {
-        accelMenuMap.foreach { case (name, item) =>
-            item.setSelection(Accel.getMultiplier(name) == Accel.multiplier)
-        }
+        resetMapMenuItems(accelMenuMap, (name => Accel.getMultiplier(name) == Accel.multiplier))
     }
 
-    private def resetPriorityMenuItems: Unit = {
-        priorityMenuMap.foreach { case (name, item) =>
-            item.setSelection(Windows.getPriority(name) == processPriority)
-        }
+    private def resetPriorityMenuItems {
+        resetMapMenuItems(priorityMenuMap, (name => Windows.getPriority(name) == processPriority))
     }
 
     private def resetNumberMenuItems: Unit = {
@@ -411,34 +402,28 @@ object Context {
         }
     }
 
-    private def resetBoolMenuItems: Unit = {
-        boolMenuMap.foreach { case (name, item) =>
-            item.setSelection(getBooleanOfName(name))
-        }
+    private def resetBoolMenuItems {
+        resetMapMenuItems(boolMenuMap, getBooleanOfName)
     }
 
-    private def resetKeyboardMenuItems: Unit = {
-        keyboardMenuMap.foreach { case (name, item) =>
-            item.setSelection(Keyboard.getVKCode(name) == targetVKCode)
-        }
+    private def resetKeyboardMenuItems {
+        resetMapMenuItems(keyboardMenuMap, (name => Keyboard.getVKCode(name) == targetVKCode))
     }
 
     private def resetVhAdjusterMenuItems {
         boolMenuMap("vhAdjusterMode").setEnabled(Scroll.horizontal)
-
-        vhAdjusterMenuMap.foreach { case (name, item) =>
-            item.setSelection(getVhAdjusterMethod(name) == VHAdjuster.method)
-        }
+        resetMapMenuItems(vhAdjusterMenuMap, (name => getVhAdjusterMethod(name) == VHAdjuster.method))
     }
 
     private def resetOnOffMenuItems {
         OnOffNames.foreach(name => {
-              val item = boolMenuMap(name)
-              item.setText(getOnOffText(getBooleanOfName(name)))
+            val item = boolMenuMap(name)
+            item.setText(getOnOffText(getBooleanOfName(name)))
         })
     }
 
-    private def resetMenuItems: Unit = {
+    private def resetAllMenuItems: Unit = {
+        logger.debug("resetAllMenuItems")
         resetTriggerMenuItems
         resetKeyboardMenuItems
         resetAccelMenuItems
@@ -452,63 +437,76 @@ object Context {
     private def textToName(s: String): String =
         s.split(" ")(0)
 
-    private def unselectOtherItems(map: HashMap[String, MenuItem], selectedName: String) {
-        map.foreach { case (name, item) =>
-            if (name != selectedName)
-                item.setSelection(false)
+    private def unselectAllItems(map: HashMap[String, MenuItem]) {
+        map.foreach { case (_, item) =>
+            item.setSelection(false)
         }
+    }
+
+    private def addListener(item: MenuItem, f: Event => Unit) {
+        item.addListener(SWT.Selection, (e: Event) => f(e))
+    }
+
+    private def addListenerSelection(item: MenuItem, f: Event => Unit) {
+        addListener(item, e =>
+            if (item.getSelection)
+                f(e)
+        )
     }
 
     private val triggerMenuMap = new HashMap[String, MenuItem]
 
+    private def addListenerMapMenuItem(item: MenuItem, map: HashMap[String, MenuItem], f: () => Unit) {
+        logger.debug("addClickMapMenuItem: " + item.getText)
+
+        addListenerSelection(item, _ => {
+            logger.debug("Listener(Selection): " + item.getText)
+            unselectAllItems(map)
+            item.setSelection(true)
+            f()
+        })
+    }
+
     private def createTriggerMenuItem(menu: Menu, text: String) {
-        val item = new MenuItem(menu, SWT.RADIO)
-        item.setText(text)
+        val item = createRadioMenuItem(menu, text)
         val name = textToName(text)
         triggerMenuMap(name) = item
 
-        item.addSelectionListener((e: SelectionEvent) => {
-            if (item.getSelection) {
-                unselectOtherItems(triggerMenuMap, name)
-                setTrigger(name)
-            }
-        })
+        addListenerMapMenuItem(item, triggerMenuMap, () => setTrigger(name))
     }
 
     private def addSeparator(menu: Menu) {
         new MenuItem(menu, SWT.SEPARATOR)
     }
 
-    private def createTriggerMenu(pMenu: Menu) {
-        val tMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createTriggerMenuItem(tMenu, text)
+    private def createTriggerMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createTriggerMenuItem(menu, text)
 
         add("LR (Left <<-->> Right)")
         add("Left (Left -->> Right)")
         add("Right (Right -->> Left)")
-        addSeparator(tMenu)
+        addSeparator(menu)
 
         add("Middle")
         add("X1")
         add("X2")
-        addSeparator(tMenu)
+        addSeparator(menu)
 
         add("LeftDrag")
         add("RightDrag")
         add("MiddleDrag")
         add("X1Drag")
         add("X2Drag")
-        addSeparator(tMenu)
+        addSeparator(menu)
 
         add("None")
-        addSeparator(tMenu)
+        addSeparator(menu)
 
-        createBoolMenuItem(tMenu, "sendMiddleClick", "Send MiddleClick", isSingleTrigger)
-        createBoolMenuItem(tMenu, "draggedLock", "Dragged Lock", isDragTrigger)
+        createBoolMenuItem(menu, "sendMiddleClick", "Send MiddleClick", isSingleTrigger)
+        createBoolMenuItem(menu, "draggedLock", "Dragged Lock", isDragTrigger)
 
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("Trigger")
-        item.setMenu(tMenu)
+        createCascadeMenuItem(parent, "Trigger", menu)
     }
 
     private def setAccelMultiplier(name: String) {
@@ -519,38 +517,29 @@ object Context {
     private val accelMenuMap = new HashMap[String, MenuItem]
 
     private def createAccelMenuItem(menu: Menu, text: String) {
-        val item = new MenuItem(menu, SWT.RADIO)
-        item.setText(text)
+        val item = createRadioMenuItem(menu, text)
         val name = textToName(text)
         accelMenuMap(name) = item
 
-        item.addSelectionListener((e: SelectionEvent) => {
-            if (item.getSelection) {
-                unselectOtherItems(accelMenuMap, name)
-                setAccelMultiplier(name)
-            }
-        })
+        addListenerMapMenuItem(item, accelMenuMap, () => setAccelMultiplier(name))
     }
 
-    private def createAccelTableMenu(pMenu: Menu) {
-        val aMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createAccelMenuItem(aMenu, text)
+    private def createAccelTableMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createAccelMenuItem(menu, text)
 
-        createOnOffMenuItem(aMenu, "accelTable")
-        addSeparator(aMenu)
+        createOnOffMenuItem(menu, "accelTable")
+        addSeparator(menu)
 
         add("M5 (1.0 ... 4.8)")
         add("M6 (1.2 ... 5.8)")
         add("M7 (1.4 ... 6.7)")
         add("M8 (1.6 ... 7.7)")
         add("M9 (1.8 ... 8.7)")
-        addSeparator(aMenu)
+        addSeparator(menu)
+        createBoolMenuItem(menu, "customAccelTable", "Custom Table", !Accel.customDisabled)
 
-        createBoolMenuItem(aMenu, "customAccelTable", "Custom Table", !Accel.customDisabled)
-
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("Accel Table")
-        item.setMenu(aMenu)
+        createCascadeMenuItem(parent, "Accel Table", menu)
     }
 
     private def openNumberInputDialog(name: String, low: Int, up: Int) = {
@@ -572,39 +561,57 @@ object Context {
     private val priorityMenuMap = new HashMap[String, MenuItem]
 
     private def createPriorityMenuItem(menu: Menu, text: String) {
-        val item = new MenuItem(menu, SWT.RADIO)
-        item.setText(text)
+        val item = createRadioMenuItem(menu, text)
         priorityMenuMap(text) = item
 
-        item.addSelectionListener((e: SelectionEvent) => {
-            if(item.getSelection)
-                setPriority(item.getText)
-            ()
-        })
+        addListenerSelection(item, _ =>
+            setPriority(item.getText)
+        )
     }
 
-    private def createPriorityMenu(popMenu: Menu) {
-        val priMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createPriorityMenuItem(priMenu, text)
+    private def createPriorityMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createPriorityMenuItem(menu, text)
 
         add("High")
         add("Above Normal")
         add("Normal")
 
-        val item = new MenuItem(popMenu, SWT.CASCADE)
-        item.setText("Priority")
-        item.setMenu(priMenu)
+        createCascadeMenuItem(parent, "Priority", menu)
     }
 
     private val numberMenuMap = new HashMap[String, MenuItem]
 
+    private def createMenuItem(parent: Menu, style: Int, text: String) = {
+        val item = new MenuItem(parent, style)
+        item.setText(text)
+        item
+    }
+
+    private def createPushMenuItem(parent: Menu, text: String) = {
+        createMenuItem(parent, SWT.PUSH, text)
+    }
+
+    private def createRadioMenuItem(parent: Menu, text: String) = {
+        createMenuItem(parent, SWT.RADIO, text)
+    }
+
+    private def createCheckMenuItem(parent: Menu, text: String) = {
+        createMenuItem(parent, SWT.CHECK, text)
+    }
+
+    private def createCascadeMenuItem(parent: Menu, text: String, pulldown: Menu) = {
+        val item = createMenuItem(parent, SWT.CASCADE, text)
+        item.setMenu(pulldown)
+        item
+    }
+
     private def createNumberMenuItem(menu: Menu, name: String, low: Int, up: Int) {
         val n = getNumberOfName(name)
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText(makeNumberText(name, n))
+        val item = createPushMenuItem(menu, makeNumberText(name, n))
         numberMenuMap(name) = item
 
-        item.addListener(SWT.Selection, (e: Event) => {
+        addListener(item, _ => {
             val num = openNumberInputDialog(name, low, up)
             num.foreach(n => {
                 setNumberOfName(name, n)
@@ -613,30 +620,27 @@ object Context {
         })
     }
 
-    private def createNumberMenu(pMenu: Menu) {
-        val nMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String, low: Int, up: Int) = createNumberMenuItem(nMenu, text, low, up)
+    private def createNumberMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String, low: Int, up: Int) = createNumberMenuItem(menu, text, low, up)
 
         add("pollTimeout", 150, 500)
         add("scrollLocktime", 150, 500)
-        addSeparator(nMenu)
+        addSeparator(menu)
 
         add("verticalThreshold", 0, 500)
         add("horizontalThreshold", 0, 500)
 
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("Set Number")
-        item.setMenu(nMenu)
+        createCascadeMenuItem(parent, "Set Number", menu)
     }
 
     private def getOnOffText(b: Boolean) = if (b) "ON" else "OFF"
 
     private def createOnOffMenuItem(menu: Menu, vname: String, action: Boolean => Unit = _ => {}): Unit = {
-        val item = new MenuItem(menu, SWT.CHECK)
-        item.setText(getOnOffText(getBooleanOfName(vname)))
+        val item = createCheckMenuItem(menu, getOnOffText(getBooleanOfName(vname)))
         boolMenuMap(vname) = item
 
-        item.addListener(SWT.Selection, (e: Event) => {
+        addListener(item, _ => {
             val b = item.getSelection
             item.setText(getOnOffText(b))
             setBooleanOfName(vname, b)
@@ -645,10 +649,9 @@ object Context {
     }
 
     private def createBoolMenuItem(menu: Menu, vName: String, mName: String, enabled: Boolean = true) = {
-        val item = new MenuItem(menu, SWT.CHECK)
-        item.setText(mName)
+        val item = createCheckMenuItem(menu, mName)
         item.setEnabled(enabled)
-        item.addListener(SWT.Selection, makeSetBooleanEvent(vName))
+        addListener(item, makeSetBooleanEvent(vName))
         boolMenuMap(vName) = item
         item
     }
@@ -657,25 +660,23 @@ object Context {
         createBoolMenuItem(menu, vName, vName)
     }
 
-    private def createRealWheelModeMenu(pMenu: Menu) {
-        val rMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(rMenu, name, low, up)
-        def addBool(name: String) = createBoolMenuItem(rMenu, name)
+    private def createRealWheelModeMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(menu, name, low, up)
+        def addBool(name: String) = createBoolMenuItem(menu, name)
 
-        createOnOffMenuItem(rMenu, "realWheelMode")
-        addSeparator(rMenu)
+        createOnOffMenuItem(menu, "realWheelMode")
+        addSeparator(menu)
 
         addNum("wheelDelta", 10, 500)
         addNum("vWheelMove", 10, 500)
         addNum("hWheelMove", 10, 500)
-        addSeparator(rMenu)
+        addSeparator(menu)
 
         addBool("quickFirst")
         addBool("quickTurn")
 
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("Real Wheel Mode")
-        item.setMenu(rMenu)
+        createCascadeMenuItem(parent, "Real Wheel Mode", menu)
     }
 
     private val vhAdjusterMenuMap = new HashMap[String, MenuItem]
@@ -691,38 +692,33 @@ object Context {
     }
 
     private def createVhAdjusterMenuItem(menu: Menu, text: String) {
-        val item = new MenuItem(menu, SWT.RADIO)
-        item.setText(text)
+        val item = createRadioMenuItem(menu, text)
         vhAdjusterMenuMap(text) = item
 
-        item.addSelectionListener((e: SelectionEvent) => {
-            if(item.getSelection)
-                setVhAdjusterMethod(item.getText)
-            ()
-        })
+        addListenerSelection(item, _ =>
+            setVhAdjusterMethod(item.getText)
+        )
     }
 
-    private def createVhAdjusterMenu(pMenu: Menu) {
-        val aMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createVhAdjusterMenuItem(aMenu, text)
-        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(aMenu, name, low, up)
-        def addBool(name: String) = createBoolMenuItem(aMenu, name)
+    private def createVhAdjusterMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createVhAdjusterMenuItem(menu, text)
+        def addNum(name: String, low: Int, up: Int) = createNumberMenuItem(menu, name, low, up)
+        def addBool(name: String) = createBoolMenuItem(menu, name)
 
-        createOnOffMenuItem(aMenu, "vhAdjusterMode")
+        createOnOffMenuItem(menu, "vhAdjusterMode")
         boolMenuMap("vhAdjusterMode").setEnabled(Scroll.horizontal)
-        addSeparator(aMenu)
+        addSeparator(menu)
 
         add("Fixed")
         add("Switching")
-        addSeparator(aMenu)
+        addSeparator(menu)
 
         addBool("firstPreferVertical")
         addNum("firstMinThreshold", 1, 10)
         addNum("switchingThreshold", 10, 500)
 
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("VH Adjuster")
-        item.setMenu(aMenu)
+        createCascadeMenuItem(parent, "VH Adjuster", menu)
     }
 
     private def toString2F(d: Double) =
@@ -736,25 +732,19 @@ object Context {
     }
 
     private def createKeyboardMenuItem(menu: Menu, text: String) {
-        val item = new MenuItem(menu, SWT.RADIO)
-        item.setText(text)
+        val item = createRadioMenuItem(menu, text)
         val name = textToName(text)
         keyboardMenuMap(name) = item
 
-        item.addSelectionListener((e: SelectionEvent) => {
-            if (item.getSelection) {
-                unselectOtherItems(keyboardMenuMap, name)
-                setTargetVKCode(name)
-            }
-        })
+        addListenerMapMenuItem(item, keyboardMenuMap, () => setTargetVKCode(name))
     }
 
-    private def createKeyboardMenu(pMenu: Menu) {
-        val kMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def add(text: String) = createKeyboardMenuItem(kMenu, text)
+    private def createKeyboardMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def add(text: String) = createKeyboardMenuItem(menu, text)
 
-        createOnOffMenuItem(kMenu, "keyboardHook", Hook.setOrUnsetKeyboardHook)
-        addSeparator(kMenu)
+        createOnOffMenuItem(menu, "keyboardHook", Hook.setOrUnsetKeyboardHook)
+        addSeparator(menu)
 
         add("VK_TAB (Tab)")
         add("VK_PAUSE (Pause)")
@@ -779,13 +769,10 @@ object Context {
         add("VK_RCONTROL (Right Ctrl)")
         add("VK_LMENU (Left Alt)")
         add("VK_RMENU (Right Alt)")
-        addSeparator(kMenu)
-
+        addSeparator(menu)
         add("None")
 
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("Keyboard")
-        item.setMenu(kMenu)
+        createCascadeMenuItem(parent, "Keyboard", menu)
     }
 
     private val DEFAULT_DEF = Properties.DEFAULT_DEF
@@ -796,20 +783,17 @@ object Context {
 
             selectedProperties = name
             loadProperties
-            resetMenuItems
+            resetAllMenuItems
         }
     }
 
     private def addPropertiesMenu(menu: Menu, name: String) {
-        val item = new MenuItem(menu, SWT.RADIO)
-        item.setText(name)
+        val item = createRadioMenuItem(menu, name)
         item.setSelection(name == selectedProperties)
 
-        item.addListener(SWT.Selection, (e: Event) => {
-            if (item.getSelection) {
-                storeProperties
-                setProperties(name)
-            }
+        addListenerSelection(item, _ => {
+            storeProperties
+            setProperties(name)
         })
     }
 
@@ -821,22 +805,22 @@ object Context {
         addPropertiesMenu(menu, Properties.getUserDefName(file))
     }
 
+    private def openDir(path: String) {
+        val desk = java.awt.Desktop.getDesktop
+        desk.browse(new File(path).toURI())
+    }
+
     private def createOpenDirMenuItem(menu: Menu, dir: String) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Open Dir")
-        item.addListener(SWT.Selection, (e: Event) => {
-            val desk = java.awt.Desktop.getDesktop
-            desk.browse(new File(dir).toURI())
-        })
+        val item = createPushMenuItem(menu, "Open Dir")
+        addListener(item, _ => openDir(dir))
     }
 
     private def isValidPropertiesName(name: String) =
         (name != DEFAULT_DEF) && !(name.startsWith("--"))
 
     private def createAddPropertiesMenuItem(menu: Menu) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Add")
-        item.addListener(SWT.Selection, (e: Event) => {
+        val item = createPushMenuItem(menu, "Add")
+        addListener(item, _ => {
             val dialog = new Dialog.TextInputDialog(systemShell, "Properties Name", "Add Properties")
             val res = dialog.open
 
@@ -859,11 +843,10 @@ object Context {
     }
 
     private def createDeletePropertiesMenuItem(menu: Menu) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Delete")
+        val item = createPushMenuItem(menu, "Delete")
         val name = selectedProperties
         item.setEnabled(name != DEFAULT_DEF)
-        item.addListener(SWT.Selection, (e: Event) => {
+        addListener(item, _ => {
             try {
                 if (Dialog.openYesNoMessage(systemShell, s"Delete the '$name' properties?")) {
                     Properties.delete(name)
@@ -877,53 +860,46 @@ object Context {
         })
     }
 
-    private def createPropertiesMenu(pMenu: Menu) {
-        val sMenu = new Menu(systemShell, SWT.DROP_DOWN)
-        def addDefault = addDefaultPropertiesMenu(sMenu)
-        def add(f: File) = addPropertiesMenu(sMenu, f)
+    private def createPropertiesMenu(parent: Menu) {
+        val menu = new Menu(systemShell, SWT.DROP_DOWN)
+        def addDefault = addDefaultPropertiesMenu(menu)
+        def add(f: File) = addPropertiesMenu(menu, f)
 
-        sMenu.addMenuListener(new MenuListener() {
-            override def menuHidden(e: MenuEvent) {}
-            override def menuShown(e: MenuEvent) {
-                sMenu.getItems.foreach(_.dispose)
+        menu.addListener(SWT.Show, (_: Event) => {
+            logger.debug("Listener - Show: PropertiesMenu")
+            menu.getItems.foreach(_.dispose)
 
-                createReloadPropertiesMenu(sMenu)
-                createSavePropertiesMenu(sMenu)
-                addSeparator(sMenu)
+            createReloadPropertiesMenu(menu)
+            createSavePropertiesMenu(menu)
+            addSeparator(menu)
 
-                createOpenDirMenuItem(sMenu, Properties.USER_DIR)
-                createAddPropertiesMenuItem(sMenu)
-                createDeletePropertiesMenuItem(sMenu)
-                addSeparator(sMenu)
+            createOpenDirMenuItem(menu, Properties.USER_DIR)
+            createAddPropertiesMenuItem(menu)
+            createDeletePropertiesMenuItem(menu)
+            addSeparator(menu)
 
-                addDefault
-                addSeparator(sMenu)
+            addDefault
+            addSeparator(menu)
 
-                Properties.getPropFiles.foreach(add)
-            }
+            Properties.getPropFiles.foreach(add)
         })
 
+        createCascadeMenuItem(parent, "Properties", menu)
+    }
 
-        val item = new MenuItem(pMenu, SWT.CASCADE)
-        item.setText("Properties")
-        item.setMenu(sMenu)
+    def reloadProperties {
+        loadProperties
+        resetAllMenuItems
     }
 
     private def createReloadPropertiesMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Reload")
-        item.addListener(SWT.Selection, (e: Event) => {
-            loadProperties
-            resetMenuItems
-        })
+        val item = createPushMenuItem(menu, "Reload")
+        addListener(item, _ => reloadProperties)
     }
 
     private def createSavePropertiesMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Save")
-        item.addListener(SWT.Selection, (e: Event) => {
-            storeProperties
-        })
+        val item = createPushMenuItem(menu, "Save")
+        addListener(item, _ => storeProperties)
     }
 
     private def makeSetBooleanEvent(name: String) = {
@@ -942,9 +918,9 @@ object Context {
 
     private def createHorizontalScrollMenu(menu: Menu) = {
         val item = createBoolMenuItem(menu, "horizontalScroll", "Horizontal Scroll")
-        item.addListener(SWT.Selection, (e: Event) => {
+        addListener(item, _ =>
             boolMenuMap("vhAdjusterMode").setEnabled(item.getSelection)
-        })
+        )
     }
 
     private def createReverseScrollMenu(menu: Menu) = {
@@ -958,16 +934,14 @@ object Context {
     private var passModeMenuItem: MenuItem = null
 
     private def createPassModeMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.CHECK)
-        item.setText("Pass Mode")
-        item.addListener(SWT.Selection, makeSetBooleanEvent("passMode"))
+        val item = createCheckMenuItem(menu, "Pass Mode")
+        addListener(item, makeSetBooleanEvent("passMode"))
         passModeMenuItem = item
     }
 
     private def createInfoMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Info")
-        item.addListener(SWT.Selection, (e: Event) => {
+        val item = createPushMenuItem(menu, "Info")
+        addListener(item, _ => {
             val nameVer = s"Name: $PROGRAM_NAME / Version: $PROGRAM_VERSION\n\n"
             val jVer = s"java.version: ${System.getProperty("java.version")}\n"
             val osArch = s"os.arch: ${System.getProperty("os.arch")}\n"
@@ -977,7 +951,6 @@ object Context {
             mb.setText("Info")
             mb.setMessage(nameVer + jVer + osArch + dataModel)
             mb.open()
-            ()
         })
     }
 
@@ -987,9 +960,8 @@ object Context {
     }
 
     private def createExitMenu(menu: Menu) {
-        val item = new MenuItem(menu, SWT.PUSH)
-        item.setText("Exit")
-        item.addListener(SWT.Selection, exitAction _)
+        val item = createPushMenuItem(menu, "Exit")
+        addListener(item, exitAction)
     }
 
     private def createTrayItem(menu: Menu) = {
@@ -998,7 +970,7 @@ object Context {
         tray.setImage(getTrayIcon(false))
 
         tray.addListener(SWT.MenuDetect, (e: Event) => menu.setVisible(true))
-        tray.addListener(SWT.DefaultSelection, (e: Event) => Pass.toggleMode)
+        tray.addListener(SWT.DefaultSelection, (e: Event) => Pass.toggleMode) // Double Click
 
         tray
     }
@@ -1033,7 +1005,7 @@ object Context {
         createInfoMenu(menu)
         createExitMenu(menu)
 
-        resetMenuItems
+        resetAllMenuItems
     }
 
     def resetSystemTray {
@@ -1359,5 +1331,13 @@ object Context {
         catch {
             case e: Exception => logger.warn(s"store: ${e.toString}")
         }
+    }
+
+    def initState: Unit = {
+        EventHandler.initState
+        KEventHandler.initState()
+        LastFlags.init
+        exitScrollMode
+        EventWaiter.offer(Cancel(null))
     }
 }

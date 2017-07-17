@@ -25,9 +25,13 @@ object KEventHandler {
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
 
+    private def debug(msg: String, ke: KeyboardEvent) {
+        logger.debug(msg + ": " + ke.name)
+    }
+
     private def skipFirstUp(ke: KeyboardEvent): Option[LRESULT] = {
         if (lastEvent == null) {
-            logger.debug(s"skip first Up: ${ke.name}")
+            debug("skip first Up", ke)
             callNextHook
         }
         else
@@ -36,7 +40,7 @@ object KEventHandler {
 
     /*
     private def resetLastFlags(ke: KeyboardEvent): Option[LRESULT] = {
-        logger.debug(s"reset last flag: ${ke.name}")
+        debug("reset last flag", ke)
         ctx.LastFlags.reset(ke)
         None
     }
@@ -44,7 +48,7 @@ object KEventHandler {
 
     private def checkSameLastEvent(ke: KeyboardEvent): Option[LRESULT] = {
         if (ke.same(lastEvent) && ctx.isScrollMode) {
-            logger.debug(s"same last event: ${ke.name}")
+            debug("same last event", ke)
             suppress
         }
         else {
@@ -55,7 +59,7 @@ object KEventHandler {
 
     private def passNotTrigger(ke: KeyboardEvent): Option[LRESULT] = {
         if (!ctx.isTriggerKey(ke)) {
-            logger.debug(s"pass not trigger: ${ke.name}")
+            debug("pass not trigger", ke)
             callNextHook
         }
         else
@@ -64,7 +68,7 @@ object KEventHandler {
 
     private def checkTriggerScrollStart(ke: KeyboardEvent): Option[LRESULT] = {
         if (ctx.isTriggerKey(ke)) {
-            logger.debug(s"start scroll mode: ${ke.name}");
+            debug("start scroll mode", ke)
             ctx.startScrollMode(ke.info)
             suppress
         }
@@ -74,7 +78,7 @@ object KEventHandler {
 
     private def checkExitScrollDown(ke: KeyboardEvent): Option[LRESULT] = {
         if (ctx.isReleasedScrollMode) {
-            logger.debug(s"exit scroll mode (Released): ${ke.name}");
+            debug("exit scroll mode (Released)", ke)
             ctx.exitScrollMode
             ctx.LastFlags.setSuppressed(ke)
             suppress
@@ -86,11 +90,11 @@ object KEventHandler {
     private def checkExitScrollUp(ke: KeyboardEvent): Option[LRESULT] = {
         if (ctx.isPressedScrollMode) {
             if (ctx.checkExitScroll(ke.info.time)) {
-                logger.debug(s"exit scroll mode (Pressed): ${ke.name}")
+                debug("exit scroll mode (Pressed)", ke)
                 ctx.exitScrollMode
             }
             else {
-                logger.debug(s"continue scroll mode (Released): ${ke.name}")
+                debug("continue scroll mode (Released)", ke)
                 ctx.setReleasedScrollMode
             }
 
@@ -102,7 +106,7 @@ object KEventHandler {
 
     private def checkSuppressedDown(up: KeyboardEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_SuppressedDown(up)) {
-            logger.debug(s"suppress (checkSuppressedDown): ${up.name}")
+            debug("suppress (checkSuppressedDown)", up)
             suppress
         }
         else
@@ -188,18 +192,4 @@ object KEventHandler {
         val ku = KeyUp(info)
         if (ctx.isTriggerKey(ku)) singleUp(ku) else noneUp(ku)
     }
-
-    /*
-    def syskeyDown(info: KHookInfo): LRESULT = {
-        logger.debug(s"syskeyDown: ${info.vkCode}")
-
-        callNextHook.get
-    }
-
-    def syskeyUp(info: KHookInfo): LRESULT = {
-        logger.debug(s"syskeyUp: ${info.vkCode}")
-
-        callNextHook.get
-    }
-    */
 }

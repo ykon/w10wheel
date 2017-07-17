@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        2.5.1
+        2.6
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2017-07-17: v2.6.0: コマンド追加 (--sendReloadProp, --sendInitState)、exeラッパーをexewrapに変更
         2017-07-09: v2.5.1: 初期化機能の修正 (キーボード側の初期化)
         2017-07-02: v2.5.0: 状態の初期化機能を追加 (Escapeキーを押しながらクリック)
         2017-06-12: v2.4.1: スクロール開始のセット順序を変更 (スレッドの問題)
@@ -147,8 +148,14 @@ URL:
 
         --sendPassMode [true | false]
         # --sendPassMode true // PassMode有効
-        実行中のプロセスにPassModeを設定します。 
+        実行中のプロセスに、PassModeを設定します。 
         第二引数を省略した場合はtrueと見なします。
+        
+        --sendReloadProp
+        実行中のプロセスに、設定ファイルの再読込を指示します。
+        
+        --sendInitState
+        実行中のプロセスに、状態の初期化を指示します。
 
         --sendExit
         実行中のプロセスを終了します。
@@ -314,8 +321,8 @@ URL:
         http://icon-generator.net/
 
 .exe:
-        exe wrapper はこちらを使っています。
-        http://launch4j.sourceforge.net/
+        exewrap を使用しています。
+        http://exewrap.osdn.jp/
 
 連絡:
         何かの問題や、気になる点、また改良案などがあったら

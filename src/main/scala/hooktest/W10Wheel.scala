@@ -19,32 +19,7 @@ import java.nio.file.Paths
 object W10Wheel {
     private val ctx = Context
     private val logger = ctx.logger
-
-    private val REPLACE_SWT_NAME = "ReplaceSWT.exe"
-
-    private def getSelfPath = {
-        Paths.get(getClass.getProtectionDomain().getCodeSource().getLocation().toURI())
-    }
-
-    private def exeReplaceSWT {
-        val selfPath = getSelfPath
-        val replaceSwtPath = selfPath.resolveSibling(REPLACE_SWT_NAME)
-        val pb = new ProcessBuilder(replaceSwtPath.toString, selfPath.toString)
-        pb.start
-    }
-
-    private val display = {
-        try {
-            Display.getDefault
-        }
-        catch {
-            case e: UnsatisfiedLinkError => {
-                exeReplaceSWT
-                System.exit(0)
-                null
-            }
-        }
-    }
+    private val display = Display.getDefault
 
     val shell = new Shell(display)
 
@@ -116,6 +91,8 @@ object W10Wheel {
             args(0) match {
                 case "--sendExit" => W10Message.sendExit
                 case "--sendPassMode" => W10Message.sendPassMode(getBool(args, 1))
+                case "--sendReloadProp" => W10Message.sendReloadProp
+                case "--sendInitState" => W10Message.sendInitState
                 case name if name.startsWith("--") => unknownCommand(name)
                 case name => setSelectedProperties(name)
             }
@@ -140,13 +117,6 @@ object W10Wheel {
 
         Hook.setMouseHook
         logger.debug("Mouse hook installed")
-
-        //println(s"depth: ${display.getDepth}")
-        //println(s"dpi: ${display.getDPI}")
-
-
-        //Windows.messageLoop
-        //logger.debug("exit message loop")
 
         swtMessageLoop
         logger.debug("Exit message loop")
