@@ -80,12 +80,14 @@ object Hook {
         }
     }
 
-    def setMouseHook {
+    def setMouseHook: Boolean = {
         mouseHhk = Windows.setHook(mouseProc)
+        mouseHhk != null
     }
 
-    def setKeyboardHook {
+    def setKeyboardHook: Boolean = {
         keyboardHhk = Windows.setHook(keyboardProc)
+        keyboardHhk != null
     }
 
     def unhookMouse {
@@ -103,7 +105,13 @@ object Hook {
     }
 
     def setOrUnsetKeyboardHook(b: Boolean) {
-        if (b) setKeyboardHook else unhookKeyboard
+        if (b) {
+            if (!setKeyboardHook) {
+                Dialog.errorMessage("Failed keyboard hook install: " + Windows.getLastErrorMessage)
+            }
+        }
+        else
+            unhookKeyboard
     }
 
     def unhook {

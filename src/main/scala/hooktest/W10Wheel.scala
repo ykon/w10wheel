@@ -11,11 +11,6 @@ import scala.collection.immutable.List
 import org.eclipse.swt.SWT
 import org.eclipse.swt.widgets._
 
-// for swt.jar
-import javax.swing.UIManager
-import javax.swing.JOptionPane
-import java.nio.file.Paths
-
 object W10Wheel {
     private val ctx = Context
     private val logger = ctx.logger
@@ -32,7 +27,7 @@ object W10Wheel {
     }
 
     private def messageDoubleLaunch {
-        Dialog.errorMessage(shell, "Double Launch?")
+        Dialog.errorMessage("Double Launch?")
     }
 
     private def swtMessageLoop {
@@ -59,14 +54,17 @@ object W10Wheel {
     Runtime.getRuntime.addShutdownHook(shutdown)
     */
 
-    private def getBool(args: Array[String], i: Int) = {
+    private def getBool(sl: List[String]) = {
         try {
-            if (args.length == 1) true else args(i).toBoolean
+            sl match {
+                case s :: _ => s.toBoolean
+                case _ => true
+            }
         }
         catch {
             case e: IllegalArgumentException => {
-                Dialog.errorMessage(shell, e)
-                System.exit(0)
+                Dialog.errorMessageE(e)
+                System.exit(1)
                 false
             }
         }
@@ -76,31 +74,30 @@ object W10Wheel {
         if (Properties.exists(name))
             Context.setSelectedProperties(name)
         else
-            Dialog.errorMessage(shell, s"'$name' properties does not exist.")
+            Dialog.errorMessage(s"'$name' properties does not exist.")
     }
 
     private def unknownCommand(name: String) {
-        Dialog.errorMessage(shell, "Unknown Command: " + name, "Command Error")
-        System.exit(0)
+        Dialog.errorMessage("Unknown Command: " + name, "Command Error")
+        System.exit(1)
     }
 
     private def procArgs(args: Array[String]) {
         logger.debug("procArgs")
-
-        if (args.length > 0) {
-            args(0) match {
-                case "--sendExit" => W10Message.sendExit
-                case "--sendPassMode" => W10Message.sendPassMode(getBool(args, 1))
-                case "--sendReloadProp" => W10Message.sendReloadProp
-                case "--sendInitState" => W10Message.sendInitState
-                case name if name.startsWith("--") => unknownCommand(name)
-                case name => setSelectedProperties(name)
-            }
-
-            if (args(0).startsWith("--send")) {
-                Thread.sleep(1000)
-                System.exit(0)
-            }
+        
+        args.toList match {
+            case "--sendExit" :: _ => W10Message.sendExit
+            case "--sendPassMode" :: rest => W10Message.sendPassMode(getBool(rest))
+            case "--sendReloadProp" :: _ => W10Message.sendReloadProp
+            case "--sendInitState" :: _ => W10Message.sendInitState
+            case name :: _ if name.startsWith("--") => unknownCommand(name)
+            case name :: _ => setSelectedProperties(name)
+            case _ => ()
+        }
+        
+        if (args.length > 0 && args(0).startsWith("--send")) {
+            Thread.sleep(1000)
+            System.exit(0)
         }
     }
 
@@ -109,13 +106,17 @@ object W10Wheel {
 
         if (!PreventMultiInstance.tryLock) {
             messageDoubleLaunch
-            System.exit(0)
+            System.exit(1)
         }
 
         ctx.loadProperties
         ctx.setSystemTray
 
-        Hook.setMouseHook
+        if (!Hook.setMouseHook) {
+            Dialog.errorMessage("Failed mouse hook install: " + Windows.getLastErrorMessage)
+            System.exit(1)
+        }
+        
         logger.debug("Mouse hook installed")
 
         swtMessageLoop

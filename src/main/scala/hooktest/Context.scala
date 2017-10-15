@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.6"
+    val PROGRAM_VERSION = "2.6.1"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -130,7 +130,7 @@ object Context {
         @volatile var customThreshold: Array[Int] = null
         @volatile var customMultiplier: Array[Double] = null
 
-        @volatile var table = false // default
+        @volatile var table = true // default
         @volatile var threshold: Array[Int] = TD // default
         @volatile var multiplier: Multiplier = M5() // default
 
@@ -162,7 +162,7 @@ object Context {
 
     private object Threshold {
         @volatile var vertical = 0 // default
-        @volatile var horizontal = 50 // default
+        @volatile var horizontal = 75 // default
     }
 
     def getVerticalThreshold = Threshold.vertical
@@ -832,12 +832,12 @@ object Context {
                         selectedProperties = name
                     }
                     else
-                        Dialog.errorMessage(systemShell, s"Invalid Name: $name", "Name Error")
+                        Dialog.errorMessage(s"Invalid Name: $name", "Name Error")
                 })
             }
             catch {
                 case e: Exception =>
-                    Dialog.errorMessage(systemShell, e)
+                    Dialog.errorMessageE(e)
             }
         })
     }
@@ -848,14 +848,14 @@ object Context {
         item.setEnabled(name != DEFAULT_DEF)
         addListener(item, _ => {
             try {
-                if (Dialog.openYesNoMessage(systemShell, s"Delete the '$name' properties?")) {
+                if (Dialog.openYesNoMessage(s"Delete the '$name' properties?")) {
                     Properties.delete(name)
                     setProperties(DEFAULT_DEF)
                 }
             }
             catch {
                 case e: Exception =>
-                    Dialog.errorMessage(systemShell, e)
+                    Dialog.errorMessageE(e)
             }
         })
     }

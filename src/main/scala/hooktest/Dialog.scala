@@ -20,22 +20,36 @@ object Dialog {
         override def handleEvent(e: Event) { f(e) }
     }
     
-    def errorMessage(parent: Shell, msg: String, title: String = "Error") {
+    def __errorMessage(parent: Shell, msg: String, title: String = "Error") {
         val mb = new MessageBox(parent, SWT.OK | SWT.ICON_ERROR)
         mb.setText(title)
         mb.setMessage(msg)
         mb.open()
     }
     
-    def errorMessage(parent: Shell, e: Exception) {
-        errorMessage(parent, e.getMessage, e.getClass.getName)
+    private lazy val defaultShell = W10Wheel.shell
+    
+    def errorMessage(msg: String, title: String = "Error") {
+        __errorMessage(defaultShell, msg, title);
     }
     
-    def openYesNoMessage(parent: Shell, msg: String, title: String = "Question"): Boolean = {
+    def __errorMessageE(parent: Shell, e: Exception) {
+        __errorMessage(parent, e.getMessage, e.getClass.getName)
+    }
+    
+    def errorMessageE(e: Exception) {
+        __errorMessageE(defaultShell, e);
+    }
+    
+    def __openYesNoMessage(parent: Shell, msg: String, title: String = "Question"): Boolean = {
         val mb = new MessageBox(parent, SWT.YES | SWT.NO | SWT.ICON_QUESTION)
         mb.setText(title)
         mb.setMessage(msg)
         mb.open() == SWT.YES
+    }
+    
+    def openYesNoMessage(msg: String, title: String = "Question"): Boolean = {
+        __openYesNoMessage(defaultShell, msg, title);
     }
     
     class NumberInputDialog(parent: Shell, name: String, low: Int, up: Int, cur: Int) extends Dialog(parent) {
@@ -101,7 +115,7 @@ object Dialog {
             res >= low && res <= up
             
         private def errorMessage(input: Int) {
-            Dialog.errorMessage(parent, s"Invalid Number: $input")
+            Dialog.__errorMessage(parent, s"Invalid Number: $input")
         }
         
         def open: Option[Int] = {

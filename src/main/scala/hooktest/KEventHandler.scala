@@ -132,8 +132,10 @@ object KEventHandler {
     @tailrec
     private def getResult(cs: Checkers, ke: KeyboardEvent): LRESULT = cs match {
         case f :: fs => {
-            val res = f(ke)
-            if (res.isDefined) res.get else getResult(fs, ke)
+            f(ke) match {
+                case Some(res) => res
+                case None => getResult(fs, ke)
+            }
         }
         case _ => throw new IllegalArgumentException()
     }

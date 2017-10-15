@@ -242,14 +242,14 @@ object Windows {
         val ad = Math.abs(d)
 
         @tailrec
-        def loop(i: Int): Int = {
-            val n = thr(i)
-            if (n == ad)
-                i
-            else if (n > ad)
-                if (n - ad < Math.abs(thr(i - 1) - ad)) i else i - 1
-            else
-                if (i != thr.length - 1) loop(i + 1) else i
+        def loop(i: Int): Int = {                
+            thr(i) match {
+                case n if n == ad => i
+                case n if n > ad =>
+                    if (n - ad < Math.abs(thr(i - 1) - ad)) i else i - 1
+                case _ =>
+                    if (i != thr.length - 1) loop(i + 1) else i
+            }
         }
 
         loop(0)
@@ -611,14 +611,22 @@ object Windows {
 
         u32ex.RegisterRawInputDevices(rid, 1, rid(0).size)
     }
+    
+    def getLastErrorCode: Int = {
+        return k32.GetLastError();
+    }
+    
+    def getLastErrorMessage: String = {
+        return Kernel32Util.formatMessage(getLastErrorCode);
+    }
 
     def registerRawInput {
-        if(registerMouseRawInputDevice(RIDEV_INPUTSINK, messageHwnd) == false)
-           logger.error("Failed register RawInput: " + k32.GetLastError())
+        if (!registerMouseRawInputDevice(RIDEV_INPUTSINK, messageHwnd))
+           Dialog.errorMessage("Failed register RawInput: " + getLastErrorMessage)
     }
 
     def unregisterRawInput {
-        if(registerMouseRawInputDevice(RIDEV_REMOVE, null) == false)
-            logger.error("Failed unregister RawInput: " + k32.GetLastError())
+        if (!registerMouseRawInputDevice(RIDEV_REMOVE, null))
+            Dialog.errorMessage("Failed unregister RawInput: " + getLastErrorMessage)
     }
 }

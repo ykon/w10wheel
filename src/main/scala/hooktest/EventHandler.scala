@@ -407,8 +407,10 @@ object EventHandler {
     @tailrec
     private def getResult(cs: Checkers, me: MouseEvent): LRESULT = cs match {
         case f :: fs => {
-            val res = f(me)
-            if (res.isDefined) res.get else getResult(fs, me)
+            f(me) match {
+                case Some(res) => res
+                case None => getResult(fs, me)
+            }
         }
         case _ => throw new IllegalArgumentException()
     }
