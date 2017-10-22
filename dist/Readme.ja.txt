@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        2.6.1
+        2.6.2
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
