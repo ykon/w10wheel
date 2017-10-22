@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.6.1"
+    val PROGRAM_VERSION = "2.6.2"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     val logger = Logger(LoggerFactory.getLogger(PROGRAM_NAME))
@@ -91,7 +91,7 @@ object Context {
 
     def isSendMiddleClick = sendMiddleClick
 
-    trait VHAdjusterMethod {
+    sealed trait VHAdjusterMethod {
         def name = getClass.getSimpleName
     }
     case class Fixed() extends VHAdjusterMethod
@@ -308,46 +308,55 @@ object Context {
         def setResent(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldR.set(true)
             case RightDown(_) => rdR.set(true)
+            case _ => throw new IllegalArgumentException()
         }
 
         def getAndReset_ResentDown(up: MouseEvent): Boolean = up match {
             case LeftUp(_) => ldR.getAndSet(false)
             case RightUp(_) => rdR.getAndSet(false)
+            case _ => throw new IllegalArgumentException()
         }
 
         def setPassed(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldP.set(true)
             case RightDown(_) => rdP.set(true)
+            case _ => throw new IllegalArgumentException()
         }
 
         def getAndReset_PassedDown(up: MouseEvent): Boolean = up match {
             case LeftUp(_) => ldP.getAndSet(false)
             case RightUp(_) => rdP.getAndSet(false)
+            case _ => throw new IllegalArgumentException()
         }
 
         def setSuppressed(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldS.set(true)
             case RightDown(_) => rdS.set(true)
             case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS.set(true)
+            case _ => throw new IllegalArgumentException()
         }
 
         def setSuppressed(down: KeyboardEvent): Unit = down match {
             case KeyDown(_) => kdS(down.vkCode).set(true)
+            case _ => throw new IllegalArgumentException()
         }
 
         def getAndReset_SuppressedDown(up: MouseEvent): Boolean = up match {
             case LeftUp(_) => ldS.getAndSet(false)
             case RightUp(_) => rdS.getAndSet(false)
             case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS.getAndSet(false)
+            case _ => throw new IllegalArgumentException()
         }
 
         def getAndReset_SuppressedDown(up: KeyboardEvent): Boolean = up match {
             case KeyUp(_) => kdS(up.vkCode).getAndSet(false)
+            case _ => throw new IllegalArgumentException()
         }
 
         def resetLR(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldR.set(false); ldS.set(false); ldP.set(false)
             case RightDown(_) => rdR.set(false); rdS.set(false); rdP.set(false)
+            case _ => throw new IllegalArgumentException()
         }
 
         /*

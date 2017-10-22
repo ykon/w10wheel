@@ -8,7 +8,7 @@ package hooktest
 import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
 import win32ex.User32Ex._
 
-trait MouseEvent {
+sealed trait MouseEvent {
     val info: HookInfo
     def name = getClass.getSimpleName
 
@@ -104,7 +104,7 @@ object X2Event {
     }
 }
 
-trait MouseClick {
+sealed trait MouseClick {
     val info: HookInfo
     def name = getClass.getSimpleName
 }
@@ -114,7 +114,7 @@ case class MiddleClick (info: HookInfo) extends MouseClick
 case class X1Click (info: HookInfo) extends MouseClick
 case class X2Click (info: HookInfo) extends MouseClick
 
-trait Trigger {
+sealed trait Trigger {
     def name = getClass.getSimpleName
 
     def isSingle = this match {

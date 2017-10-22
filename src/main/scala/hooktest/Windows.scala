@@ -514,6 +514,7 @@ object Windows {
         me match {
             case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
             case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
+            case _ => throw new IllegalArgumentException()
         }
     }
 
@@ -521,6 +522,7 @@ object Windows {
         me match {
             case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
             case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
+            case _ => throw new IllegalArgumentException()
         }
     }
 
@@ -568,7 +570,7 @@ object Windows {
     def getRightState = getAsyncKeyState(VK_RBUTTON)
     def getEscState = getAsyncKeyState(VK_ESCAPE)
 
-    trait Priority {
+    sealed trait Priority {
         def name = this.getClass.getSimpleName
     }
     case class Normal() extends Priority

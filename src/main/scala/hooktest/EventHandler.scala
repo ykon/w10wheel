@@ -350,6 +350,7 @@ object EventHandler {
                 case MiddleUp(info) => Windows.resendClick(MiddleClick(info))
                 case X1Up(info) => Windows.resendClick(X1Click(info))
                 case X2Up(info) => Windows.resendClick(X2Click(info))
+                case _ => throw new IllegalStateException()
             }
         }
 

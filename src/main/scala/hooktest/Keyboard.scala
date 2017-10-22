@@ -7,7 +7,7 @@ package hooktest
 
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
-trait KeyboardEvent {
+sealed trait KeyboardEvent {
     val info: KHookInfo
     
     def vkCode = info.vkCode

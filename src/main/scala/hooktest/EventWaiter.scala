@@ -138,6 +138,7 @@ object EventWaiter {
         case LeftUp(_) | RightUp(_) => fromUp(down, res)
         case LeftDown(_) | RightDown(_) => fromDown(down, res)
         case Cancel(_) => logger.debug("dispatchEvent: cancel")
+        case _ => throw new IllegalStateException()
     }
 
     private val waiterQueue = new SynchronousQueue[MouseEvent](true)
