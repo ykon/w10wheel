@@ -1,3 +1,4 @@
+*.old
 .settings/
 bin/
 logs/

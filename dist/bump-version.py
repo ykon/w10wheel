@@ -6,7 +6,7 @@
 
 import sys, os, re, codecs, datetime, shutil
 from os.path import abspath, join, dirname
-from decimal import Decimal
+#from decimal import Decimal
 
 ROOT_PATH = abspath(join(dirname(__file__), os.pardir))
 DIST_PATH = dirname(abspath(__file__))
@@ -45,7 +45,7 @@ if command.startswith('--'):
     print('error: unknown command: ' + command)
     sys.exit(1)
     
-ver_num = args[0]
+ver_num = args[0].strip()
 ver_len = len(ver_num)
 
 VER_RE_PAT = r'\d\.\d(\.\d){0,2}'
@@ -79,10 +79,10 @@ if not ctx_ver:
     print('error: failed get version of Context.scala')
     sys.exit(1)
 
-print('ctx_ver: ' + ctx_ver)
-if Decimal(ver_num) < Decimal(ctx_ver):
-    print('error: invalid version: ver_num < ctx_ver')
-    sys.exit(1)
+#print('ctx_ver: ' + ctx_ver)
+#if Decimal(ver_num) < Decimal(ctx_ver):
+#    print('error: invalid version: ver_num < ctx_ver')
+#    sys.exit(1)
 
 def copy_backup(path):
     shutil.copy2(path, path + '.old')
