@@ -5,7 +5,8 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import java.util.concurrent.ArrayBlockingQueue
+//import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent._
 
 import com.sun.jna.Pointer
 import com.sun.jna.WString
@@ -112,7 +113,8 @@ object Windows {
     wmThread.setDaemon(true)
     wmThread.start
 
-    private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
+    //private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
+    private val inputQueue = new LinkedBlockingQueue[Array[INPUT]]()
 
     private val senderThread = new Thread(() =>
         while (true) {
