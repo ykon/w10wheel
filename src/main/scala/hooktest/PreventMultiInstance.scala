@@ -15,26 +15,23 @@ object PreventMultiInstance {
     val LOCK_FILE_DIR = System.getProperty("java.io.tmpdir")
     val LOCK_FILE_NAME = Context.PROGRAM_NAME + ".lock"
     
-    private val logger = Context.logger
+    private val logger = Logger.getLogger()
     
-    @volatile private var channel: FileChannel = null
-    @volatile private var lock: FileLock = null
-    
-    def isLocked: Boolean =
-        (lock != null)
+    @volatile private var channel: Option[FileChannel] = None
+    @volatile private var lock: Option[FileLock] = None
     
     def tryLock: Boolean = {
         logger.debug("tryLock")
         
-        if (isLocked)
+        if (lock.isDefined)
             throw new IllegalStateException()
         
         try {
             val file = new File(LOCK_FILE_DIR, LOCK_FILE_NAME)
-            channel = new RandomAccessFile(file, "rw").getChannel()    
-            lock = channel.tryLock
+            channel = Option(new RandomAccessFile(file, "rw").getChannel())    
+            lock = Option(channel.get.tryLock)
             
-            isLocked
+            lock.isDefined
         }
         catch {
             case e: Exception => logger.warn(s"tryLock: $e"); false
@@ -44,15 +41,15 @@ object PreventMultiInstance {
     def unlock {
         logger.debug("unlock")
         
-        if (!isLocked)
+        if (lock.isEmpty)
             return
                 
         try {            
-            lock.release
-            channel.close
+            lock.get.release()
+            channel.get.close
             
-            lock = null
-            channel = null
+            lock = None
+            channel = None
         }
         catch {
             case e: Exception => logger.warn(s"unlock: $e")

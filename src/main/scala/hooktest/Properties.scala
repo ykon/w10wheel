@@ -29,9 +29,11 @@ object Properties {
             this.load(new FileInputStream(path.toFile))
         }
         
-        def getPropertyE(key: String): String = synchronized {
-            val res = super.getProperty(key)
-            if (res != null) res else throw new NoSuchElementException(key)
+        private def getPropertyE(key: String): String = synchronized {
+            Option(super.getProperty(key)) match {
+                case None => throw new NoSuchElementException(key)
+                case Some(res) => res
+            }
         }
         
         def getString(key: String) = synchronized {
@@ -98,15 +100,15 @@ object Properties {
     val DEFAULT_DEF = "Default"
     
     private val BAD_DEFAULT_NAME = s"$PROP_NAME.$DEFAULT_DEF.$PROP_EXT"
-    private val userDefPat = s"^\\.$PROGRAM_NAME\\.(?!--)(.+)\\.$PROP_EXT$$".r
+    private val userDefReg = s"^\\.$PROGRAM_NAME\\.(?!--)(.+)\\.$PROP_EXT$$".r
     
     private def isPropFile(f: File): Boolean = {
         val name = f.getName
-        name != BAD_DEFAULT_NAME && userDefPat.findFirstIn(name).isDefined
+        name != BAD_DEFAULT_NAME && userDefReg.findFirstIn(name).isDefined
     }
     
     def getUserDefName(file: File) = {
-        val userDefPat(uname) = file.getName
+        val userDefReg(uname) = file.getName
         uname
     }
     

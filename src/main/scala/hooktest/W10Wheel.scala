@@ -13,8 +13,10 @@ import org.eclipse.swt.widgets._
 
 object W10Wheel {
     private val ctx = Context
-    private val logger = ctx.logger
+    private val logger = Logger.getLogger()
     private val display = Display.getDefault
+    
+    private lazy val convLang = ctx.convLang _
 
     val shell = new Shell(display)
 
@@ -27,7 +29,7 @@ object W10Wheel {
     }
 
     private def messageDoubleLaunch {
-        Dialog.errorMessage("Double Launch?")
+        Dialog.errorMessage(convLang("Double Launch?"))
     }
 
     private def swtMessageLoop {
@@ -74,11 +76,11 @@ object W10Wheel {
         if (Properties.exists(name))
             Context.setSelectedProperties(name)
         else
-            Dialog.errorMessage(s"'$name' properties does not exist.")
+            Dialog.errorMessage(s"${convLang("Properties does not exist")}: $name")
     }
 
     private def unknownCommand(name: String) {
-        Dialog.errorMessage("Unknown Command: " + name, "Command Error")
+        Dialog.errorMessage(s"${convLang("Unknown Command")}: $name", convLang("Command Error"))
         System.exit(1)
     }
 
@@ -113,7 +115,7 @@ object W10Wheel {
         ctx.setSystemTray
 
         if (!Hook.setMouseHook) {
-            Dialog.errorMessage("Failed mouse hook install: " + Windows.getLastErrorMessage)
+            Dialog.errorMessage(s"${convLang("Failed mouse hook install")}: " + Windows.getLastErrorMessage)
             System.exit(1)
         }
         

@@ -15,11 +15,11 @@ object EventWaiter {
     private val THREAD_PRIORITY = 7 // THREAD_PRIORITY_ABOVE_NORMAL
 
     private val ctx = Context
-    private val logger = ctx.logger
+    private val logger = Logger.getLogger()
     private val sync = new SynchronousQueue[MouseEvent](true)
 
     private val waiting = new AtomicBoolean(false)
-    private var waitingEvent: MouseEvent = null
+    private var waitingEvent: MouseEvent = NonEvent(null)
 
     private def setFlagsOffer(me: MouseEvent) {
         //logger.debug("setFlagsOffer")

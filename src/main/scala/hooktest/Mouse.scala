@@ -67,6 +67,8 @@ case class X1Up (info: HookInfo) extends MouseEvent
 case class X2Down (info: HookInfo) extends MouseEvent
 case class X2Up (info: HookInfo) extends MouseEvent
 case class Move (info: HookInfo) extends MouseEvent
+
+case class NonEvent (info: HookInfo) extends MouseEvent
 case class Cancel (info: HookInfo) extends MouseEvent
 
 object LeftEvent {
@@ -165,18 +167,18 @@ object Mouse {
     }
 
     def getTrigger(s: String): Trigger = s match {
-        case "LR" | "LRTrigger" => LRTrigger()
-        case "Left" | "LeftTrigger" => LeftTrigger()
-        case "Right" | "RightTrigger" => RightTrigger()
-        case "Middle" | "MiddleTrigger" => MiddleTrigger()
-        case "X1" | "X1Trigger" => X1Trigger()
-        case "X2" | "X2Trigger" => X2Trigger()
-        case "LeftDrag" | "LeftDragTrigger" => LeftDragTrigger()
-        case "RightDrag" | "RightDragTrigger" => RightDragTrigger()
-        case "MiddleDrag" | "MiddleDragTrigger" => MiddleDragTrigger()
-        case "X1Drag" | "X1DragTrigger" => X1DragTrigger()
-        case "X2Drag" | "X2DragTrigger" => X2DragTrigger()
-        case "None" | "NoneTrigger" => NoneTrigger()
+        case DataID.LR | "LRTrigger" => LRTrigger()
+        case DataID.Left | "LeftTrigger" => LeftTrigger()
+        case DataID.Right | "RightTrigger" => RightTrigger()
+        case DataID.Middle | "MiddleTrigger" => MiddleTrigger()
+        case DataID.X1 | "X1Trigger" => X1Trigger()
+        case DataID.X2 | "X2Trigger" => X2Trigger()
+        case DataID.LeftDrag | "LeftDragTrigger" => LeftDragTrigger()
+        case DataID.RightDrag | "RightDragTrigger" => RightDragTrigger()
+        case DataID.MiddleDrag | "MiddleDragTrigger" => MiddleDragTrigger()
+        case DataID.X1Drag | "X1DragTrigger" => X1DragTrigger()
+        case DataID.X2Drag | "X2DragTrigger" => X2DragTrigger()
+        case DataID.None | "NoneTrigger" => NoneTrigger()
     }
 
     def samePoint(me1: MouseEvent, me2: MouseEvent) =

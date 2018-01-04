@@ -27,7 +27,7 @@ import java.util.Random
 
 object Windows {
     private val ctx = Context
-    private val logger = ctx.logger
+    private val logger = Logger.getLogger()
     private val u32 = User32.INSTANCE
     private val u32ex = User32Ex.INSTANCE
     private val k32 = Kernel32.INSTANCE
@@ -75,7 +75,7 @@ object Windows {
                     return new LRESULT(0)
                 case TaskbarCreated => {
                     logger.debug("TaskbarCreated")
-                    ctx.resetSystemTray
+                    Context.resetSystemTray
                     return new LRESULT(0)
                 }
                 case _ => {}
@@ -84,16 +84,16 @@ object Windows {
             u32.DefWindowProc(hwnd, uMsg, wParam, lParam)
         }
     }
+    
+    private val CLASS_NAME = Context.PROGRAM_NAME + "_WM"
 
     private val messageHwnd: HWND = {
-        val className = ctx.PROGRAM_NAME + "_WM"
-
         val wx = new WNDCLASSEX
-        wx.lpszClassName = className
+        wx.lpszClassName = CLASS_NAME
         wx.lpfnWndProc = windowProc
 
         if (u32.RegisterClassEx(wx).intValue() != 0) {
-            val hwnd = u32.CreateWindowEx(0, className, null, 0, 0, 0, 0, 0, null, null, null, null)
+            val hwnd = u32.CreateWindowEx(0, CLASS_NAME, null, 0, 0, 0, 0, 0, null, null, null, null)
             u32ex.ChangeWindowMessageFilterEx(hwnd, TaskbarCreated, MSGFLT_ALLOW, null);
 
             hwnd
@@ -218,12 +218,13 @@ object Windows {
     private var vwCount = 0
     private var hwCount = 0
 
-    abstract class MoveDirection
+    sealed abstract class MoveDirection
     case class Plus() extends MoveDirection
     case class Minus() extends MoveDirection
+    case class Zero() extends MoveDirection
 
-    private var vLastMove: MoveDirection = null
-    private var hLastMove: MoveDirection = null
+    private var vLastMove: MoveDirection = Zero()
+    private var hLastMove: MoveDirection = Zero()
 
     private var vWheelMove = 0
     private var hWheelMove = 0
@@ -233,8 +234,8 @@ object Windows {
         vwCount = if (ctx.isQuickFirst) vWheelMove else vWheelMove / 2
         hwCount = if (ctx.isQuickFirst) hWheelMove else hWheelMove / 2
 
-        vLastMove = null
-        hLastMove = null
+        vLastMove = Zero()
+        hLastMove = Zero()
     }
 
     import scala.annotation.tailrec
@@ -285,9 +286,9 @@ object Windows {
     }
 
     private def isTurnMove(last: MoveDirection, d: Int) = last match {
-        case null => false
         case Plus() => d < 0
         case Minus() => d > 0
+        case _ => false
     }
 
     private def sendRealVWheel(pt: POINT, d: Int) {
@@ -330,11 +331,14 @@ object Windows {
     private var sendVWheel = sendDirectVWheel _
     private var sendHWheel = sendDirectHWheel _
 
-    abstract class VHDirection
+    sealed abstract class VHDirection
     case class Vertical() extends VHDirection
     case class Horizontal() extends VHDirection
+    case class NonDirection() extends VHDirection
 
-    private var vhDirection: VHDirection = null
+    //private var vhDirection: VHDirection = NonDirection()
+    private var fixedVHD: VHDirection = NonDirection()
+    private var latestVHD: VHDirection = NonDirection()
 
     private def initFuncs {
         addAccelIf = if (ctx.isAccelTable) addAccel else passInt
@@ -365,9 +369,11 @@ object Windows {
     }
 
     private def initVhAdjusterMode {
-        vhDirection = null
+        //vhDirection = NonDirection()
+        fixedVHD = NonDirection()
+        latestVHD = NonDirection()
         switchingThreshold = ctx.getSwitchingThreshold
-        checkSwitchVHAif = if (ctx.isVhAdjusterSwitching) checkSwitchVHA _ else checkSwitchVHAifNone _
+        switchVHDif = if (ctx.isVhAdjusterSwitching) switchVHD _ else switchVHDifNone _
     }
 
     private def initStdMode {
@@ -390,48 +396,63 @@ object Windows {
         else
             initStdMode
     }
-
-    private def setVerticalVHA {
-        vhDirection = Vertical()
-        if (ctx.isCursorChange) changeCursorV
+    
+    private def changeCursorVHD(vhd: VHDirection): Unit = vhd match {
+        case Vertical() => {
+            if (ctx.isCursorChange) changeCursorV
+        }
+        case Horizontal() => {
+            if (ctx.isCursorChange) changeCursorH
+        }
+        case _ => ()
     }
 
-    private def setHorizontalVHA {
-        vhDirection = Horizontal()
-        if (ctx.isCursorChange) changeCursorH
-    }
-
-    private def checkFirstVHA(adx: Int, ady: Int) {
+    private def getFirstVHD(adx: Int, ady: Int): VHDirection = {
         val mthr = ctx.getFirstMinThreshold
         if (adx > mthr || ady > mthr) {
             val y = if (ctx.isFirstPreferVertical) ady * 2 else ady
-            if (y >= adx) setVerticalVHA else setHorizontalVHA
+            if (y >= adx) Vertical() else Horizontal()
         }
+        else
+            NonDirection()
     }
 
     private var switchingThreshold = 0
 
-    private def checkSwitchVHA(adx: Int, ady: Int) {
+    private def switchVHD(adx: Int, ady: Int): VHDirection = {
         val sthr = switchingThreshold
-        if (ady > sthr) setVerticalVHA else if (adx > sthr) setHorizontalVHA
+        if (ady > sthr)
+            Vertical()
+        else if (adx > sthr)
+            Horizontal()
+        else
+            NonDirection()
     }
 
-    private def checkSwitchVHAifNone(adx: Int, ady: Int) {}
-    private var checkSwitchVHAif = checkSwitchVHA _
+    private def switchVHDifNone(adx: Int, ady: Int): VHDirection = fixedVHD
+    private var switchVHDif = switchVHD _
 
-    private def sendWheelVHA(wspt: POINT, dx: Int, dy: Int) {
+    private def sendWheelVHA(wspt: POINT, dx: Int, dy: Int): Unit = {
         val adx = Math.abs(dx)
         val ady = Math.abs(dy)
+        
+        val curVHD = fixedVHD match {
+            case NonDirection() => {
+                fixedVHD = getFirstVHD(adx, ady)
+                fixedVHD
+            }
+            case _ => switchVHDif(adx, ady)
+        }
+        
+        if (curVHD != NonDirection() && curVHD != latestVHD) {
+            changeCursorVHD(curVHD)
+            latestVHD = curVHD
+        }
 
-        if (vhDirection == null) // first
-            checkFirstVHA(adx, ady)
-        else
-            checkSwitchVHAif(adx, ady)
-
-        vhDirection match {
-            case null => ()
+        latestVHD match {
             case Vertical() => if (dy != 0) sendVWheel(wspt, dy)
             case Horizontal() => if (dx != 0) sendHWheel(wspt, dx)
+            case _ => ()
         }
     }
 
@@ -580,9 +601,9 @@ object Windows {
     case class High() extends Priority
 
     def getPriority(name: String) = name match {
-        case "High" => High()
-        case "AboveNormal" | "Above Normal" => AboveNormal()
-        case "Normal" => Normal()
+        case DataID.High => High()
+        case DataID.AboveNormal | "Above Normal" => AboveNormal()
+        case DataID.Normal => Normal()
     }
 
     def setPriority(p: Priority) = {

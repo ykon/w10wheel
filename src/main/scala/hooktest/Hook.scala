@@ -18,18 +18,19 @@ import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 object Hook {
     private val ctx = Context
-    private val logger = ctx.logger
+    private val logger = Logger.getLogger()
 
     @volatile private var mouseHhk: HHOOK = null
     @volatile private var keyboardHhk: HHOOK = null
 
     private def procCommand(info: HookInfo): Boolean = {
         if ((info.mouseData >>> 16) != 1)
-            return false
-
-        logger.debug("receive (mouseData >>> 16) = 1")
-        val msg = info.dwExtraInfo.intValue()
-        W10Message.procMessage(msg)
+            false
+        else {
+            logger.debug("receive (mouseData >>> 16) = 1")
+            val msg = info.dwExtraInfo.intValue()
+            W10Message.procMessage(msg)
+        }
     }
 
     private val mouseProc = new LowLevelMouseProc() {

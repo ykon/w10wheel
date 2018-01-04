@@ -12,20 +12,20 @@ import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
 
 object EventHandler {
     private val ctx = Context
-    private val logger = ctx.logger
+    private val logger = Logger.getLogger()
 
-    private var lastEvent: MouseEvent = null
-    private var lastResendLeftEvent: MouseEvent = null
-    private var lastResendRightEvent: MouseEvent = null
+    private var lastEvent: MouseEvent = NonEvent(null)
+    private var lastResendLeftEvent: MouseEvent = NonEvent(null)
+    private var lastResendRightEvent: MouseEvent = NonEvent(null)
 
     private var resentDownUp = false
     private var secondTriggerUp = false
     private var dragged = false
 
     def initState {
-        lastEvent = null
-        lastResendLeftEvent = null
-        lastResendRightEvent = null
+        lastEvent = NonEvent(null)
+        lastResendLeftEvent = NonEvent(null)
+        lastResendRightEvent = NonEvent(null)
         resentDownUp = false
         secondTriggerUp = false
         dragged = false
@@ -50,7 +50,7 @@ object EventHandler {
     }
 
     private def isCorrectOrder(pre: MouseEvent, cur: MouseEvent): Boolean = (pre, cur) match {
-        case (null, LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (null, RightUp(_)) | (RightUp(_), RightUp(_)) =>
+        case (NonEvent(_), LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (NonEvent(_), RightUp(_)) | (RightUp(_), RightUp(_)) =>
             false
         case _ => true
     }
@@ -125,7 +125,7 @@ object EventHandler {
     }
 
     private def skipFirstUp(me: MouseEvent): Option[LRESULT] = {
-        if (lastEvent == null) {
+        if (lastEvent == NonEvent(null)) {
             debug("skip first Up", me)
             callNextHook
         }

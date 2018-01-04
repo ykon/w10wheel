@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        2.6.5
+        2.7
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2018-01-04: v2.7.0: メニューとダイアログテキストの日本語化、水平スクロールバグ修正、他
         2017-12-10: v2.6.5: IOの高負荷状態に、入力キューが溢れていた問題を修正
         2017-11-19: v2.6.4: exewrap 1.2.2に更新 (JREの検出処理を修正)
         2017-10-28: v2.6.3: exewrapを更新 (Java9のパスをレジストリから検出)
@@ -81,7 +82,7 @@ URL:
         Java 8 のシステム要件項目 Windows を参照
         https://www.java.com/ja/download/help/sysreq.xml
         
-        最新の Java 8 をインストールしてください。
+        最新の Java 8 または 9 をインストールしてください。
         http://java.com/ja/
         
         Windows 7, 8.1:
@@ -97,6 +98,7 @@ URL:
         
 互換性:
         Logitech(ロジクール) の SetPoint は問題ありません。
+        # 環境によっては駄目な場合もあるようです。
         「ボタンの切り替え」などをしてもうまく動きます。
         フィルタドライバのレベルで動いているものは、恐らく安全です。
         
@@ -199,6 +201,7 @@ URL:
         Reverse Scroll (Flip): スクロールの方向を逆にする (反転する)
         Swap Scroll (V.H): 垂直スクロールと水平スクロールを入れ替える (Vertical <-> Horizontal)
         Pass Mode: 全てのメッセージをそのまま通す # WheelBall の制御停止
+        Language: 言語設定
         Info: バージョン番号を表示
         Exit: 終了
         
@@ -313,6 +316,9 @@ URL:
                 キーボードトリガーを有効にする
         targetVKCode: string (default: VK_NONCONVERT) # Keyboard
                 トリガーに使うキー
+                
+        uiLanguage: string (default: by system) # Language
+                UIの表示に使う言語設定
                 
 ライセンス:
         The MIT License

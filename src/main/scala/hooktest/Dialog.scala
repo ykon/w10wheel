@@ -20,9 +20,11 @@ object Dialog {
         override def handleEvent(e: Event) { f(e) }
     }
     
+    private lazy val convLang = Context.convLang _
+    
     def __errorMessage(parent: Shell, msg: String, title: String = "Error") {
         val mb = new MessageBox(parent, SWT.OK | SWT.ICON_ERROR)
-        mb.setText(title)
+        mb.setText(convLang(title))
         mb.setMessage(msg)
         mb.open()
     }
@@ -43,7 +45,7 @@ object Dialog {
     
     def __openYesNoMessage(parent: Shell, msg: String, title: String = "Question"): Boolean = {
         val mb = new MessageBox(parent, SWT.YES | SWT.NO | SWT.ICON_QUESTION)
-        mb.setText(title)
+        mb.setText(convLang(title))
         mb.setMessage(msg)
         mb.open() == SWT.YES
     }
@@ -63,7 +65,7 @@ object Dialog {
         
         private def createShell = {
             val shell = new Shell(getParent, SWT.TITLE | SWT.BORDER | SWT.APPLICATION_MODAL | SWT.ON_TOP)
-            shell.setText("Set Number")
+            shell.setText(convLang("Set Number"))
             shell.setLayout(new GridLayout(2, false))
             shell
         }
@@ -115,7 +117,7 @@ object Dialog {
             res >= low && res <= up
             
         private def errorMessage(input: Int) {
-            Dialog.__errorMessage(parent, s"Invalid Number: $input")
+            Dialog.__errorMessage(parent, s"${convLang("Invalid Number")}: $input")
         }
         
         def open: Option[Int] = {
@@ -161,7 +163,7 @@ object Dialog {
         
         private def createShell = {
             val shell = new Shell(getParent, SWT.TITLE | SWT.BORDER | SWT.APPLICATION_MODAL | SWT.ON_TOP)
-            shell.setText(title)
+            shell.setText(convLang(title))
             shell.setLayout(new GridLayout(2, false))
             shell
         }

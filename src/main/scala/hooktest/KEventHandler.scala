@@ -11,15 +11,15 @@ import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 object KEventHandler {
     private val ctx = Context
-    private val logger = ctx.logger
-    private var lastEvent: KeyboardEvent = null
+    private val logger = Logger.getLogger()
+    private var lastEvent: KeyboardEvent = KNonEvent(null)
 
     private var __callNextHook: () => LRESULT = null
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
 
     def initState() {
-        lastEvent = null
+        lastEvent = KNonEvent(null)
     }
 
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
@@ -30,7 +30,7 @@ object KEventHandler {
     }
 
     private def skipFirstUp(ke: KeyboardEvent): Option[LRESULT] = {
-        if (lastEvent == null) {
+        if (lastEvent == KNonEvent(null)) {
             debug("skip first Up", ke)
             callNextHook
         }
