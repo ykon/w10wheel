@@ -74,12 +74,23 @@ object Context {
     private val passModeGeneration = new AtomicInteger(0)
     def getPassModeGeneration: Int = passModeGeneration.get
 
+    // Pass Mode is switched under this lock, and the LR trigger checks Pass Mode and queues its
+    // resent down under it (see EventWaiter.fromTimeout). Held only briefly: SendInput must not
+    // be called under it (it waits for the low-level hooks, on the thread switching Pass Mode).
+    val passModeLock = new Object
+
+    private def newPassModeGeneration(): Unit = passModeLock.synchronized {
+        passModeGeneration.incrementAndGet()
+    }
+
     private object Pass {
         @volatile private var __mode = false
         def mode = __mode
         def mode_= (b: Boolean): Unit = {
-            if (b) passModeGeneration.incrementAndGet()
-            __mode = b
+            passModeLock.synchronized {
+                if (b) passModeGeneration.incrementAndGet()
+                __mode = b
+            }
 
             // Pass Mode bypasses the event handlers, so nothing they wait for completes while it
             // is on (e.g. the LR trigger wait would resend a down after its up has passed), and
@@ -235,6 +246,11 @@ object Context {
 
         @volatile private var closed = false // set at exit: no more scroll mode
         @volatile private var passMode = false // Pass Mode is on: no scroll mode
+        @volatile private var byKeyboard = false // started by the keyboard trigger
+
+        // The LR trigger start was canceled before start ran on the EventWaiter thread: exit was
+        // called while starting (e.g. both buttons released), so start must not start afterwards
+        @volatile private var startCanceled = false
 
         private def setStartPoint(x: Int, y: Int): Unit = {
             sx = x;
@@ -258,7 +274,11 @@ object Context {
             !closed && !passMode && generation.forall(_ == passModeGeneration.get)
 
         def start(info: HookInfo, generation: Option[Int]) = synchronized {
-            if (canStart(generation)) {
+            // generation is given for the LR trigger only
+            val canceled = generation.isDefined && startCanceled
+            if (generation.isDefined) startCanceled = false
+
+            if (canStart(generation) && !canceled) {
                 stime = info.time
                 setStartPoint(info.pt.x, info.pt.y)
                 Windows.initScroll
@@ -268,13 +288,19 @@ object Context {
                 if (cursorChange && !firstTrigger.isDrag)
                     Windows.changeCursorV
 
+                byKeyboard = false
                 mode = true
             }
-            // Also when refused (exiting or Pass Mode): do not leave the LR trigger starting
+            // Also when refused (exiting, Pass Mode or canceled): do not leave the LR trigger
+            // starting
             starting = false
         }
 
         def start(kinfo: KHookInfo) = synchronized {
+            // A pending LR trigger start is superseded: cancel it, or it would start scroll mode
+            // again after this one has ended
+            if (starting) startCanceled = true
+
             if (canStart(None)) {
                 stime = kinfo.time
                 val pt = Windows.getCursorPos
@@ -286,12 +312,20 @@ object Context {
                 if (cursorChange)
                     Windows.changeCursorV
 
+                byKeyboard = true
                 mode = true
             }
             starting = false
         }
 
         def exit = synchronized {
+            // Exiting while the LR trigger start is pending (e.g. both buttons released before
+            // start ran): cancel it, or scroll mode would start afterwards with no button pressed
+            if (starting) {
+                startCanceled = true
+                starting = false
+            }
+
             exitMode()
         }
 
@@ -308,6 +342,9 @@ object Context {
         // lock, so that a start in progress on the EventWaiter thread is not missed.
         def setPassMode(b: Boolean) = synchronized {
             passMode = b
+            // A pending LR trigger start is refused (Pass Mode generation): do not leave it
+            // starting, the ups after Pass Mode is turned off would be taken for it
+            if (b) starting = false
             if (b && mode) exitMode()
         }
 
@@ -318,12 +355,14 @@ object Context {
         }
 
         def isMode = mode
+        def isByKeyboard = byKeyboard
         def getStartTime = stime
         def getStartPoint = (sx, sy)
 
         def setStarting = synchronized {
             // start refuses while closed or in Pass Mode, so do not wait for it then
             starting = !mode && !closed && !passMode
+            if (starting) startCanceled = false
         }
 
         def isStarting = starting
@@ -345,6 +384,14 @@ object Context {
 
     def isReleasedScrollMode = Scroll.releasedMode
     def isPressedScrollMode = Scroll.isMode && !Scroll.releasedMode
+
+    // Pressed scroll mode started by a mouse trigger: the ups of mouse triggers end only this one.
+    // The keyboard trigger can start scroll mode while their downs are handled (e.g. while the LR
+    // trigger start is pending); their ups are then suppressed like their downs.
+    def isPressedMouseScrollMode = isPressedScrollMode && !Scroll.isByKeyboard
+    def isKeyboardScrollMode = Scroll.isMode && Scroll.isByKeyboard
+    def isPressedKeyboardScrollMode = isPressedScrollMode && Scroll.isByKeyboard
+
     def setReleasedScrollMode = Scroll.releasedMode = true
 
     def setStartingScrollMode = Scroll.setStarting
@@ -381,12 +428,23 @@ object Context {
         // S = Suppressed
         private val ldS = new AtomicBoolean(false)
         private val rdS = new AtomicBoolean(false)
-        private val sdS = new AtomicBoolean(false)
+        private val mdS = new AtomicBoolean(false)
+        private val x1S = new AtomicBoolean(false)
+        private val x2S = new AtomicBoolean(false)
 
         private val kdS = (0 until 256).map(_ => new AtomicBoolean(false));
+        // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
+        private val kdP = (0 until 256).map(_ => new AtomicBoolean(false));
 
+        private def isKey(vk: Int) = vk >= 0 && vk < kdS.length
+
+        // Not the keys passed (kdP), whose ups pass (also in Pass Mode, see Hook) and reset them;
+        // reset, a key still pressed would lose it (e.g. pressed in Pass Mode: its repeats would
+        // start scroll mode if it is the trigger, and its up would be suppressed). Whether a key
+        // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
+        // suppressed is not pressed for it. A key whose up was missed passes its next down once.
         def init: Unit = {
-            Array(ldR, rdR, ldP, rdP, ldS, rdS, sdS).foreach(f => f.set(false))
+            Array(ldR, rdR, ldP, rdP, ldS, rdS, mdS, x1S, x2S).foreach(f => f.set(false))
             kdS.foreach(f => f.set(false))
         }
 
@@ -417,31 +475,74 @@ object Context {
         def setSuppressed(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldS.set(true)
             case RightDown(_) => rdS.set(true)
-            case MiddleDown(_) | X1Down(_) | X2Down(_) => sdS.set(true)
+            case MiddleDown(_) => mdS.set(true)
+            case X1Down(_) => x1S.set(true)
+            case X2Down(_) => x2S.set(true)
             case _ => throw new IllegalArgumentException()
         }
 
         def setSuppressed(down: KeyboardEvent): Unit = down match {
-            case KeyDown(_) => kdS(down.vkCode).set(true)
+            case KeyDown(_) => if (isKey(down.vkCode)) kdS(down.vkCode).set(true)
             case _ => throw new IllegalArgumentException()
         }
+
+        // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
+        def isSuppressedKey(vk: Int): Boolean =
+            isKey(vk) && kdS(vk).get
+
+        // The keyboard trigger changed while the old key was pressed (its down was suppressed)
+        def setSuppressedKey(vk: Int): Unit =
+            if (isKey(vk)) kdS(vk).set(true)
+
+        def setPassedKey(vk: Int): Unit =
+            if (isKey(vk)) kdP(vk).set(true)
+
+        // The key's down passed: its repeats and its up pass too, even if it is the trigger now
+        def isPassedKey(vk: Int): Boolean =
+            isKey(vk) && kdP(vk).get
+
+        def getAndReset_PassedKey(vk: Int): Boolean =
+            isKey(vk) && kdP(vk).getAndSet(false)
+
+        // A key that does not repeat (Pause): its down is always a new press, its flags are reset
+        // (it may send only a down, the flags of the previous press would remain). The flags of the
+        // other keys are kept until their up (a repeat cannot be told from a new press for sure).
+        def newKeyDown(vk: Int): Unit = {
+            if (Keyboard.isNoRepeatKey(vk) && isKey(vk)) {
+                kdS(vk).set(false)
+                kdP(vk).set(false)
+            }
+        }
+
+        // The keyboard hook is removed: the ups will not be seen
+        def resetKeys: Unit = {
+            kdS.foreach(f => f.set(false))
+            kdP.foreach(f => f.set(false))
+        }
+
+        // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
+        def takeSuppressedDowns: Array[Boolean] =
+            Array(ldS, rdS, mdS, x1S, x2S).map(f => f.getAndSet(false))
 
         def getAndReset_SuppressedDown(up: MouseEvent): Boolean = up match {
             case LeftUp(_) => ldS.getAndSet(false)
             case RightUp(_) => rdS.getAndSet(false)
-            case MiddleUp(_) | X1Up(_) | X2Up(_) => sdS.getAndSet(false)
+            case MiddleUp(_) => mdS.getAndSet(false)
+            case X1Up(_) => x1S.getAndSet(false)
+            case X2Up(_) => x2S.getAndSet(false)
             case _ => throw new IllegalArgumentException()
         }
 
         def getAndReset_SuppressedDown(up: KeyboardEvent): Boolean = up match {
-            case KeyUp(_) => kdS(up.vkCode).getAndSet(false)
+            case KeyUp(_) => isKey(up.vkCode) && kdS(up.vkCode).getAndSet(false)
             case _ => throw new IllegalArgumentException()
         }
 
-        def resetLR(down: MouseEvent): Unit = down match {
-            case LeftDown(_) => ldR.set(false); ldS.set(false); ldP.set(false)
-            case RightDown(_) => rdR.set(false); rdS.set(false); rdP.set(false)
-            case _ => throw new IllegalArgumentException()
+        // The flags of the press of a left or right event (nothing for the other buttons)
+        def resetLRFor(me: MouseEvent): Unit = me match {
+            case LeftEvent(_) => ldR.set(false); ldS.set(false); ldP.set(false)
+            case RightEvent(_) => rdR.set(false); rdS.set(false); rdP.set(false)
+            case _ => ()
         }
 
         /*
@@ -532,6 +633,8 @@ object Context {
         resetLanguageMenuItems()
         resetNumberMenuItems()
         resetBoolMenuItems()
+        // Reload or switching properties can add or remove the custom table
+        setEnabledMenu(boolMenuMap, DataID.customAccelTable, !Accel.customDisabled)
         resetVhAdjusterMenuItems()
         resetOnOffMenuItems()
     }
@@ -852,7 +955,22 @@ object Context {
 
     private def setTargetVKCode(name: String): Unit = {
         logger.debug(s"setTargetVKCode: $name")
-        targetVKCode = Keyboard.getVKCode(name)
+        val old = targetVKCode
+        val code = Keyboard.getVKCode(name)
+        targetVKCode = code
+
+        if (code != old)
+            KEventHandler.changeTrigger(old, true)
+    }
+
+    private def setKeyboardHookOf(b: Boolean): Unit = {
+        Hook.setOrUnsetKeyboardHook(b)
+        if (b)
+            // Installed again on every load (e.g. Reload after Windows removed it): ups may have
+            // been missed
+            KEventHandler.hookInstalled()
+        else
+            KEventHandler.changeTrigger(targetVKCode, false)
     }
 
     private def createKeyboardMenu(parent: Menu): Unit = {
@@ -863,7 +981,7 @@ object Context {
             createMapMenuItem(menu, data, keyboardMenuMap, setTargetVKCode)
         }
 
-        createOnOffMenuItem(menu, DataID.keyboardHook, Hook.setOrUnsetKeyboardHook)
+        createOnOffMenuItem(menu, DataID.keyboardHook, setKeyboardHookOf)
         addSeparator(menu)
         
         add(DataID.VK_TAB + " (Tab)")
@@ -1183,30 +1301,38 @@ object Context {
         })
     }
 
-    private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
+    private def isInvalidValue(e: Throwable) = e match {
+        // NumberFormatException is an IllegalArgumentException (as toBoolean throws)
+        case _: NoSuchElementException | _: IllegalArgumentException | _: scala.MatchError => true
+        case _ => false
+    }
+
+    // Applies the value of name in prop. If it is missing or invalid, the default value is
+    // applied instead: otherwise the value of the previous file would be kept (Reload,
+    // switching properties).
+    private def setOrDefault(name: String)(apply: Properties.SProperties => Unit): Unit = {
         try {
-            val n = prop.getInt(name)
-            if (n < low || n > up)
-                logger.warn(s"Number out of bounds: $name")
-            else
-                setNumberOfName(name, n)
+            apply(prop)
         }
         catch {
-            case _: NoSuchElementException => logger.warn(s"Not found: $name")
-            case _: NumberFormatException => logger.warn(s"Parse error: $name")
-            case _: scala.MatchError  => logger.warn(s"Match error: $name")
+            case e if isInvalidValue(e) =>
+                logger.warn(s"Invalid value: $name ($e): use default")
+                apply(defaultProp)
         }
     }
 
+    private def setNumberOfProperty(name: String, low: Int, up: Int): Unit = {
+        setOrDefault(name)(p => {
+            val n = p.getInt(name)
+            if (n < low || n > up)
+                throw new IllegalArgumentException(s"Number out of bounds: $name")
+
+            setNumberOfName(name, n)
+        })
+    }
+
     private def setBooleanOfProperty(name: String): Unit = {
-        try {
-            setBooleanOfName(name, prop.getBoolean(name))
-        }
-        catch {
-            case _: NoSuchElementException => logger.warn(s"Not found: $name")
-            case _: IllegalArgumentException => logger.warn(s"Parse error: $name")
-            case _: scala.MatchError => logger.warn(s"Match error: $name")
-        }
+        setOrDefault(name)(p => setBooleanOfName(name, p.getBoolean(name)))
     }
 
     private def setEnabledMenu(menuMap: MenuMap, key: String, enabled: Boolean): Unit = {
@@ -1217,22 +1343,18 @@ object Context {
     private def setTrigger(s: String): Unit = {
         val res = Mouse.getTrigger(s)
         logger.debug("setTrigger: " + res.name);
+        val changed = res != firstTrigger
         firstTrigger = res
 
         setEnabledMenu(boolMenuMap, DataID.sendMiddleClick, res.isSingle)
         setEnabledMenu(boolMenuMap, DataID.draggedLock, res.isDrag)
 
-        EventHandler.changeTrigger
+        // With whether the trigger has changed (not on every properties load)
+        EventHandler.changeTrigger(changed)
     }
-    
+
     private def setStringOfProperty(name: String, setFunc: String => Unit): Unit = {
-        try {
-            setFunc(prop.getString(name))
-        }
-        catch {
-            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}")
-            case e: scala.MatchError => logger.warn(s"Match error: ${e.getMessage}")
-        }
+        setOrDefault(name)(p => setFunc(p.getString(name)))
     }
 
     private def setTriggerOfProperty: Unit = {
@@ -1240,6 +1362,9 @@ object Context {
     }
 
     private def setCustomAccelOfProperty: Unit = {
+        // Without a valid custom table in this file, do not keep the table of the previous file
+        Accel.customDisabled = true
+
         try {
             val cat = prop.getIntArray(DataID.customAccelThreshold)
             val cam = prop.getDoubleArray(DataID.customAccelMultiplier)
@@ -1264,19 +1389,7 @@ object Context {
     }
 
     private def setPriorityOfProperty: Unit = {
-        try {
-            setPriority(prop.getString(DataID.processPriority))
-        }
-        catch {
-            case e: NoSuchElementException => {
-                logger.warn(s"Not found: ${e.getMessage}")
-                setDefaultPriority
-            }
-            case e: scala.MatchError => {
-                logger.warn(s"Match error: ${e.getMessage}")
-                setDefaultPriority
-            }
-        }
+        setStringOfProperty(DataID.processPriority, setPriority)
     }
 
     private def setVKCodeOfProperty: Unit = {
@@ -1288,20 +1401,34 @@ object Context {
     }
     
     private def setUILanguageOfProperty: Unit = {
-        setStringOfProperty(DataID.uiLanguage, setUILanguage)
-    }
+        setStringOfProperty(DataID.uiLanguage, lang => {
+            // Only the languages of the Language menu
+            if (lang != DataID.English && lang != DataID.Japanese)
+                throw new IllegalArgumentException(s"Unknown language: $lang")
 
-    private def setDefaultPriority: Unit = {
-        logger.debug("setDefaultPriority")
-        //Windows.setPriority(processPriority)
-        setPriority(processPriority.name)
-    }
-
-    private def setDefaultTrigger: Unit = {
-        setTrigger(firstTrigger.name)
+            setUILanguage(lang)
+        })
     }
 
     private val prop = new Properties.SProperties
+
+    // The settings before the first load (the default values), written as in a properties file
+    private val defaultProp = new Properties.SProperties
+
+    // Write the settings to p (the custom accel table is not written: it is only read)
+    private def setSettings(p: Properties.SProperties): Unit = {
+        val set = (n: String, v: String) => p.setProperty(n, v)
+
+        set(DataID.firstTrigger, firstTrigger.name)
+        set(DataID.accelMultiplier, Accel.multiplier.name)
+        set(DataID.processPriority, processPriority.name)
+        set(DataID.targetVKCode, Keyboard.getName(targetVKCode))
+        set(DataID.vhAdjusterMethod, VHAdjuster.method.name)
+        set(DataID.uiLanguage, this.uiLanguage)
+
+        BooleanNames.foreach(n => p.setBoolean(n, getBooleanOfName(n)))
+        NumberNames.foreach(n => p.setInt(n, getNumberOfName(n)))
+    }
 
     private def getSelectedPropertiesPath =
         Properties.getPath(selectedProperties)
@@ -1309,9 +1436,21 @@ object Context {
     private var loaded = false
 
     def loadProperties: Unit = {
+        if (!loaded)
+            setSettings(defaultProp)
+
         loaded = true
         try {
-            prop.load(getSelectedPropertiesPath)
+            // The keys of the previous file (Reload, switching properties) are not kept: they
+            // would be applied, and stored in this file
+            prop.clear()
+            try {
+                prop.load(getSelectedPropertiesPath)
+            }
+            catch {
+                // All the settings get their default values (see setOrDefault)
+                case _: FileNotFoundException => logger.debug("Properties file not found")
+            }
 
             setTriggerOfProperty
             setAccelOfProperty
@@ -1322,7 +1461,7 @@ object Context {
             setUILanguageOfProperty
 
             BooleanNames.foreach(n => setBooleanOfProperty(n))
-            Hook.setOrUnsetKeyboardHook(keyboardHook)
+            setKeyboardHookOf(keyboardHook)
 
             val setNum = (n: String, l: Int, u: Int) => setNumberOfProperty(n, l, u)
             setNum(DataID.pollTimeout, 50, 500)
@@ -1338,11 +1477,6 @@ object Context {
             setNum(DataID.switchingThreshold, 10, 500)
         }
         catch {
-            case _: FileNotFoundException => {
-                logger.debug("Properties file not found")
-                setDefaultPriority
-                setDefaultTrigger
-            }
             case e: Exception => logger.warn(s"load: ${e.toString}")
         }
     }
@@ -1475,18 +1609,7 @@ object Context {
                 return
             }
 
-            val set = (n: String, v: String) => prop.setProperty(n, v)
-
-            set(DataID.firstTrigger, firstTrigger.name)
-            set(DataID.accelMultiplier, Accel.multiplier.name)
-            set(DataID.processPriority, processPriority.name)
-            set(DataID.targetVKCode, Keyboard.getName(targetVKCode))
-            set(DataID.vhAdjusterMethod, VHAdjuster.method.name)
-            set(DataID.uiLanguage, this.uiLanguage)
-
-            BooleanNames.foreach(n => prop.setBoolean(n, getBooleanOfName(n)))
-            NumberNames.foreach(n => prop.setInt(n, getNumberOfName(n)))
-
+            setSettings(prop)
             prop.store(getSelectedPropertiesPath)
         }
         catch {
@@ -1495,12 +1618,15 @@ object Context {
     }
 
     def initState: Unit = {
-        // First: a wait timing out meanwhile does not resend, and a down queued before is dropped
-        passModeGeneration.incrementAndGet()
+        // Cancel the LR trigger wait first: its timeout could set the flags again after init
+        EventWaiter.offer(Cancel(null))
+        // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
+        // received before, and the wheel events and downs queued are not sent. A down resent
+        // before and sent after its physical up is dropped by the hook (Windows.dropResent).
+        newPassModeGeneration()
         EventHandler.initState
         KEventHandler.initState()
         LastFlags.init
         exitScrollMode
-        EventWaiter.offer(Cancel(null))
     }
 }

@@ -21,6 +21,7 @@ import win32ex._
 import win32ex.User32Ex._
 
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
+import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 
 import java.util.Random
 
@@ -42,8 +43,9 @@ object Windows {
         def getRawInputData(data: Pointer) =
             u32ex.GetRawInputData(lParam.toPointer(), RID_INPUT, data, pcbSize, cbSizeHeader)
 
+        // usFlags can have other bits with a relative move (e.g. MOUSE_MOVE_NOCOALESCE)
         def isMouseMoveRelative(ri: RAWINPUT) =
-            ri.header.dwType == RIM_TYPEMOUSE && ri.mouse.usFlags == MOUSE_MOVE_RELATIVE
+            ri.header.dwType == RIM_TYPEMOUSE && (ri.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0
 
         if (getRawInputData(null) == 0) {
             val buf = new Memory(pcbSize.getValue)
@@ -68,8 +70,12 @@ object Windows {
                     if (procRawInput(lParam))
                         return new LRESULT(0)
                 }
-                case WM_QUERYENDSESSION =>
-                    W10Wheel.procExit
+                // Not at WM_QUERYENDSESSION (DefWindowProc allows the end): the shutdown or logoff
+                // can still be canceled there, and W10Wheel stayed in the tray without working.
+                // WM_ENDSESSION with wParam TRUE comes only when the session is actually ending.
+                case WM_ENDSESSION =>
+                    if (wParam.intValue != 0)
+                        W10Wheel.procExit
                     return new LRESULT(0)
                 case TaskbarCreated => {
                     logger.debug("TaskbarCreated")
@@ -155,14 +161,143 @@ object Windows {
     def isInjectedEvent(me: MouseEvent): Boolean =
         (me.info.flags & 0x3) != 0
 
-    // dwExtraInfo is pointer-sized: compare all of it
+    private def isInjected(info: HookInfo): Boolean =
+        (info.flags & 0x3) != 0
+
+    // The kind of a resent input and the ID of the physical press it is for, in the upper half of
+    // dwExtraInfo (resendTag in the lower half): see dropResent. W10Wheel runs as a 64-bit
+    // process only (x64), so dwExtraInfo has 64 bits.
+    private val KIND_PLAIN = 0L   // passed as is (e.g. a down and up pair)
+    private val KIND_DOWN = 1L    // a down resent alone (its up comes later)
+    private val KIND_RELEASE = 2L // the up resent for a down resent alone
+
+    private val PRESS_ID_MASK = 0xFFFFFF
+
+    private def resendExtra(kind: Long, press: Int): Long = {
+        val upper = (kind << 24) | (press & PRESS_ID_MASK).toLong
+        (upper << 32) | resendTag.toLong
+    }
+
+    // dwExtraInfo is pointer-sized: compare all of it (the tag in the lower half for resends)
+    private def isResendInfo(info: HookInfo): Boolean =
+        (info.dwExtraInfo.longValue() & 0xFFFFFFFFL) == resendTag.toLong
+
     def isResendEvent(me: MouseEvent): Boolean =
-        me.info.dwExtraInfo.longValue() == resendTag.toLong
+        isResendInfo(me.info)
 
     def isResendClickEvent(me: MouseEvent): Boolean =
         me.info.dwExtraInfo.longValue() == resendClickTag.toLong
 
-    def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
+    // (kind, press) of a resent input
+    private def resendKind(info: HookInfo): Option[(Long, Int)] = {
+        if (isInjected(info) && isResendInfo(info)) {
+            val upper = info.dwExtraInfo.longValue() >>> 32
+            Some((upper >>> 24, (upper & PRESS_ID_MASK).toInt))
+        }
+        else
+            None
+    }
+
+    // The physical presses and the downs resent alone (LR trigger) by button (0: left, 1: right,
+    // 2: middle, 3: X1, 4: X2; only left and right are resent alone), as the hook sees them: in
+    // the order the target application gets the inputs, whenever SendInput returns. Used on the
+    // hook thread only.
+    // pressId: the ID of the last physical down (see handlingButton); the waits and resends for it
+    // carry it (pressIdOf).
+    // upPassed: the physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after
+    // initState reset the flags).
+    // downPassedId: the press whose down resent alone has reached the application, with no up
+    // since (NO_PRESS if none).
+    // downSuppressed: the physical down of that press did not pass (W10Wheel suppressed it).
+    private val NO_PRESS = 0 // the IDs are 1 to PRESS_ID_MASK - 1
+    private val pressId = Array.fill(5)(NO_PRESS)
+    private val upPassed = Array.fill(5)(false)
+    private val downPassedId = Array.fill(5)(NO_PRESS)
+    private val downSuppressed = Array.fill(5)(false)
+    private var lastPressId = 0
+
+    // Called by the mouse hook for a button down or up before it is handled, also in Pass Mode:
+    // true to drop it.
+    // - A down resent alone for a press whose physical up has passed (or for an earlier press)
+    //   would leave the button pressed.
+    // - The up resent for a down resent alone that did not reach the application (dropped above,
+    //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
+    def dropResent(button: Int, isDown: Boolean, info: HookInfo): Boolean = resendKind(info) match {
+        case Some((KIND_DOWN, id)) if isDown && (id != pressId(button) || upPassed(button)) =>
+            logger.debug("dropResent: a down after its physical up")
+            true
+        case Some((KIND_RELEASE, id)) if !isDown && id != downPassedId(button) =>
+            logger.debug("dropResent: an up for a down not passed")
+            true
+        case _ =>
+            false
+    }
+
+    // Called by the mouse hook before handling a button down or up that is not dropped: a physical
+    // down starts a new press
+    def handlingButton(button: Int, isDown: Boolean, info: HookInfo): Unit = {
+        if (isDown && !isInjected(info)) {
+            lastPressId = lastPressId % (PRESS_ID_MASK - 1) + 1
+            pressId(button) = lastPressId
+            upPassed(button) = false
+            downSuppressed(button) = false
+        }
+    }
+
+    // Called by the mouse hook after handling a button down or up (passed: passed on)
+    def handledButton(button: Int, isDown: Boolean, info: HookInfo, passed: Boolean): Unit = {
+        if (isDown && !passed && !isInjected(info))
+            downSuppressed(button) = true
+
+        if (passed) {
+            if (isDown) {
+                resendKind(info) match {
+                    case Some((KIND_DOWN, id)) => downPassedId(button) = id
+                    case _ => ()
+                }
+            }
+            else {
+                downPassedId(button) = NO_PRESS
+                if (!isInjected(info))
+                    upPassed(button) = true
+            }
+        }
+
+        // The physical up of the press is handled (suppressed or passed): the press is over. A
+        // later up whose down the hook did not see (e.g. pressed on another desktop) is not taken
+        // for an up without its down (dropLoneUp).
+        if (!isDown && !isInjected(info))
+            downSuppressed(button) = false
+    }
+
+    // Called by the mouse hook when a button up is about to be passed on (by the handlers, or in
+    // Pass Mode): true to suppress it instead. If the physical down of its press was suppressed
+    // and no down resent alone for it reached the application, the application has the button
+    // released (or got a whole click instead): the up alone would be an up without a down (e.g. a
+    // right up opens a context menu). The press is ended then: a down resent late for it is
+    // dropped (dropResent).
+    def dropLoneUp(button: Int, info: HookInfo): Boolean = {
+        if (!isInjected(info) && downSuppressed(button) && downPassedId(button) != pressId(button)) {
+            logger.debug("dropLoneUp: an up whose down did not reach the application")
+            upPassed(button) = true
+            true
+        }
+        else
+            false
+    }
+
+    // dropLoneUp for a left or right up (on the hook thread)
+    def dropLoneUpOf(up: MouseEvent): Boolean = up match {
+        case LeftUp(info) => dropLoneUp(0, info)
+        case RightUp(info) => dropLoneUp(1, info)
+        case _ => false
+    }
+
+    // The ID of the current press of the button of a left or right event (on the hook thread)
+    def pressIdOf(me: MouseEvent): Int =
+        pressId(getButton(me))
+
+    def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Long): Unit = {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
         msg.input.setType("mi")
 
@@ -175,7 +310,7 @@ object Windows {
         mi.dwExtraInfo = new ULONG_PTR(extra)
     }
 
-    private def createInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): INPUT = {
+    private def createInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Long): INPUT = {
         val input = createInputArray(1)(0)
         setInput(input, pt, data, flags, time, extra)
         input
@@ -185,10 +320,11 @@ object Windows {
     def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit =
         InputSender.enqueue(InputSender.Wheel, Array(createInput(pt, data, flags, time, extra)))
 
-    def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
+    // false if SendInput failed
+    def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Boolean = {
         val input = createInputArray(1)
         setInput(input(0), pt, data, flags, time, extra)
-        u32.SendInput(new DWORD(1), input, input(0).size())
+        u32.SendInput(new DWORD(1), input, input(0).size()).intValue() == 1
     }
 
     private var vwCount = 0
@@ -269,13 +405,18 @@ object Windows {
         case _ => false
     }
 
+    // On a turn, the move left from the other direction does not count: start counting again as
+    // at the scroll start (quickTurn sends a notch at once, like quickFirst).
+    // A move larger than wheelMove sends a notch for each wheelMove.
     private def sendRealVWheel(pt: POINT, d: Int): Unit = {
         def send = sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
+
+        if (isTurnMove(vLastMove, d))
+            vwCount = if (quickTurn) vWheelMove else vWheelMove / 2
+
         vwCount += Math.abs(d)
 
-        if (quickTurn && isTurnMove(vLastMove, d))
-            send
-        else if (vwCount >= vWheelMove) {
+        while (vWheelMove > 0 && vwCount >= vWheelMove) {
             send
             vwCount -= vWheelMove
         }
@@ -290,11 +431,13 @@ object Windows {
 
     private def sendRealHWheel(pt: POINT, d: Int): Unit = {
         def send = sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
+
+        if (isTurnMove(hLastMove, d))
+            hwCount = if (quickTurn) hWheelMove else hWheelMove / 2
+
         hwCount += Math.abs(d)
 
-        if (quickTurn && isTurnMove(hLastMove, d))
-            send
-        else if (hwCount >= hWheelMove) {
+        while (hWheelMove > 0 && hwCount >= hWheelMove) {
             send
             hwCount -= hWheelMove
         }
@@ -472,7 +615,10 @@ object Windows {
         //logger.debug("sendWheelRaw: " + x + "," + y)
 
         val (sx, sy) = scrollStartPoint
-        if (sx != x && sy != y) {
+        // x and y are relative moves (they were compared with the start point, so e.g. a vertical
+        // move was dropped when the scroll started at the left edge). WM_INPUT already queued is
+        // still handled after scroll mode has ended (RawInput unregistered).
+        if (ctx.isScrollMode && (x != 0 || y != 0)) {
             val (dx, dy) = swapIf(x, y)
             sendWheelIf(new POINT(sx, sy), dx, dy)
         }
@@ -508,44 +654,51 @@ object Windows {
         case _ => throw new IllegalArgumentException(s"Not a left/right event: ${me.name}")
     }
 
-    private def createResendDown(me: MouseEvent): INPUT = me match {
-        case LeftDown(info) => createInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
-        case RightDown(info) => createInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
+    private def createResendDown(me: MouseEvent, extra: Long): INPUT = me match {
+        case LeftDown(info) => createInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, extra)
+        case RightDown(info) => createInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, extra)
         case _ => throw new IllegalArgumentException(s"Not a left/right down: ${me.name}")
     }
 
-    private def createResendUp(me: MouseEvent): INPUT = me match {
-        case LeftUp(info) => createInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
-        case RightUp(info) => createInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
+    private def createResendUp(me: MouseEvent, extra: Long): INPUT = me match {
+        case LeftUp(info) => createInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, extra)
+        case RightUp(info) => createInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, extra)
         case _ => throw new IllegalArgumentException(s"Not a left/right up: ${me.name}")
     }
 
     // The functions taking a generation and a press are for EventWaiter, which resends on its own
     // thread some time after the physical down: it passes the Pass Mode generation and the press
-    // recorded when the physical down was received (EventWaiter.start)
+    // (pressIdOf) recorded when the physical down was received (EventWaiter.start)
 
     // A down resent alone: its up is resent later by resendUp
-    def resendDown(generation: Int, press: Int, me: MouseEvent): Unit =
-        InputSender.enqueue(generation, InputSender.Down(getButton(me), press), Array(createResendDown(me)))
+    def resendDown(generation: Int, press: Int, me: MouseEvent): Unit = {
+        val input = createResendDown(me, resendExtra(KIND_DOWN, press))
+        InputSender.enqueue(generation, InputSender.Down(getButton(me), press), Array(input))
+    }
 
-    // The up of a down resent alone (resendDown): sent only if that down was sent
+    // The up of a down resent alone (resendDown), for the physical up (suppressed) of the current
+    // press: called on the hook thread. Sent only if that down was sent (InputSender), and passed
+    // only if it reached the application (dropResent).
     def resendUp(me: MouseEvent): Unit = {
-        val button = getButton(me)
-        val press = InputSender.getCurrentPress(button)
-        InputSender.enqueue(InputSender.Release(button, press), Array(createResendUp(me)))
+        val press = pressIdOf(me)
+        val input = createResendUp(me, resendExtra(KIND_RELEASE, press))
+        InputSender.enqueue(InputSender.Release(getButton(me), press), Array(input))
     }
 
     // Resends a down and an up (at different points). The same button's down and up are sent as
     // one batch, like resendClick: 10 ms apart, the up with retries.
     def resendDownUp(generation: Int, press: Int, down: MouseEvent, up: MouseEvent): Unit = {
+        val plain = resendExtra(KIND_PLAIN, NO_PRESS)
         (down, up) match {
             case (LeftDown(_), LeftUp(_)) | (RightDown(_), RightUp(_)) =>
-                InputSender.enqueue(generation, InputSender.Click, Array(createResendDown(down), createResendUp(up)))
+                InputSender.enqueue(generation, InputSender.Click,
+                    Array(createResendDown(down, plain), createResendUp(up, plain)))
             case _ =>
-                // Different buttons: not a pair. The other button's down reached the application
-                // before, so its up is sent as is.
+                // Different buttons: not a pair. The other button's down was not resent alone (the
+                // up of such a down is resent by checkResentDown before the wait is offered): it
+                // passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
                 resendDown(generation, press, down)
-                InputSender.enqueue(generation, InputSender.Up, Array(createResendUp(up)))
+                InputSender.enqueue(generation, InputSender.Up, Array(createResendUp(up, plain)))
         }
     }
 

@@ -6,7 +6,6 @@ package hooktest
  */
 
 import java.util.concurrent.{ LinkedBlockingQueue, TimeUnit }
-import java.util.concurrent.atomic.{ AtomicInteger, AtomicIntegerArray }
 import java.util.concurrent.locks.ReentrantLock
 
 import com.sun.jna.platform.win32.User32
@@ -62,25 +61,11 @@ object InputSender {
     // left pressed. Written under sendLock.
     @volatile private var unsent: Vector[INPUT] = Vector.empty
 
-    // The physical presses of the left and right buttons that the LR trigger waits for (see
-    // newPress): a down resent alone and its up are matched by them. Under sendLock:
+    // The physical presses of the left and right buttons (the IDs given by the hook, see
+    // Windows.pressIdOf): a down resent alone and its up are matched by them. Under sendLock:
     private val sentPress = Array(0, 0)      // the down resent alone that was sent and not released (0: none)
     private val handledPress = Array(0, 0)   // the last down resent alone that was sent or dropped
     private val earlyRelease: Array[Option[Batch]] = Array(None, None) // an up queued before its down was handled
-
-    private val pressCounter = new AtomicInteger(0)
-    private val currentPress = new AtomicIntegerArray(2)
-
-    // Called by the mouse hook when the LR trigger starts waiting for a physical down: the down
-    // resent for it and the up resent for that down get this press
-    def newPress(button: Int): Int = {
-        val press = pressCounter.incrementAndGet()
-        currentPress.set(button, press)
-        press
-    }
-
-    def getCurrentPress(button: Int): Int =
-        currentPress.get(button)
 
     def enqueue(kind: Kind, inputs: Array[INPUT]): Unit =
         enqueue(Context.getPassModeGeneration, kind, inputs)
@@ -196,8 +181,9 @@ object InputSender {
             case Release(button, press) =>
                 if (press != 0 && sentPress(button) == press)
                     sendRelease(button, b)
-                else if (press > handledPress(button))
-                    // Its down is still queued (the up came first): wait for it
+                else if (press != 0 && press != handledPress(button))
+                    // Its down is still queued (the up came first): wait for it. (If it never
+                    // comes, the up is dropped when the next down of the button is handled.)
                     earlyRelease(button) = Some(b)
                 else
                     logger.debug("InputSender: dropped an up (its down was not sent)")

@@ -19,16 +19,40 @@ object EventHandler {
     private var secondTriggerUp = false
     private var dragged = false
 
+    // The down of the single or drag trigger that started scroll mode (and was suppressed). Reset
+    // by its up. An up of another button (e.g. the trigger was changed by Reload while pressed), or
+    // without it, has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
+    private var triggerStarted: MouseEvent = NonEvent(null)
+
+    // The downs that started scroll mode of a trigger before it was changed (changeTrigger), by
+    // button (buttonIndex): changed again while pressed, there can be several. Their up is
+    // suppressed before the handlers of the current trigger, which would handle it as their own
+    // (e.g. the LR trigger's wait would resend it). Reset by the up or the next down of the button.
+    private val canceledDowns = Array.fill(5)(false)
+
+    private def buttonIndex(me: MouseEvent): Int = me match {
+        case LeftEvent(_) => 0
+        case RightEvent(_) => 1
+        case MiddleEvent(_) => 2
+        case X1Event(_) => 3
+        case X2Event(_) => 4
+        case _ => throw new IllegalArgumentException(s"Not a button event: ${me.name}")
+    }
+
     def initState: Unit = {
         lastEvent = NonEvent(null)
         secondTriggerUp = false
         dragged = false
+        triggerStarted = NonEvent(null)
+        java.util.Arrays.fill(canceledDowns, false)
     }
 
     private var __callNextHook: () => LRESULT = null
 
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
+
+    def getCallNextHook: () => LRESULT = __callNextHook
 
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
@@ -92,7 +116,7 @@ object EventHandler {
 
     private def resetLastFlagsLR(me: MouseEvent): Option[LRESULT] = {
         debug("reset last flag", me)
-        ctx.LastFlags.resetLR(me)
+        ctx.LastFlags.resetLRFor(me)
         None
     }
 
@@ -138,7 +162,7 @@ object EventHandler {
     }
 
     private def checkExitScrollUp(me: MouseEvent): Option[LRESULT] = {
-        if (ctx.isPressedScrollMode) {
+        if (ctx.isPressedMouseScrollMode) {
             if (ctx.checkExitScroll(me.info.time)) {
                 debug("exit scroll mode (Pressed)", me)
                 ctx.exitScrollMode
@@ -155,7 +179,7 @@ object EventHandler {
     }
 
     private def checkExitScrollUpLR(up: MouseEvent): Option[LRESULT] = {
-        if (ctx.isPressedScrollMode) {
+        if (ctx.isPressedMouseScrollMode) {
             if (!secondTriggerUp) {
                 debug("ignore first up", up)
             }
@@ -168,6 +192,8 @@ object EventHandler {
                 ctx.setReleasedScrollMode
             }
 
+            // Its down was suppressed (setFlagsOffer): handled
+            ctx.LastFlags.getAndReset_SuppressedDown(up)
             secondTriggerUp = !secondTriggerUp
             suppress
         }
@@ -188,6 +214,7 @@ object EventHandler {
                 ctx.exitScrollMode
             }
 
+            ctx.LastFlags.getAndReset_SuppressedDown(up)
             secondTriggerUp = !secondTriggerUp
             suppress
         }
@@ -196,8 +223,18 @@ object EventHandler {
     }
 
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
-        if (EventWaiter.offer(me)) {
+        // The up of the other button than the waiting down, whose own down did not reach the
+        // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
+        // with the waiting down, it would be an up without a down. Suppress it, the wait goes on.
+        if (me.isUp && EventWaiter.isWaitingOtherThan(me) && Windows.dropLoneUpOf(me)) {
+            debug("suppress (up without its down, other button)", me)
+            suppress
+        }
+        else if (EventWaiter.offer(me)) {
             debug("success to offer", me)
+            // The second down starts LR scroll mode: no up of the pair counted yet (the count of
+            // an earlier one may remain, e.g. when the keyboard trigger took over its scroll)
+            if (me.isDown) secondTriggerUp = false
             suppress
         }
         else
@@ -258,6 +295,7 @@ object EventHandler {
         if (ctx.isTriggerEvent(me)) {
             debug("start scroll mode", me);
             ctx.startScrollMode(me.info)
+            triggerStarted = me
             suppress
         }
         else
@@ -276,11 +314,35 @@ object EventHandler {
     private def startScrollDrag(me: MouseEvent): Option[LRESULT] = {
         debug("start scroll mode (Drag)", me);
         ctx.startScrollMode(me.info)
+        triggerStarted = me
 
         drag = dragStart
         dragged = false
 
         suppress
+    }
+
+    private def passNotStartedTrigger(up: MouseEvent): Option[LRESULT] = {
+        if (triggerStarted.sameButton(up)) {
+            triggerStarted = NonEvent(null)
+            None
+        }
+        else {
+            debug("pass (the down passed)", up)
+            callNextHook
+        }
+    }
+
+    // The drag is not the pressed scroll mode any more: the keyboard trigger has started scroll
+    // mode since (maybe ended already). Its up neither continues nor ends it (nor resends a
+    // click), and its down started the drag (suppressed), so the up is suppressed.
+    private def suppressNotDragScroll(up: MouseEvent): Option[LRESULT] = {
+        if (!ctx.isPressedMouseScrollMode) {
+            debug("suppress (not drag scroll mode)", up)
+            suppress
+        }
+        else
+            None
     }
 
     private def continueScrollDrag(up: MouseEvent): Option[LRESULT] = {
@@ -402,6 +464,8 @@ object EventHandler {
             checkExitScrollUpLR,
             checkStartingScroll,
             offerEventWaiter,
+            // The wait timed out during the checks above: its down has been resent
+            checkResentDown,
             checkSuppressedDown,
             endNotTrigger
         )
@@ -434,6 +498,7 @@ object EventHandler {
             checkSameLastEvent,
             checkSuppressedDown,
             passNotTrigger,
+            passNotStartedTrigger,
             checkExitScrollUp,
             endIllegalState
         )
@@ -464,6 +529,8 @@ object EventHandler {
             checkSameLastEvent,
             checkSuppressedDown,
             passNotDragTrigger,
+            passNotStartedTrigger,
+            suppressNotDragScroll,
             continueScrollDrag,
             exitAndResendDrag
         )
@@ -498,48 +565,88 @@ object EventHandler {
     @volatile private var procDownS: MouseEvent => LRESULT = noneDown
     @volatile private var procUpS: MouseEvent => LRESULT = noneUp
 
+    // Before the handlers of the trigger (see canceledDowns)
+    private def procDown(proc: MouseEvent => LRESULT, d: MouseEvent): LRESULT = {
+        if (!Windows.isInjectedEvent(d)) {
+            canceledDowns(buttonIndex(d)) = false
+
+            // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
+            // whatever the trigger (only the LR trigger's handlers did, so after changing the
+            // trigger they could take e.g. the next up for that of a resent or suppressed down)
+            ctx.LastFlags.resetLRFor(d)
+        }
+
+        proc(d)
+    }
+
+    private def procUpBody(proc: MouseEvent => LRESULT, u: MouseEvent): LRESULT = {
+        val i = buttonIndex(u)
+        if (!Windows.isInjectedEvent(u) && canceledDowns(i)) {
+            canceledDowns(i) = false
+
+            // As the handlers do for an up: Esc initializes the state (and passes the up), and the
+            // up is the last event (or the next down of the button would be taken as the same)
+            checkEscape(u) match {
+                case Some(res) => res
+                case None =>
+                    debug("suppress (the down was canceled by changing the trigger)", u)
+                    lastEvent = u
+                    suppress.get
+            }
+        }
+        else
+            proc(u)
+    }
+
+    private def procUp(proc: MouseEvent => LRESULT, u: MouseEvent): LRESULT = {
+        val res = procUpBody(proc, u)
+
+        // The press is over: its flags (resent, suppressed, passed) are not needed any more, reset
+        // them whatever handled the up (e.g. after changing the trigger, the handlers of the new
+        // one do not use them, and they would be taken for those of a later up whose down was not
+        // seen)
+        if (!Windows.isInjectedEvent(u))
+            ctx.LastFlags.resetLRFor(u)
+
+        res
+    }
+
     def leftDown(info: HookInfo): LRESULT = {
         //logger.debug("leftDown")
-        val ld = LeftDown(info)
-        procDownLR(ld)
+        procDown(procDownLR, LeftDown(info))
     }
 
     def leftUp(info: HookInfo): LRESULT = {
         //logger.debug("leftUp");
-        val lu = LeftUp(info)
-        procUpLR(lu)
+        procUp(procUpLR, LeftUp(info))
     }
 
     def rightDown(info: HookInfo): LRESULT = {
         //logger.debug("rightDown")]
-        val rd = RightDown(info)
-        procDownLR(rd)
+        procDown(procDownLR, RightDown(info))
     }
 
     def rightUp(info: HookInfo): LRESULT = {
         //logger.debug("rightUp")
-        val ru = RightUp(info)
-        procUpLR(ru)
+        procUp(procUpLR, RightUp(info))
     }
 
     def middleDown(info: HookInfo): LRESULT = {
-        val md = MiddleDown(info)
-        procDownS(md)
+        procDown(procDownS, MiddleDown(info))
     }
 
     def middleUp(info: HookInfo): LRESULT = {
-        val mu = MiddleUp(info)
-        procUpS(mu)
+        procUp(procUpS, MiddleUp(info))
     }
 
     def xDown(info: HookInfo): LRESULT = {
         val xd = if (Mouse.isXButton1(info.mouseData)) X1Down(info) else X2Down(info)
-        procDownS(xd)
+        procDown(procDownS, xd)
     }
 
     def xUp(info: HookInfo): LRESULT = {
         val xu = if (Mouse.isXButton1(info.mouseData)) X1Up(info) else X2Up(info)
-        procUpS(xu)
+        procUp(procUpS, xu)
     }
 
     private def dragDefault(info: HookInfo): Unit = {}
@@ -568,7 +675,8 @@ object EventHandler {
             callNextHook.get
     }
 
-    def changeTrigger: Unit = {
+    // changed: the trigger has changed (not on every properties load)
+    def changeTrigger(changed: Boolean): Unit = {
         logger.debug("changeTrigger: EventHandler")
 
         val handlers: (MouseEvent => LRESULT, MouseEvent => LRESULT, MouseEvent => LRESULT, MouseEvent => LRESULT) = if (ctx.isDoubleTrigger) {
@@ -591,5 +699,40 @@ object EventHandler {
 
         procDownLR = downLR; procUpLR = upLR
         procDownS = downS; procUpS = upS
+
+        // The handlers of the old trigger are not used any more, so its scroll mode would not end
+        // (e.g. the up of the drag trigger is not handled as such). End it (not the keyboard
+        // trigger's), and suppress the up of its down before the new handlers (see canceledDowns).
+        if (changed) {
+            // A pending LR trigger wait would still resend its down: cancel it, the down was
+            // suppressed and so is its up
+            EventWaiter.cancel() match {
+                case Some(down) if down.isDown => canceledDowns(buttonIndex(down)) = true
+                case _ => ()
+            }
+
+            if ((ctx.isScrollMode || ctx.isStartingScrollMode) && !ctx.isKeyboardScrollMode) {
+                logger.debug("changeTrigger: exit scroll mode")
+                ctx.exitScrollMode
+            }
+
+            if (triggerStarted.isDown)
+                canceledDowns(buttonIndex(triggerStarted)) = true
+
+            // The downs suppressed by the old trigger (e.g. the LR trigger's pair) too: the new
+            // handlers could take their up first (e.g. a new LR trigger wait)
+            ctx.LastFlags.takeSuppressedDowns.zipWithIndex.foreach { case (b, i) =>
+                if (b) canceledDowns(i) = true
+            }
+
+            triggerStarted = NonEvent(null)
+            drag = dragDefault
+            dragged = false
+            secondTriggerUp = false
+
+            // Some handlers do not record the last event (none trigger): the event recorded by the
+            // old ones could stay a down after its up, so that the next down was taken as the same
+            lastEvent = NonEvent(null)
+        }
     }
 }

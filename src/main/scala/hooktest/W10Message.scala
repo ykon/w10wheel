@@ -16,12 +16,13 @@ object W10Message {
     val W10_MESSAGE_RELOAD_PROP = W10_MESSAGE_BASE + 3
     val W10_MESSAGE_INIT_STATE = W10_MESSAGE_BASE + 4
 
-    private def sendMessage(msg: Int): Unit = {
+    // false if SendInput failed
+    private def sendMessage(msg: Int): Boolean = {
         val pt = Windows.getCursorPos
         Windows.sendInputDirect(pt, 1, MOUSEEVENTF_HWHEEL, 0, msg)
     }
 
-    def sendExit(): Unit = {
+    def sendExit(): Boolean = {
         logger.debug("send W10_MESSAGE_EXIT")
         sendMessage(W10_MESSAGE_EXIT)
     }
@@ -40,7 +41,7 @@ object W10Message {
     private def getFlag(msg: Int): Int =
         msg & 0x0FFFFFFF
 
-    def sendPassMode(b: Boolean): Unit = {
+    def sendPassMode(b: Boolean): Boolean = {
         logger.debug("send W10_MESSAGE_PASSMODE")
         val msg = setBoolBit(W10_MESSAGE_PASSMODE, b)
         sendMessage(msg)
@@ -51,7 +52,7 @@ object W10Message {
         Context.setPassMode(getBoolBit(msg))
     }
 
-    def sendReloadProp: Unit = {
+    def sendReloadProp: Boolean = {
         logger.debug("send W10_MESSAGE_RELOAD_PROP")
         sendMessage(W10_MESSAGE_RELOAD_PROP)
     }
@@ -61,7 +62,7 @@ object W10Message {
         Context.reloadProperties
     }
 
-    def sendInitState: Unit = {
+    def sendInitState: Boolean = {
         logger.debug("send W10_MESSAGE_INIT_STATE")
         sendMessage(W10_MESSAGE_INIT_STATE)
     }

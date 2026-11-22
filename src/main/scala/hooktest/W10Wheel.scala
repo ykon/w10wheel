@@ -125,20 +125,25 @@ object W10Wheel {
     private def procArgs(args: Array[String]): Unit = {
         logger.debug("procArgs")
         
-        args.toList match {
-            case "--sendExit" :: _ => W10Message.sendExit()
-            case "--sendPassMode" :: rest => W10Message.sendPassMode(getBool(rest))
-            case "--sendReloadProp" :: _ => W10Message.sendReloadProp
-            case "--sendInitState" :: _ => W10Message.sendInitState
-            case name :: _ if name.startsWith("--") => unknownCommand(name)
-            case name :: _ => setSelectedProperties(name)
-            case _ => ()
+        // Some(false) if the command could not be sent (SendInput failed)
+        val sent = args.toList match {
+            case "--sendExit" :: _ => Some(W10Message.sendExit())
+            case "--sendPassMode" :: rest => Some(W10Message.sendPassMode(getBool(rest)))
+            case "--sendReloadProp" :: _ => Some(W10Message.sendReloadProp)
+            case "--sendInitState" :: _ => Some(W10Message.sendInitState)
+            case name :: _ if name.startsWith("--") => unknownCommand(name); None
+            case name :: _ => setSelectedProperties(name); None
+            case _ => None
         }
-        
-        if (args.length > 0 && args(0).startsWith("--send")) {
-            Thread.sleep(1000)
-            System.exit(0)
-        }
+
+        sent.foreach(ok =>
+            if (ok) {
+                Thread.sleep(1000)
+                System.exit(0)
+            }
+            else
+                System.exit(1)
+        )
     }
 
     def main(args: Array[String]): Unit = {

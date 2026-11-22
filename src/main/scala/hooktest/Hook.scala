@@ -36,33 +36,85 @@ object Hook {
         }
     }
 
-    private def procMouse(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
-        val eh = EventHandler
-        val callNextHook = () => Windows.callNextHook(mouseHhk, nCode, wParam, info.getPointer)
-        eh.setCallNextHook(callNextHook)
+    // The button (0: left, 1: right, 2: middle, 3: X1, 4: X2) and whether it is a down, for the
+    // checks of Windows (dropResent, dropLoneUp)
+    private def buttonOf(msg: Int, info: HookInfo): Option[(Int, Boolean)] = {
+        def x = if (Mouse.isXButton1(info.mouseData)) 3 else 4
+        msg match {
+            case WM_LBUTTONDOWN => Some((0, true))
+            case WM_LBUTTONUP => Some((0, false))
+            case WM_RBUTTONDOWN => Some((1, true))
+            case WM_RBUTTONUP => Some((1, false))
+            case WM_MBUTTONDOWN => Some((2, true))
+            case WM_MBUTTONUP => Some((2, false))
+            case WM_XBUTTONDOWN => Some((x, true))
+            case WM_XBUTTONUP => Some((x, false))
+            case _ => None
+        }
+    }
 
-        if (nCode < 0)
-            return callNextHook()
+    private def procMouseEvent(wParam: WPARAM, info: HookInfo, callNextHook: () => LRESULT): LRESULT = {
+        val eh = EventHandler
 
         if (ctx.isPassMode) {
-            return if (wParam.intValue == WM_MOUSEHWHEEL && procCommand(info))
-                new LRESULT(1) else callNextHook()
+            if (wParam.intValue == WM_MOUSEHWHEEL && procCommand(info))
+                new LRESULT(1)
+            else
+                callNextHook()
+        }
+        else {
+            wParam.intValue match {
+                case WM_MOUSEMOVE => eh.move(info)
+                case WM_LBUTTONDOWN => eh.leftDown(info)
+                case WM_LBUTTONUP => eh.leftUp(info)
+                case WM_RBUTTONDOWN => eh.rightDown(info)
+                case WM_RBUTTONUP => eh.rightUp(info)
+                case WM_MBUTTONDOWN => eh.middleDown(info)
+                case WM_MBUTTONUP => eh.middleUp(info)
+                case WM_XBUTTONDOWN => eh.xDown(info)
+                case WM_XBUTTONUP => eh.xUp(info)
+                case WM_MOUSEWHEEL => callNextHook()
+                case WM_MOUSEHWHEEL =>
+                    if (procCommand(info)) new LRESULT(1) else callNextHook()
+                case _ => callNextHook()
+            }
+        }
+    }
+
+    private def procMouse(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
+        val buttonEvent = if (nCode < 0) None else buttonOf(wParam.intValue, info)
+        var passed = false
+
+        // Passes the event on, unless it is an up without its down (Windows.dropLoneUp)
+        val callNextHook = () => buttonEvent match {
+            case Some((button, false)) if Windows.dropLoneUp(button, info) => new LRESULT(1)
+            case _ =>
+                passed = true
+                Windows.callNextHook(mouseHhk, nCode, wParam, info.getPointer)
         }
 
-        wParam.intValue match {
-            case WM_MOUSEMOVE => eh.move(info)
-            case WM_LBUTTONDOWN => eh.leftDown(info)
-            case WM_LBUTTONUP => eh.leftUp(info)
-            case WM_RBUTTONDOWN => eh.rightDown(info)
-            case WM_RBUTTONUP => eh.rightUp(info)
-            case WM_MBUTTONDOWN => eh.middleDown(info)
-            case WM_MBUTTONUP => eh.middleUp(info)
-            case WM_XBUTTONDOWN => eh.xDown(info)
-            case WM_XBUTTONUP => eh.xUp(info)
-            case WM_MOUSEWHEEL => callNextHook()
-            case WM_MOUSEHWHEEL =>
-                if (procCommand(info)) new LRESULT(1) else callNextHook()
-            case _ => callNextHook()
+        if (nCode < 0)
+            callNextHook()
+        else {
+            // The handlers use the function of the event being handled. Restored after, in case a
+            // hook call is handled within this one (e.g. a modal dialog shown by a handler).
+            val outer = EventHandler.getCallNextHook
+            EventHandler.setCallNextHook(callNextHook)
+            try {
+                // Before Pass Mode and the triggers: the resent downs and ups are checked whatever
+                // handles them, in the order the application gets them
+                buttonEvent match {
+                    case Some((button, isDown)) if Windows.dropResent(button, isDown, info) => new LRESULT(1)
+                    case _ =>
+                        buttonEvent.foreach { case (button, isDown) => Windows.handlingButton(button, isDown, info) }
+                        val res = procMouseEvent(wParam, info, callNextHook)
+                        buttonEvent.foreach { case (button, isDown) => Windows.handledButton(button, isDown, info, passed) }
+                        res
+                }
+            }
+            finally {
+                EventHandler.setCallNextHook(outer)
+            }
         }
     }
 
@@ -81,18 +133,44 @@ object Hook {
         }
     }
 
-    private def procKeyboard(nCode: Int, wParam: WPARAM, info: KHookInfo): LRESULT = {
+    private def procKeyboardEvent(nCode: Int, wParam: WPARAM, info: KHookInfo, callNextHook: () => LRESULT): LRESULT = {
         val keh = KEventHandler
+
+        if (nCode < 0)
+            callNextHook()
+        else if (ctx.isPassMode) {
+            // The keys pressed in Pass Mode pass: so do their repeats and up after it is turned
+            // off, even if they have become the trigger (see KEventHandler.keyDown)
+            wParam.intValue match {
+                case WM_KEYDOWN | WM_SYSKEYDOWN =>
+                    ctx.LastFlags.newKeyDown(info.vkCode)
+                    ctx.LastFlags.setPassedKey(info.vkCode)
+                case WM_KEYUP | WM_SYSKEYUP =>
+                    ctx.LastFlags.getAndReset_PassedKey(info.vkCode)
+                case _ => ()
+            }
+
+            callNextHook()
+        }
+        else {
+            wParam.intValue match {
+                case WM_KEYDOWN | WM_SYSKEYDOWN  => keh.keyDown(info)
+                case WM_KEYUP | WM_SYSKEYUP =>keh.keyUp(info)
+                case _ => callNextHook()
+            }
+        }
+    }
+
+    private def procKeyboard(nCode: Int, wParam: WPARAM, info: KHookInfo): LRESULT = {
         val callNextHook = () => Windows.callNextHook(keyboardHhk, nCode, wParam, info.getPointer)
-        keh.setCallNextHook(callNextHook)
-
-        if (nCode < 0 || ctx.isPassMode)
-            return callNextHook()
-
-        wParam.intValue match {
-            case WM_KEYDOWN | WM_SYSKEYDOWN  => keh.keyDown(info)
-            case WM_KEYUP | WM_SYSKEYUP =>keh.keyUp(info)
-            case _ => callNextHook()
+        // Restored after, as for the mouse (see procMouse)
+        val outer = KEventHandler.getCallNextHook
+        KEventHandler.setCallNextHook(callNextHook)
+        try {
+            procKeyboardEvent(nCode, wParam, info, callNextHook)
+        }
+        finally {
+            KEventHandler.setCallNextHook(outer)
         }
     }
 

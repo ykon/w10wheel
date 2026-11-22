@@ -85,6 +85,7 @@ object User32Ex {
     val MSGFLT_RESET = 0
 
     val WM_QUERYENDSESSION = 0x0011
+    val WM_ENDSESSION = 0x0016
     val WM_INPUT = 0x00ff
     val RIM_INPUT = 0
     val RIM_INPUTSINK = 1
@@ -97,6 +98,7 @@ object User32Ex {
 
     val RID_INPUT = 0x10000003
     val MOUSE_MOVE_RELATIVE = 0
+    val MOUSE_MOVE_ABSOLUTE = 1
     //val RIM_TYPEMOUSE = 0
 
     val INSTANCE = Native.load("user32", classOf[User32ExTrait])

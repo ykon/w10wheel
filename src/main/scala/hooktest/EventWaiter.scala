@@ -5,10 +5,9 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import scala.annotation.tailrec
 
 object EventWaiter {
     // http://hsmemo.github.io/articles/no3059sSJ.html
@@ -16,8 +15,12 @@ object EventWaiter {
 
     private val ctx = Context
     private val logger = Logger.getLogger()
-    private val sync = new SynchronousQueue[MouseEvent](true)
 
+    // The event offered to the wait (one at most)
+    private val sync = new ArrayBlockingQueue[MouseEvent](1)
+
+    // A wait is in progress: set by start (before the wait is queued), reset when the wait has
+    // been handled (see poll)
     private val waiting = new AtomicBoolean(false)
     private var waitingEvent: MouseEvent = NonEvent(null)
 
@@ -30,8 +33,13 @@ object EventWaiter {
                 //Thread.sleep(1)
             }
             case LeftUp(_) | RightUp(_) => {
-                logger.debug(s"setFlagsOffer - setResent (Up): ${waitingEvent.name}")
-                ctx.LastFlags.setResent(waitingEvent)
+                // Only for the up of the other button: the waiting down is resent and its physical
+                // up comes later. The up of the same button is resent with the down (the click is
+                // done).
+                if (!waitingEvent.sameButton(me)) {
+                    logger.debug(s"setFlagsOffer - setResent (Up): ${waitingEvent.name}")
+                    ctx.LastFlags.setResent(waitingEvent)
+                }
             }
             case LeftDown(_) | RightDown(_) => {
                 logger.debug(s"setFlagsOffer - setSuppressed: ${waitingEvent.name}")
@@ -44,57 +52,71 @@ object EventWaiter {
         }
     }
 
+    // Returns when the wait has handled the event (true) or has ended without it (false): what
+    // the wait queues (resends) comes before what the hook queues for the events after (e.g. the
+    // resent up for the physical up of a resent down)
     def offer(me: MouseEvent): Boolean = {
         if (waiting.get) {
-            @tailrec
-            def loop(): Boolean = {
-                if (sync.offer(me)) {
-                    setFlagsOffer(me)
-                    true
-                }
-                else {
-                    if (waiting.get) {
-                        Thread.sleep(0)
-                        loop()
-                    }
-                    else
-                        false
-                }
-            }
+            if (!sync.offer(me))
+                throw new IllegalStateException(s"EventWaiter.offer: ${me.name}")
 
-            loop()
+            while (waiting.get)
+                Thread.`yield`()
+
+            // Still there: the wait ended (timeout) before taking it
+            if (sync.poll() == null) {
+                setFlagsOffer(me)
+                true
+            }
+            else
+                false
         }
         else
             false
     }
 
-    private def poll(timeout: Long): Option[MouseEvent] = {
+    // Cancels the wait (on the hook thread, e.g. when the trigger changes): the down that was
+    // waiting, if the wait was canceled (the down is not resent)
+    def cancel(): Option[MouseEvent] = {
+        val down = waitingEvent
+        if (offer(Cancel(null))) Some(down) else None
+    }
+
+    // Whether a wait is in progress for a down of another button than up's (on the hook thread)
+    def isWaitingOtherThan(up: MouseEvent): Boolean =
+        waiting.get && !waitingEvent.sameButton(up)
+
+    // handle is called with the result (None: timeout) before waiting is reset, so before an
+    // offer made meanwhile returns
+    private def poll(timeout: Long)(handle: Option[MouseEvent] => Unit): Unit = {
         try {
-            Option(sync.poll(timeout, TimeUnit.MILLISECONDS))
+            handle(Option(sync.poll(timeout, TimeUnit.MILLISECONDS)))
         }
         finally {
             waiting.set(false)
         }
     }
 
-    // w: the physical down waited for, with the Pass Mode generation and the press recorded when
-    // it was received (see start)
+    // w: the physical down waited for, with the Pass Mode generation and the press (see
+    // Windows.pressIdOf) recorded when it was received (see start)
     private case class Wait(down: MouseEvent, generation: Int, press: Int)
 
     private def fromTimeout(w: Wait): Unit = {
         val down = w.down
 
         // The resent flag is also seen by the up of a later press: if Pass Mode has been turned on
-        // (or the state initialized) since the physical down, neither set it nor resend
-        if (ctx.isPassMode || ctx.getPassModeGeneration != w.generation) {
-            logger.debug(s"wait Trigger (${down.name} -->> Timeout): dropped (Pass Mode)")
-        }
-        else {
-            logger.debug(s"wait Trigger (${down.name} -->> Timeout): resend ${down.name}")
-            // The flag first: the physical up coming before the down is queued is then resent too
-            // (not passed before the down), and InputSender holds that up until the down is handled
-            ctx.LastFlags.setResent(down)
-            Windows.resendDown(w.generation, w.press, down)
+        // (or the state initialized) since the physical down, neither set it nor resend. Checked
+        // under passModeLock, under which Pass Mode is switched.
+        ctx.passModeLock.synchronized {
+            if (ctx.isPassMode || ctx.getPassModeGeneration != w.generation) {
+                logger.debug(s"wait Trigger (${down.name} -->> Timeout): dropped (Pass Mode)")
+            }
+            else {
+                logger.debug(s"wait Trigger (${down.name} -->> Timeout): resend ${down.name}")
+                // Queue the down first: the up of a hook seeing the flag is queued after it
+                Windows.resendDown(w.generation, w.press, down)
+                ctx.LastFlags.setResent(down)
+            }
         }
     }
 
@@ -157,17 +179,24 @@ object EventWaiter {
         case _ => throw new IllegalStateException()
     }
 
-    private val waiterQueue = new SynchronousQueue[Wait](true)
+    private val waiterQueue = new ArrayBlockingQueue[Wait](1)
 
     private val waiterThread = new Thread(() =>
         while (true) {
             try {
                 val w = waiterQueue.take
 
-                poll(Context.getPollTimeout) match {
+                // The scroll start (second down) takes longer: it is done after the offer returns,
+                // the hook handles the ups meanwhile as starting (see setFlagsOffer)
+                var second: MouseEvent = NonEvent(null)
+                poll(Context.getPollTimeout)(res => res match {
+                    case Some(d2 @ (LeftDown(_) | RightDown(_))) => second = d2
                     case Some(res) => dispatchEvent(w, res)
                     case None => fromTimeout(w)
-                }
+                })
+
+                if (second.isDown)
+                    dispatchEvent(w, second)
             }
             catch {
                 case e: Exception => logger.warn(s"EventWaiter: $e")
@@ -185,12 +214,11 @@ object EventWaiter {
             throw new IllegalArgumentException
 
         waitingEvent = down
-        // Called by the mouse hook when the physical down is received: record the Pass Mode
-        // generation and a new press now, the resend happens later on the waiter thread
-        val press = InputSender.newPress(Windows.getButton(down))
-        waiterQueue.put(Wait(down, ctx.getPassModeGeneration, press))
+        // Before queuing the wait: set after it, the wait could already have timed out (and reset
+        // waiting), leaving waiting set without a wait, so that the next offer would never return
         waiting.set(true)
+        // Called by the mouse hook when the physical down is received: record the Pass Mode
+        // generation and the press now, the resend happens later on the waiter thread
+        waiterQueue.put(Wait(down, ctx.getPassModeGeneration, Windows.pressIdOf(down)))
     }
-
-
 }
