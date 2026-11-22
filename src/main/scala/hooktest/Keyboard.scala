@@ -11,7 +11,10 @@ sealed trait KeyboardEvent {
     val info: KHookInfo
     
     def vkCode = info.vkCode
-    def name = this.getClass.getSimpleName + s" ($vkCode)"
+    def name = this match {
+        case KNonEvent(_) => this.getClass.getSimpleName // no vkCode (info is null)
+        case _ => this.getClass.getSimpleName + s" ($vkCode)"
+    }
     
     def sameEvent(ke2: KeyboardEvent) = (this, ke2) match {
         case (KeyDown(_), KeyDown(_)) => true

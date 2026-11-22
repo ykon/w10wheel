@@ -20,9 +20,15 @@ object EventHandler {
     private var dragged = false
 
     // The down of the single or drag trigger that started scroll mode (and was suppressed). Reset
-    // by its up. An up of another button (e.g. the trigger was changed by Reload while pressed), or
-    // without it, has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
+    // by its up, or by the next down of its button (the up was missed, see checkSameLastEvent). An
+    // up of another button (e.g. the trigger was changed by Reload while pressed), or without it,
+    // has its down passed W10Wheel (e.g. pressed in Pass Mode), so the up passes.
     private var triggerStarted: MouseEvent = NonEvent(null)
+
+    // The earlier down of the button of the down handled was suppressed, and no up of the button
+    // has come since (the flag before procDown resets it for this down): the up was missed, the
+    // buttons do not repeat (see checkSameLastEvent)
+    private var earlierDownSuppressed = false
 
     // The downs that started scroll mode of a trigger before it was changed (changeTrigger), by
     // button (buttonIndex): changed again while pressed, there can be several. Their up is
@@ -114,14 +120,42 @@ object EventHandler {
             None
     }
 
-    private def resetLastFlagsLR(me: MouseEvent): Option[LRESULT] = {
-        debug("reset last flag", me)
-        ctx.LastFlags.resetLRFor(me)
-        None
+    private def isLR(me: MouseEvent) = me match {
+        case LeftDown(_) | RightDown(_) => true
+        case _ => false
     }
 
+    // The earlier press of the button of a down held scroll mode, and its up was missed: the press
+    // of the single or drag trigger (triggerStarted), or one of the pair of the LR, left and right
+    // triggers (both downs suppressed, see EventWaiter.setFlagsOffer; earlierDownSuppressed). Not
+    // e.g. the middle trigger's for an X1 down, nor a down passed in the LR trigger's scroll mode
+    // after the first up (the other button still holds it). By button, whatever the other buttons
+    // have done since (lastEvent).
+    private def isHeldByEarlierPress(down: MouseEvent): Boolean =
+        triggerStarted.sameEvent(down) || (ctx.isDoubleTrigger && isLR(down) && earlierDownSuppressed)
+
     private def checkSameLastEvent(me: MouseEvent): Option[LRESULT] = {
-        if (me.sameEvent(lastEvent)) {
+        val held = me.isDown && isHeldByEarlierPress(me)
+        if (me.isDown && (me.sameEvent(lastEvent) || held)) {
+            // A down again with no up of the button between (the buttons do not repeat): the up of
+            // the earlier press was missed (e.g. released on the secure desktop or over a window of
+            // a higher integrity level). A new press: passed, its up would be handled by the state
+            // of the earlier one (e.g. suppressed as the trigger's), leaving the button pressed. The
+            // scroll mode that press held could not end by its up any more: it is taken for locked,
+            // so that this down ends it (checkExitScrollDown, its up suppressed too). Only the
+            // scroll mode of this button (isHeldByEarlierPress), also if other buttons were pressed
+            // since.
+            debug("down again (the up was missed)", me)
+            if (held && ctx.isPressedMouseScrollMode)
+                ctx.setReleasedScrollMode
+
+            if (triggerStarted.sameEvent(me))
+                triggerStarted = NonEvent(null)
+
+            lastEvent = me
+            None
+        }
+        else if (me.sameEvent(lastEvent)) {
             logger.warn(s"same last event: ${me.name}")
             callNextHook
         }
@@ -142,8 +176,28 @@ object EventHandler {
             None
     }
 
+    // The scroll mode of the keyboard trigger is held: pressing a mouse trigger ends it. Its down is
+    // suppressed, and so is its up (checkSuppressedDown). For the LR, left and right triggers, see
+    // passPressedScrollMode.
+    private def checkExitOtherScroll(down: MouseEvent): Option[LRESULT] = {
+        if (ctx.isPressedKeyboardScrollMode) {
+            debug("exit scroll mode (other trigger)", down)
+            ctx.exitScrollMode
+            ctx.LastFlags.setSuppressed(down)
+            suppress
+        }
+        else
+            None
+    }
+
+    // While the keyboard trigger's scroll mode is held, the buttons of the LR, left and right
+    // triggers wait as when not scrolling: if the trigger is pressed (the second down, offered to
+    // the wait before, whichever button it is), it ends that scroll mode instead of starting one
+    // (EventWaiter.waiterThread), as another trigger does; otherwise the down is resent (or the
+    // click) as usual
     private def passPressedScrollMode(down: MouseEvent): Option[LRESULT] = {
-        if (ctx.isPressedScrollMode) {
+        val isTriggerButton = ctx.isLRTrigger || ctx.isTriggerEvent(down)
+        if (ctx.isPressedScrollMode && !(ctx.isPressedKeyboardScrollMode && isTriggerButton)) {
             debug("pass scroll mode (Pressed)", down)
             ctx.LastFlags.setPassed(down)
             callNextHook
@@ -222,6 +276,15 @@ object EventHandler {
             None
     }
 
+    // The wait of the earlier press of the button of a down may have timed out after procDown reset
+    // the flags of this down: its resent flag (EventWaiter.fromTimeout) is not of this press, whose
+    // up would be resent for a down the hook drops (its press is not the current one), with the
+    // wait of this press not offered that up (its down resent later, left pressed). Reset it when
+    // no wait is in progress any more: a timeout is handled before the wait ends (EventWaiter.poll).
+    // No flag of this press has been set yet (lrDown).
+    private def resetRacedResentDown(down: MouseEvent): Unit =
+        ctx.LastFlags.resetFor(down)
+
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
         // The up of the other button than the waiting down, whose own down did not reach the
         // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
@@ -230,6 +293,17 @@ object EventHandler {
             debug("suppress (up without its down, other button)", me)
             suppress
         }
+        // A down of the button whose down is waiting (the up was missed, or of another mouse): not
+        // the second down of the trigger (the same button would start scroll mode). A new press,
+        // as for checkSameLastEvent: the wait is canceled (its down is not resent: the hook would
+        // drop it, its press is not the current one, see Windows.dropResent), this down is handled
+        // after.
+        else if (me.isDown && EventWaiter.isWaitingFor(me)) {
+            debug("cancel the wait (down of the waiting button)", me)
+            EventWaiter.cancel()
+            resetRacedResentDown(me)
+            None
+        }
         else if (EventWaiter.offer(me)) {
             debug("success to offer", me)
             // The second down starts LR scroll mode: no up of the pair counted yet (the count of
@@ -237,8 +311,10 @@ object EventHandler {
             if (me.isDown) secondTriggerUp = false
             suppress
         }
-        else
+        else {
+            if (me.isDown) resetRacedResentDown(me)
             None
+        }
     }
 
     private def checkSuppressedDown(up: MouseEvent): Option[LRESULT] = {
@@ -250,9 +326,13 @@ object EventHandler {
             None
     }
 
+    // Also before skipFirstUp (lrUp): the flag is of this press (reset at its down), e.g. the last
+    // event was reset by a trigger change after the down was resent. The last event is this up
+    // then, as checkSameLastEvent would set it.
     private def checkResentDown(up: MouseEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_ResentDown(up)) {
             debug("resendUp and suppress (checkResentDown)", up)
+            lastEvent = up
             Windows.resendUp(up)
             suppress
         }
@@ -346,7 +426,7 @@ object EventHandler {
     }
 
     private def continueScrollDrag(up: MouseEvent): Option[LRESULT] = {
-        if (ctx.isDraggedLock && dragged) {
+        if (ctx.isDraggedLock && isDragged) {
             debug("continueScrollDrag (Released)", up)
             ctx.setReleasedScrollMode
             suppress
@@ -357,6 +437,7 @@ object EventHandler {
 
     private def exitAndResendDrag(me: MouseEvent): Option[LRESULT] = {
         debug("exit scroll mode (Drag)", me)
+        val dragged = isDragged
         ctx.exitScrollMode
 
         if (!dragged) {
@@ -439,11 +520,15 @@ object EventHandler {
         val cs: Checkers = List(
             skipResendEventLR,
             checkSameLastEvent,
-            resetLastFlagsLR,
+            // (the flags of the earlier press are reset by procDown)
+            // A wait in progress gets the down first, whatever the scroll mode: started during the
+            // keyboard trigger's scroll mode, the second down ends it (see EventWaiter.waiterThread),
+            // also if it is locked now (the keyboard trigger released quickly in between); it would
+            // not be offered after checkExitScrollDown, and the wait would resend its down
+            offerEventWaiter,
             checkExitScrollDown,
             passPressedScrollMode,
             //passSingleEvent,
-            offerEventWaiter,
             checkTriggerWaitStart,
             endNotTrigger
         )
@@ -456,11 +541,13 @@ object EventHandler {
         val cs: Checkers = List(
             skipResendEventLR,
             checkEscape,
+            // The down was resent: its up must be resent (and the down it follows), even without a
+            // last event (skipFirstUp would pass this up, and the hook drop the down not sent yet)
+            checkResentDown,
             skipFirstUp,
             checkSameLastEvent,
             //checkSingleSuppressed,
             checkPassedDown,
-            checkResentDown,
             checkExitScrollUpLR,
             checkStartingScroll,
             offerEventWaiter,
@@ -481,6 +568,7 @@ object EventHandler {
             //resetLastFlags,
             checkExitScrollDown,
             passNotTrigger,
+            checkExitOtherScroll,
             checkKeySendMiddle,
             checkTriggerScrollStart,
             endIllegalState
@@ -514,6 +602,7 @@ object EventHandler {
             //resetLastFlags,
             checkExitScrollDown,
             passNotDragTrigger,
+            checkExitOtherScroll,
             startScrollDrag
         )
 
@@ -538,9 +627,12 @@ object EventHandler {
         getResult(cs, me)
     }
 
+    // As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
+    // first: they neither end the locked scroll mode nor initialize the state (Escape)
     private def noneDown(me: MouseEvent): LRESULT = {
         //logger.debug("noneDown")
         val cs: Checkers = List(
+            skipResendEventSingle,
             //resetLastFlags,
             checkExitScrollDown,
             endPass
@@ -552,6 +644,7 @@ object EventHandler {
     private def noneUp(me: MouseEvent): LRESULT = {
         //logger.debug("noneUp")
         val cs: Checkers = List(
+            skipResendEventSingle,
             checkEscape,
             checkSuppressedDown,
             endPass
@@ -567,13 +660,19 @@ object EventHandler {
 
     // Before the handlers of the trigger (see canceledDowns)
     private def procDown(proc: MouseEvent => LRESULT, d: MouseEvent): LRESULT = {
+        earlierDownSuppressed = false
         if (!Windows.isInjectedEvent(d)) {
             canceledDowns(buttonIndex(d)) = false
 
+            // Before the reset (see checkSameLastEvent)
+            earlierDownSuppressed = ctx.LastFlags.isSuppressedDown(d)
+
             // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
-            // whatever the trigger (only the LR trigger's handlers did, so after changing the
-            // trigger they could take e.g. the next up for that of a resent or suppressed down)
-            ctx.LastFlags.resetLRFor(d)
+            // whatever the trigger, for all the buttons (only the LR trigger's handlers did, so
+            // after changing the trigger they could take e.g. the next up for that of a resent or
+            // suppressed down, and the missed up of a suppressed middle down would make the up of
+            // the next middle click suppressed)
+            ctx.LastFlags.resetFor(d)
         }
 
         proc(d)
@@ -606,7 +705,7 @@ object EventHandler {
         // one do not use them, and they would be taken for those of a later up whose down was not
         // seen)
         if (!Windows.isInjectedEvent(u))
-            ctx.LastFlags.resetLRFor(u)
+            ctx.LastFlags.resetFor(u)
 
         res
     }
@@ -652,12 +751,24 @@ object EventHandler {
     private def dragDefault(info: HookInfo): Unit = {}
     private var drag: HookInfo => Unit = dragDefault
 
-    private def dragStart(info: HookInfo): Unit = {
-        if (ctx.isCursorChange && !ctx.isVhAdjusterMode)
-            Windows.changeCursorV
+    // The press of the drag trigger is a drag (its click is not resent at the up) if the cursor
+    // would have moved from the start point (scroll mode suppresses the moves), or if it has
+    // scrolled (Context.isScrolled: the scroll uses RawInput, a slight move with enhanced pointer
+    // precision can scroll without moving the cursor, and so can a move toward the edge of the
+    // screen from it). Not for a move of other software (injected), nor for one that neither moved
+    // the cursor nor scrolled: the click is resent then, the scroll and the click never both.
+    private def isDragged: Boolean =
+        dragged || ctx.isScrolled
 
-        drag = dragDefault
-        dragged = true
+    private def dragStart(info: HookInfo): Unit = {
+        val (sx, sy) = ctx.getScrollStartPoint
+        if (!Windows.isInjectedEvent(Move(info)) && (info.pt.x != sx || info.pt.y != sy)) {
+            if (ctx.isCursorChange && !ctx.isVhAdjusterMode)
+                Windows.changeCursorV
+
+            drag = dragDefault
+            dragged = true
+        }
     }
 
     def move(info: HookInfo): LRESULT = {
@@ -666,6 +777,12 @@ object EventHandler {
             //Windows.sendWheel(info.pt)
             //Windows.sendWheel(info.pt.x, info.pt.y)
             suppress.get
+        }
+        // The moves of other software (injected) and those at the point of the waiting down (the
+        // cursor has not moved) do not end the LR trigger wait (its down would be resent as for a
+        // drag): they pass
+        else if (Windows.isInjectedEvent(Move(info)) || EventWaiter.isWaitingAt(Move(info))) {
+            callNextHook.get
         }
         else if (EventWaiter.offer(Move(info))) {
             logger.debug("success to offer: Move")

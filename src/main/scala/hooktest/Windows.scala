@@ -36,6 +36,8 @@ object Windows {
     // https://github.com/EsotericSoftware/clippy/blob/master/src/com/esotericsoftware/clippy/Tray.java
     private val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
 
+    private val rawInputSize = new RAWINPUT().size()
+
     private def procRawInput(lParam: LPARAM): Boolean = {
         val pcbSize = new IntByReference
         val cbSizeHeader = new RAWINPUTHEADER().size()
@@ -47,7 +49,9 @@ object Windows {
         def isMouseMoveRelative(ri: RAWINPUT) =
             ri.header.dwType == RIM_TYPEMOUSE && (ri.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == 0
 
-        if (getRawInputData(null) == 0) {
+        // Not smaller than RAWINPUT (a mouse input, the only device registered): it is read whole
+        // from the buffer, which would be read past otherwise
+        if (getRawInputData(null) == 0 && pcbSize.getValue >= rawInputSize) {
             val buf = new Memory(pcbSize.getValue)
             if (getRawInputData(buf) == pcbSize.getValue) {
                 val ri = new RAWINPUT(buf)
@@ -214,16 +218,22 @@ object Windows {
     private val upPassed = Array.fill(5)(false)
     private val downPassedId = Array.fill(5)(NO_PRESS)
     private val downSuppressed = Array.fill(5)(false)
+    // releaseQueuedId: the last press whose up has been resent (queued, see resendUp) for its down
+    // resent alone: that down is not dropped if a later press has started before it is sent (e.g.
+    // the sender busy with a click), it is released by that up
+    private val releaseQueuedId = Array.fill(5)(NO_PRESS)
     private var lastPressId = 0
 
     // Called by the mouse hook for a button down or up before it is handled, also in Pass Mode:
     // true to drop it.
     // - A down resent alone for a press whose physical up has passed (or for an earlier press)
-    //   would leave the button pressed.
+    //   would leave the button pressed. Not if its up has been resent (releaseQueuedId): it comes
+    //   after, and the press would be lost.
     // - The up resent for a down resent alone that did not reach the application (dropped above,
     //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
     def dropResent(button: Int, isDown: Boolean, info: HookInfo): Boolean = resendKind(info) match {
-        case Some((KIND_DOWN, id)) if isDown && (id != pressId(button) || upPassed(button)) =>
+        case Some((KIND_DOWN, id)) if isDown && (id != pressId(button) || upPassed(button)) &&
+                                      id != releaseQueuedId(button) =>
             logger.debug("dropResent: a down after its physical up")
             true
         case Some((KIND_RELEASE, id)) if !isDown && id != downPassedId(button) =>
@@ -316,9 +326,12 @@ object Windows {
         input
     }
 
-    // A wheel event (see InputSender.Wheel)
-    def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit =
+    // A wheel event of scroll mode (see InputSender.Wheel)
+    def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
+        // It has scrolled: the press of the drag trigger is a drag (see EventHandler.dragStart)
+        ctx.setScrolled()
         InputSender.enqueue(InputSender.Wheel, Array(createInput(pt, data, flags, time, extra)))
+    }
 
     // false if SendInput failed
     def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Boolean = {
@@ -424,9 +437,12 @@ object Windows {
         vLastMove = if (d > 0) Plus() else Minus()
     }
 
+    // Not a delta of 0 (e.g. a multiplier smaller than 1 for a small move): it would not scroll
     private def sendDirectVWheel(pt: POINT, d: Int): Unit = {
         //println(s"d: $d")
-        sendInput(pt, reverseIfV(addAccelIf(d)),  MOUSEEVENTF_WHEEL, 0, 0)
+        val delta = reverseIfV(addAccelIf(d))
+        if (delta != 0)
+            sendInput(pt, delta, MOUSEEVENTF_WHEEL, 0, 0)
     }
 
     private def sendRealHWheel(pt: POINT, d: Int): Unit = {
@@ -446,7 +462,9 @@ object Windows {
     }
 
     private def sendDirectHWheel(pt: POINT, d: Int): Unit = {
-        sendInput(pt, reverseIfH(addAccelIf(d)), MOUSEEVENTF_HWHEEL, 0, 0)
+        val delta = reverseIfH(addAccelIf(d))
+        if (delta != 0)
+            sendInput(pt, delta, MOUSEEVENTF_HWHEEL, 0, 0)
     }
 
     private var sendVWheel: (POINT, Int) => Unit = sendDirectVWheel
@@ -681,6 +699,7 @@ object Windows {
     // only if it reached the application (dropResent).
     def resendUp(me: MouseEvent): Unit = {
         val press = pressIdOf(me)
+        releaseQueuedId(getButton(me)) = press
         val input = createResendUp(me, resendExtra(KIND_RELEASE, press))
         InputSender.enqueue(InputSender.Release(getButton(me), press), Array(input))
     }
@@ -711,14 +730,29 @@ object Windows {
     private val CURSOR_V = loadCursor(IDC_SIZENS)
     private val CURSOR_H = loadCursor(IDC_SIZEWE)
 
-    private def copyCursor(icon: HICON) =
-        u32.CopyIcon(icon).getPointer
+    private def copyCursor(icon: HICON): Pointer = {
+        val copy = u32.CopyIcon(icon)
+        if (copy == null) null else copy.getPointer
+    }
+
+    // Whether the system cursors have been changed since they were restored: restoring reloads
+    // them all (SPI_SETCURSORS), so only when they have been changed (e.g. not for a click of the
+    // drag trigger), and whatever the setting is now (it may have been changed while scrolling)
+    @volatile private var cursorChanged = false
+
+    // SetSystemCursor destroys the copy only if it succeeds: destroyed here otherwise
+    private def setSystemCursor(icon: HICON, id: Int): Unit = {
+        val h = copyCursor(icon)
+        if (h != null && !u32ex.SetSystemCursor(h, id))
+            u32ex.DestroyCursor(h)
+    }
 
     def changeCursor(hCur: Pointer) = {
+        cursorChanged = true
         val icon = new HICON(hCur)
-        u32ex.SetSystemCursor(copyCursor(icon), OCR_NORMAL)
-        u32ex.SetSystemCursor(copyCursor(icon), OCR_IBEAM)
-        u32ex.SetSystemCursor(copyCursor(icon), OCR_HAND)
+        setSystemCursor(icon, OCR_NORMAL)
+        setSystemCursor(icon, OCR_IBEAM)
+        setSystemCursor(icon, OCR_HAND)
     }
 
     def changeCursorV: Unit =
@@ -731,9 +765,15 @@ object Windows {
     //val SPIF_SENDCHANGE = 0x02;
     //val SPIF_SENDWININICHANGE = 0x02;
 
-    def restoreCursor = {
+    def restoreCursor: Boolean = {
         //val fWinIni = if (!sendChange) 0 else (SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE)
-        u32ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
+        if (cursorChanged) {
+            val res = u32ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
+            if (res) cursorChanged = false
+            res
+        }
+        else
+            true
     }
 
     private def getAsyncKeyState(vKey: Int) =
@@ -790,21 +830,29 @@ object Windows {
         u32ex.RegisterRawInputDevices(rid, 1, rid(0).size)
     }
     
-    def getLastErrorCode: Int = {
-        return k32.GetLastError();
-    }
-    
-    def getLastErrorMessage: String = {
-        return Kernel32Util.formatMessage(getLastErrorCode);
+    // The error of the last native call on this thread, as JNA saved it right after the call
+    // (GetLastError called through JNA could get the error of another call)
+    def getLastErrorCode: Int =
+        com.sun.jna.Native.getLastError()
+
+    def getLastErrorMessage: String =
+        Kernel32Util.formatMessage(getLastErrorCode)
+
+    // Called by Context.Scroll under its lock, maybe on the EventWaiter thread (LR trigger): no
+    // dialog, it would block the lock that the hook waits for (no mouse input, the dialog could
+    // not be closed), and SWT dialogs need the UI thread. Returns whether it succeeded: scroll
+    // mode does not start if it failed.
+    def registerRawInput: Boolean = {
+        val res = registerMouseRawInputDevice(RIDEV_INPUTSINK, messageHwnd)
+        if (!res)
+            logger.warn("Failed register RawInput: " + getLastErrorMessage)
+        res
     }
 
-    def registerRawInput: Unit = {
-        if (!registerMouseRawInputDevice(RIDEV_INPUTSINK, messageHwnd))
-           Dialog.errorMessage("Failed register RawInput: " + getLastErrorMessage)
-    }
-
-    def unregisterRawInput: Unit = {
-        if (!registerMouseRawInputDevice(RIDEV_REMOVE, null))
-            Dialog.errorMessage("Failed unregister RawInput: " + getLastErrorMessage)
+    def unregisterRawInput: Boolean = {
+        val res = registerMouseRawInputDevice(RIDEV_REMOVE, null)
+        if (!res)
+            logger.warn("Failed unregister RawInput: " + getLastErrorMessage)
+        res
     }
 }

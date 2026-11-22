@@ -111,7 +111,8 @@ object W10Wheel {
     }
 
     private def setSelectedProperties(name: String): Unit = {
-        if (Properties.exists(name))
+        // Default is always valid (its file is not written until exit)
+        if (name == Properties.DEFAULT_DEF || Properties.exists(name))
             Context.setSelectedProperties(name)
         else
             Dialog.errorMessage(s"${convLang("Properties does not exist")}: $name")
@@ -157,9 +158,13 @@ object W10Wheel {
         ctx.loadProperties
         ctx.setSystemTray()
 
-        if (!Hook.setMouseHook) {
-            Dialog.errorMessage(s"${convLang("Failed mouse hook install")}: " + Windows.getLastErrorMessage)
-            System.exit(1)
+        Hook.setMouseHook match {
+            case Some(err) =>
+                // The icon would remain in the tray after System.exit
+                ctx.hideSystemTray()
+                Dialog.errorMessage(s"${convLang("Failed mouse hook install")}: $err")
+                System.exit(1)
+            case None => ()
         }
         
         logger.debug("Mouse hook installed")

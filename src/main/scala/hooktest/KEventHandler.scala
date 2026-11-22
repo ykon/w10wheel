@@ -19,7 +19,15 @@ object KEventHandler {
         __callNextHook = f
     def getCallNextHook: () => LRESULT = __callNextHook
 
+    // The trigger key pressed (its down suppressed, as the scroll it started) is suppressed like the
+    // other keys whose down was (LastFlags.init): its up alone is suppressed, or it would pass
+    // (e.g. the Alt key would activate the menu bar)
     def initState(): Unit = {
+        lastEvent match {
+            case KeyDown(_) => ctx.LastFlags.setSuppressedKey(lastEvent.vkCode)
+            case _ => ()
+        }
+
         lastEvent = KNonEvent(null)
     }
 
@@ -30,9 +38,14 @@ object KEventHandler {
         logger.debug(msg + ": " + ke.name)
     }
 
+    // An up of the trigger key whose down W10Wheel did not handle (the last event is not its down):
+    // the first one, or one whose down was not seen (e.g. pressed over a window of a higher
+    // integrity level). The down reached the application (or Windows): the up passes, or the key
+    // would be left pressed. (The ups of the downs suppressed otherwise are handled before, see
+    // keyUp.)
     private def skipFirstUp(ke: KeyboardEvent): Option[LRESULT] = {
-        if (lastEvent == KNonEvent(null)) {
-            debug("skip first Up", ke)
+        if (!isKeyDown(lastEvent)) {
+            debug("skip Up (its down not handled)", ke)
             callNextHook
         }
         else
@@ -140,10 +153,24 @@ object KEventHandler {
         case _ => throw new IllegalArgumentException()
     }
 
+    // The scroll mode of a mouse trigger is held (or its start pending): pressing the keyboard
+    // trigger ends it. Its down is suppressed, and so are its repeats and its up (keyUp).
+    private def checkExitOtherScroll(ke: KeyboardEvent): Option[LRESULT] = {
+        if (ctx.isPressedMouseScrollMode || ctx.isStartingScrollMode) {
+            debug("exit scroll mode (other trigger)", ke)
+            ctx.exitScrollMode
+            ctx.LastFlags.setSuppressed(ke)
+            suppress
+        }
+        else
+            None
+    }
+
     private def singleDown(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
                 checkSameLastEvent,
                 checkExitScrollDown,
+                checkExitOtherScroll,
                 checkTriggerScrollStart,
                 endIllegalState
         )
@@ -192,6 +219,7 @@ object KEventHandler {
 
         val kd = KeyDown(info)
         ctx.LastFlags.newKeyDown(kd.vkCode)
+        ctx.LastFlags.resetLoneUpKey(kd.vkCode)
 
         // The trigger key that does not repeat (Pause) may send no up: a down after its down was
         // released, quickly. As its up would, lock the scroll it started (this down then ends it),
@@ -230,6 +258,12 @@ object KEventHandler {
             if (ctx.isTriggerKey(ku)) lastEvent = ku
             new LRESULT(1)
         }
+        // The up alone of a key whose down was suppressed before the state was initialized
+        else if (ctx.LastFlags.getAndReset_LoneUpKey(ku.vkCode)) {
+            debug("suppress (up alone of a suppressed down)", ku)
+            if (ctx.isTriggerKey(ku)) lastEvent = ku
+            new LRESULT(1)
+        }
         else if (ctx.LastFlags.getAndReset_PassedKey(ku.vkCode)) {
             debug("pass (up of a passed down)", ku)
             __callNextHook()
@@ -263,18 +297,21 @@ object KEventHandler {
     // The keyboard hook is installed (again, on every load): ups may have been missed while it was
     // removed (e.g. by Windows for a timeout). The scroll mode the trigger key started would not
     // end, and its next down would be taken for a repeat: end it and forget the last event. The
-    // suppressed and passed keys are kept until their up: whether a key is still pressed cannot
-    // be told for sure.
+    // passed keys are kept until their up. The suppressed keys are suppressed for their up alone,
+    // as after initState: whether a key is still pressed cannot be told for sure, and the hook is
+    // installed again (Reload) to recover, so the next press of a key whose up was missed works.
     def hookInstalled(): Unit = {
-        // The trigger key pressed (its down suppressed, as the scroll it started): suppress its
-        // repeats and its up until the up (keyUp), or the up alone would pass, or the repeats
-        // start scroll mode again. If its up was missed, its next press is suppressed once.
+        // The trigger key pressed (its down suppressed, as the scroll it started): suppress its up
+        // alone, or it would pass. Its next down is taken for a new press (a repeat cannot be told
+        // from it), the repeats of a key still pressed start scroll mode again.
         lastEvent match {
             case KeyDown(_) => ctx.LastFlags.setSuppressedKey(lastEvent.vkCode)
             case _ => ()
         }
 
         lastEvent = KNonEvent(null)
+        ctx.LastFlags.resetLoneUpKeys
+        ctx.LastFlags.suppressedKeysToLoneUp
 
         if (ctx.isKeyboardScrollMode) {
             logger.debug("hookInstalled: exit keyboard scroll mode")

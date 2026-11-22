@@ -45,7 +45,7 @@ object EventWaiter {
                 logger.debug(s"setFlagsOffer - setSuppressed: ${waitingEvent.name}")
                 ctx.LastFlags.setSuppressed(waitingEvent)
                 ctx.LastFlags.setSuppressed(me)
-                ctx.setStartingScrollMode
+                // The scroll is starting already (waiterThread)
             }
             case Cancel(_) => logger.debug("setFlagsOffer: cancel")
             case _ => throw new IllegalStateException(me.name)
@@ -86,6 +86,15 @@ object EventWaiter {
     def isWaitingOtherThan(up: MouseEvent): Boolean =
         waiting.get && !waitingEvent.sameButton(up)
 
+    // Whether a wait is in progress for a down of the same button as down's (on the hook thread)
+    def isWaitingFor(down: MouseEvent): Boolean =
+        waiting.get && waitingEvent.sameEvent(down)
+
+    // Whether a wait is in progress for a down at the point of me (on the hook thread): a move
+    // there has not moved the cursor
+    def isWaitingAt(me: MouseEvent): Boolean =
+        waiting.get && Mouse.samePoint(waitingEvent, me)
+
     // handle is called with the result (None: timeout) before waiting is reset, so before an
     // offer made meanwhile returns
     private def poll(timeout: Long)(handle: Option[MouseEvent] => Unit): Unit = {
@@ -98,8 +107,9 @@ object EventWaiter {
     }
 
     // w: the physical down waited for, with the Pass Mode generation and the press (see
-    // Windows.pressIdOf) recorded when it was received (see start)
-    private case class Wait(down: MouseEvent, generation: Int, press: Int)
+    // Windows.pressIdOf) recorded when it was received (see start), and whether the keyboard
+    // trigger's scroll mode was on then
+    private case class Wait(down: MouseEvent, generation: Int, press: Int, keyboardScroll: Boolean)
 
     private def fromTimeout(w: Wait): Unit = {
         val down = w.down
@@ -187,10 +197,27 @@ object EventWaiter {
                 val w = waiterQueue.take
 
                 // The scroll start (second down) takes longer: it is done after the offer returns,
-                // the hook handles the ups meanwhile as starting (see setFlagsOffer)
+                // the hook handles the ups meanwhile as starting (set before the offer returns)
                 var second: MouseEvent = NonEvent(null)
                 poll(Context.getPollTimeout)(res => res match {
-                    case Some(d2 @ (LeftDown(_) | RightDown(_))) => second = d2
+                    case Some(d2 @ (LeftDown(_) | RightDown(_))) =>
+                        // The keyboard trigger's scroll mode is on (see EventHandler.
+                        // passPressedScrollMode): the LR trigger ends it instead of starting one, as
+                        // another trigger does. Decided here, before the offer returns: the hook
+                        // waits for it, so the keyboard trigger cannot end the scroll mode meanwhile
+                        // (its up), which would let the LR trigger start one after (not as starting
+                        // either). Neither started if it was on when the wait started and has ended
+                        // since (the keyboard trigger released in between): the trigger was pressed
+                        // to end it.
+                        if (w.keyboardScroll || ctx.isKeyboardScrollMode) {
+                            logger.debug(s"wait Trigger (${w.down.name} -->> ${d2.name}): exit scroll mode (keyboard)")
+                            if (ctx.isKeyboardScrollMode)
+                                ctx.exitScrollMode
+                        }
+                        else {
+                            ctx.setStartingScrollModeFor(w.generation)
+                            second = d2
+                        }
                     case Some(res) => dispatchEvent(w, res)
                     case None => fromTimeout(w)
                 })
@@ -219,6 +246,6 @@ object EventWaiter {
         waiting.set(true)
         // Called by the mouse hook when the physical down is received: record the Pass Mode
         // generation and the press now, the resend happens later on the waiter thread
-        waiterQueue.put(Wait(down, ctx.getPassModeGeneration, Windows.pressIdOf(down)))
+        waiterQueue.put(Wait(down, ctx.getPassModeGeneration, Windows.pressIdOf(down), ctx.isKeyboardScrollMode))
     }
 }

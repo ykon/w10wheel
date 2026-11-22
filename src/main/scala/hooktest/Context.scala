@@ -51,11 +51,20 @@ object Context {
 
     private def getImage(name: String) = {
         val stream = getClass.getClassLoader.getResourceAsStream(name)
-        new Image(Display.getDefault, stream)
+        try {
+            new Image(Display.getDefault, stream)
+        }
+        finally {
+            stream.close()
+        }
     }
 
+    // Made once: a new image for every switch of Pass Mode would not be released
+    private lazy val trayIconRun = getImage(ICON_RUN_NAME)
+    private lazy val trayIconStop = getImage(ICON_STOP_NAME)
+
     private def getTrayIcon(b: Boolean): Image = {
-        getImage(if (b) ICON_STOP_NAME else ICON_RUN_NAME)
+        if (b) trayIconStop else trayIconRun
     }
 
     private def getTrayText(b: Boolean) = {
@@ -247,6 +256,9 @@ object Context {
         @volatile private var closed = false // set at exit: no more scroll mode
         @volatile private var passMode = false // Pass Mode is on: no scroll mode
         @volatile private var byKeyboard = false // started by the keyboard trigger
+        // A wheel event has been sent since scroll mode started (Windows.sendInput): the press of
+        // the drag trigger is a drag then, even if the cursor would not have moved
+        @volatile var scrolled = false
 
         // The LR trigger start was canceled before start ran on the EventWaiter thread: exit was
         // called while starting (e.g. both buttons released), so start must not start afterwards
@@ -257,14 +269,16 @@ object Context {
             sy = y;
         }
 
+        // Also called when not in scroll mode (e.g. initState, or the drag trigger clicked): only
+        // what was done is undone (RawInput is registered in scroll mode only, the cursor is
+        // restored only if it was changed, whatever the setting is now: see Windows.restoreCursor)
         private def exitMode(): Unit = {
-            Windows.unregisterRawInput
+            if (mode) Windows.unregisterRawInput
 
             mode = false
             releasedMode = false
 
-            if (cursorChange)
-                Windows.restoreCursor
+            Windows.restoreCursor
         }
 
         // generation: for the LR trigger, started on the EventWaiter thread some time after the
@@ -278,17 +292,19 @@ object Context {
             val canceled = generation.isDefined && startCanceled
             if (generation.isDefined) startCanceled = false
 
-            if (canStart(generation) && !canceled) {
+            // Not while in scroll mode: the handlers end it before, another trigger's included (for
+            // the LR trigger, EventWaiter.waiterThread). Without RawInput, the moves would be
+            // suppressed with no scroll: refused.
+            if (canStart(generation) && !canceled && !mode && Windows.registerRawInput) {
                 stime = info.time
                 setStartPoint(info.pt.x, info.pt.y)
                 Windows.initScroll
-
-                Windows.registerRawInput
 
                 if (cursorChange && !firstTrigger.isDrag)
                     Windows.changeCursorV
 
                 byKeyboard = false
+                scrolled = false
                 mode = true
             }
             // Also when refused (exiting, Pass Mode or canceled): do not leave the LR trigger
@@ -301,18 +317,17 @@ object Context {
             // again after this one has ended
             if (starting) startCanceled = true
 
-            if (canStart(None)) {
+            if (canStart(None) && !mode && Windows.registerRawInput) {
                 stime = kinfo.time
                 val pt = Windows.getCursorPos
                 setStartPoint(pt.x, pt.y)
                 Windows.initScroll
 
-                Windows.registerRawInput
-
                 if (cursorChange)
                     Windows.changeCursorV
 
                 byKeyboard = true
+                scrolled = false
                 mode = true
             }
             starting = false
@@ -334,7 +349,7 @@ object Context {
         // is not registered again afterwards
         def close = synchronized {
             closed = true
-            if (mode) exitMode()
+            exitMode()
         }
 
         // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
@@ -344,8 +359,10 @@ object Context {
             passMode = b
             // A pending LR trigger start is refused (Pass Mode generation): do not leave it
             // starting, the ups after Pass Mode is turned off would be taken for it
-            if (b) starting = false
-            if (b && mode) exitMode()
+            if (b) {
+                starting = false
+                exitMode()
+            }
         }
 
         def checkExit(time: Int) = {
@@ -359,9 +376,12 @@ object Context {
         def getStartTime = stime
         def getStartPoint = (sx, sy)
 
-        def setStarting = synchronized {
-            // start refuses while closed or in Pass Mode, so do not wait for it then
-            starting = !mode && !closed && !passMode
+        // For the LR trigger, on the EventWaiter thread before the offer of the second down returns
+        // (so before the hook handles the ups) and before start, which resets it: set after start,
+        // it would remain. start refuses while closed, in Pass Mode or in another generation (see
+        // start), so do not wait for it then.
+        def setStarting(generation: Int) = synchronized {
+            starting = !mode && !closed && !passMode && generation == passModeGeneration.get
             if (starting) startCanceled = false
         }
 
@@ -394,8 +414,11 @@ object Context {
 
     def setReleasedScrollMode = Scroll.releasedMode = true
 
-    def setStartingScrollMode = Scroll.setStarting
+    def setStartingScrollModeFor(generation: Int) = Scroll.setStarting(generation)
     def isStartingScrollMode = Scroll.isStarting
+
+    def isScrolled = Scroll.scrolled
+    def setScrolled(): Unit = Scroll.scrolled = true
 
     private object RealWheel {
         @volatile var mode = false // default
@@ -435,6 +458,10 @@ object Context {
         private val kdS = (0 until 256).map(_ => new AtomicBoolean(false));
         // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
         private val kdP = (0 until 256).map(_ => new AtomicBoolean(false));
+        // Keys whose down was suppressed (kdS) when the state was initialized (init) and whose up
+        // has not come yet: their up alone is suppressed (the application did not get the down).
+        // Their next down resets them (a repeat cannot be told from a new press, it is taken for one).
+        private val kdL = (0 until 256).map(_ => new AtomicBoolean(false));
 
         private def isKey(vk: Int) = vk >= 0 && vk < kdS.length
 
@@ -443,10 +470,35 @@ object Context {
         // start scroll mode if it is the trigger, and its up would be suppressed). Whether a key
         // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
         // suppressed is not pressed for it. A key whose up was missed passes its next down once.
+        // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
+        // suppressed again: only their up alone is (kdL), as the hook does for the buttons
+        // (Windows.dropLoneUp).
         def init: Unit = {
             Array(ldR, rdR, ldP, rdP, ldS, rdS, mdS, x1S, x2S).foreach(f => f.set(false))
-            kdS.foreach(f => f.set(false))
+            suppressedKeysToLoneUp
         }
+
+        // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
+        // missed is not suppressed again (see init, and KEventHandler.hookInstalled)
+        def suppressedKeysToLoneUp: Unit = {
+            for (vk <- kdS.indices) {
+                if (kdS(vk).getAndSet(false))
+                    kdL(vk).set(true)
+            }
+        }
+
+        // A down of a key (kdL): its up is not alone any more
+        def resetLoneUpKey(vk: Int): Unit =
+            if (isKey(vk)) kdL(vk).set(false)
+
+        // The up of a key whose down was suppressed before init (kdL), with no down since; resets it
+        def getAndReset_LoneUpKey(vk: Int): Boolean =
+            isKey(vk) && kdL(vk).getAndSet(false)
+
+        // The keyboard hook is installed again: a key whose up was missed while it was removed may
+        // have been pressed since, its down passing (no hook): do not suppress its up
+        def resetLoneUpKeys: Unit =
+            kdL.foreach(f => f.set(false))
 
         def setResent(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldR.set(true)
@@ -518,6 +570,7 @@ object Context {
         def resetKeys: Unit = {
             kdS.foreach(f => f.set(false))
             kdP.foreach(f => f.set(false))
+            kdL.foreach(f => f.set(false))
         }
 
         // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
@@ -538,10 +591,23 @@ object Context {
             case _ => throw new IllegalArgumentException()
         }
 
-        // The flags of the press of a left or right event (nothing for the other buttons)
-        def resetLRFor(me: MouseEvent): Unit = me match {
+        // The down of the button of an event was suppressed and its up has not come yet
+        def isSuppressedDown(me: MouseEvent): Boolean = me match {
+            case LeftEvent(_) => ldS.get
+            case RightEvent(_) => rdS.get
+            case MiddleEvent(_) => mdS.get
+            case X1Event(_) => x1S.get
+            case X2Event(_) => x2S.get
+            case _ => false
+        }
+
+        // The flags of the press of the button of an event (resent, suppressed, passed)
+        def resetFor(me: MouseEvent): Unit = me match {
             case LeftEvent(_) => ldR.set(false); ldS.set(false); ldP.set(false)
             case RightEvent(_) => rdR.set(false); rdS.set(false); rdP.set(false)
+            case MiddleEvent(_) => mdS.set(false)
+            case X1Event(_) => x1S.set(false)
+            case X2Event(_) => x2S.set(false)
             case _ => ()
         }
 
@@ -964,13 +1030,22 @@ object Context {
     }
 
     private def setKeyboardHookOf(b: Boolean): Unit = {
-        Hook.setOrUnsetKeyboardHook(b)
-        if (b)
-            // Installed again on every load (e.g. Reload after Windows removed it): ups may have
-            // been missed
-            KEventHandler.hookInstalled()
-        else
-            KEventHandler.changeTrigger(targetVKCode, false)
+        Hook.setOrUnsetKeyboardHook(b) match {
+            case Some(err) =>
+                // Not installed (the previous hook removed): off, as the menu shows
+                keyboardHook = false
+                if (isCreatedMenuItems()) resetOnOffMenuItems()
+
+                KEventHandler.changeTrigger(targetVKCode, false)
+                Dialog.errorMessage(s"${convLang("Failed keyboard hook install")}: $err", "Error")
+            case None =>
+                if (b)
+                    // Installed again on every load (e.g. Reload after Windows removed it): ups may
+                    // have been missed
+                    KEventHandler.hookInstalled()
+                else
+                    KEventHandler.changeTrigger(targetVKCode, false)
+        }
     }
 
     private def createKeyboardMenu(parent: Menu): Unit = {
@@ -1216,6 +1291,14 @@ object Context {
         W10Wheel.exitMessageLoop
     }
 
+    // Before exiting without the message loop (System.exit): the icon would remain in the tray
+    def hideSystemTray(): Unit = {
+        if (trayItem != null) {
+            trayItem.setVisible(false)
+            trayItem.dispose()
+        }
+    }
+
     private def createExitMenu(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Exit", None))
         addListener(item, exitAction)
@@ -1369,7 +1452,14 @@ object Context {
             val cat = prop.getIntArray(DataID.customAccelThreshold)
             val cam = prop.getDoubleArray(DataID.customAccelMultiplier)
 
-            if (cat.length != 0 && cat.length == cam.length) {
+            // The thresholds are looked up in ascending order (Windows.getNearestIndex), and a
+            // multiplier that is not a number (NaN, Infinity: parsed without error) would make the
+            // delta invalid
+            val isAscending = cat.sliding(2).forall(p => p.length < 2 || p(0) < p(1))
+            val isValidThreshold = cat.forall(_ >= 0) && isAscending
+            val isValidMultiplier = cam.forall(d => java.lang.Double.isFinite(d) && d >= 0.0)
+
+            if (cat.length != 0 && cat.length == cam.length && isValidThreshold && isValidMultiplier) {
                 logger.debug(s"customAccelThreshold: ${cat.toList}")
                 logger.debug(s"customAccelMultiplier: ${cam.toList}")
 
@@ -1435,14 +1525,24 @@ object Context {
 
     private var loaded = false
 
-    def loadProperties: Unit = {
-        if (!loaded)
-            setSettings(defaultProp)
+    // The default values are kept (defaultProp) once, before the first load: not after a load that
+    // failed (loaded is false again), the settings are not the default values then
+    private var defaultSaved = false
 
-        loaded = true
+    def loadProperties: Unit = {
+        if (!defaultSaved) {
+            setSettings(defaultProp)
+            defaultSaved = true
+        }
+
         try {
+            // Not loaded if the file could not be read (e.g. locked): the settings are not stored
+            // (storeProperties) until a load succeeds, or they would overwrite the file (with the
+            // default values, or those of another properties file switched from)
+            loaded = false
+
             // The keys of the previous file (Reload, switching properties) are not kept: they
-            // would be applied, and stored in this file
+            // would be applied
             prop.clear()
             try {
                 prop.load(getSelectedPropertiesPath)
@@ -1451,6 +1551,7 @@ object Context {
                 // All the settings get their default values (see setOrDefault)
                 case _: FileNotFoundException => logger.debug("Properties file not found")
             }
+            loaded = true
 
             setTriggerOfProperty
             setAccelOfProperty
@@ -1475,25 +1576,32 @@ object Context {
 
             setNum(DataID.firstMinThreshold, 1, 10)
             setNum(DataID.switchingThreshold, 10, 500)
+
+            // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+            // progress (Reload, switching properties) ends once they are set, so that the new ones
+            // apply from the next (also one started meanwhile, e.g. during the error dialog of the
+            // keyboard hook). Not if the file could not be read: the settings have not changed. The
+            // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
+            // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+            exitScrollMode
         }
         catch {
             case e: Exception => logger.warn(s"load: ${e.toString}")
         }
     }
 
-    private def isChangedBoolean =
-        BooleanNames.map(n => prop.getBoolean(n) != getBooleanOfName(n)).contains(true)
-
-    private def isChangedNumber =
-        NumberNames.map(n => prop.getInt(n) != getNumberOfName(n)).contains(true)
-
-    private def isChangedProperties: Boolean = {
+    // Whether the settings differ from the properties of the file (p)
+    private def isChangedProperties(p: Properties.SProperties): Boolean = {
         logger.debug("isChangedProperties")
 
         try {
-            prop.load(getSelectedPropertiesPath)
+            def isChangedBoolean =
+                BooleanNames.map(n => p.getBoolean(n) != getBooleanOfName(n)).contains(true)
 
-            val check = (n: String, v: String) => prop.getString(n) != v
+            def isChangedNumber =
+                NumberNames.map(n => p.getInt(n) != getNumberOfName(n)).contains(true)
+
+            val check = (n: String, v: String) => p.getString(n) != v
 
             check(DataID.firstTrigger, firstTrigger.name) ||
             check(DataID.accelMultiplier, Accel.multiplier.name) ||
@@ -1504,7 +1612,6 @@ object Context {
             isChangedBoolean || isChangedNumber
         }
         catch {
-            case _: FileNotFoundException => logger.debug("First write properties"); true
             case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}"); true
             case e: Exception => logger.warn(s"isChanged: ${e.toString}"); true
         }
@@ -1602,15 +1709,32 @@ object Context {
     def storeProperties: Unit = {
         logger.debug("storeProperties")
 
+        // The settings are stored in the file as it is now (read anew): its keys that are not
+        // settings (e.g. customAccelThreshold) are kept as they are, and those removed from it since
+        // it was loaded are not stored again. Not stored if it cannot be read (it could not be
+        // written either).
         try {
-            //(Properties.exists(selectedProperties) &&
-            if (!loaded || !isChangedProperties) {
-                logger.debug("Not changed properties")
-                return
-            }
+            if (!loaded)
+                logger.debug("Not loaded properties")
+            else {
+                val path = getSelectedPropertiesPath
+                val file = new Properties.SProperties
+                val found =
+                    try {
+                        file.load(path)
+                        true
+                    }
+                    catch {
+                        case _: FileNotFoundException => logger.debug("First write properties"); false
+                    }
 
-            setSettings(prop)
-            prop.store(getSelectedPropertiesPath)
+                if (found && !isChangedProperties(file))
+                    logger.debug("Not changed properties")
+                else {
+                    setSettings(file)
+                    file.store(path)
+                }
+            }
         }
         catch {
             case e: Exception => logger.warn(s"store: ${e.toString}")
@@ -1618,12 +1742,15 @@ object Context {
     }
 
     def initState: Unit = {
-        // Cancel the LR trigger wait first: its timeout could set the flags again after init
-        EventWaiter.offer(Cancel(null))
         // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
         // received before, and the wheel events and downs queued are not sent. A down resent
         // before and sent after its physical up is dropped by the hook (Windows.dropResent).
+        // First, as Pass Mode does: a wait timing out while it is canceled below sees the new
+        // generation and does not resend its down (its flag would be reset by init, and its up
+        // not resent).
         newPassModeGeneration()
+        // Cancel the LR trigger wait before init: its timeout could set the flags again after it
+        EventWaiter.offer(Cancel(null))
         EventHandler.initState
         KEventHandler.initState()
         LastFlags.init

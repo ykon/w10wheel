@@ -133,24 +133,43 @@ object Hook {
         }
     }
 
+    // LLKHF_INJECTED (0x10), LLKHF_LOWER_IL_INJECTED (0x02, set with LLKHF_INJECTED): the bits are
+    // tested, as for the mouse (Windows.isInjectedEvent). Not LLKHF_EXTENDED (0x01).
+    private def isInjectedKey(info: KHookInfo): Boolean =
+        (info.flags & 0x12) != 0
+
     private def procKeyboardEvent(nCode: Int, wParam: WPARAM, info: KHookInfo, callNextHook: () => LRESULT): LRESULT = {
         val keh = KEventHandler
 
         if (nCode < 0)
             callNextHook()
+        // The keys of other software (injected, e.g. the auto-type of a password manager sending
+        // Tab, or a macro) pass without being handled, as the mouse events of other software do:
+        // the trigger key sent would start scroll mode and be suppressed (then the next key,
+        // ending it). They do not change the flags of the physical keys either.
+        else if (isInjectedKey(info))
+            callNextHook()
         else if (ctx.isPassMode) {
             // The keys pressed in Pass Mode pass: so do their repeats and up after it is turned
-            // off, even if they have become the trigger (see KEventHandler.keyDown)
+            // off, even if they have become the trigger (see KEventHandler.keyDown). The up alone
+            // of a key whose down was suppressed before Pass Mode is suppressed (LastFlags.init),
+            // as the hook does for the buttons (Windows.dropLoneUp).
+            val vk = info.vkCode
             wParam.intValue match {
                 case WM_KEYDOWN | WM_SYSKEYDOWN =>
-                    ctx.LastFlags.newKeyDown(info.vkCode)
-                    ctx.LastFlags.setPassedKey(info.vkCode)
+                    ctx.LastFlags.newKeyDown(vk)
+                    ctx.LastFlags.resetLoneUpKey(vk)
+                    ctx.LastFlags.setPassedKey(vk)
+                    callNextHook()
+                case WM_KEYUP | WM_SYSKEYUP if ctx.LastFlags.getAndReset_LoneUpKey(vk) =>
+                    logger.debug(s"Pass Mode: suppress the up alone of a suppressed down: $vk")
+                    new LRESULT(1)
                 case WM_KEYUP | WM_SYSKEYUP =>
-                    ctx.LastFlags.getAndReset_PassedKey(info.vkCode)
-                case _ => ()
+                    ctx.LastFlags.getAndReset_PassedKey(vk)
+                    callNextHook()
+                case _ =>
+                    callNextHook()
             }
-
-            callNextHook()
         }
         else {
             wParam.intValue match {
@@ -187,19 +206,29 @@ object Hook {
         }
     }
 
-    def setMouseHook: Boolean = {
-        mouseHhk = Windows.setHook(mouseProc)
-        mouseHhk != null
+    // The error message of a failure, read right after it (another call could change the last error)
+    private def getHookError(hhk: HHOOK): Option[String] =
+        if (hhk == null) Some(Windows.getLastErrorMessage) else None
+
+    // None if installed, else the error message
+    def setMouseHook: Option[String] = {
+        val hhk = Windows.setHook(mouseProc)
+        val err = getHookError(hhk)
+        mouseHhk = hhk
+        err
     }
 
-    def setKeyboardHook: Boolean = {
+    // None if installed, else the error message
+    def setKeyboardHook: Option[String] = {
         // Called on every properties load (Reload, switching properties) when the keyboard hook is
         // on. Remove the previous hook first: installing again would leave it installed
         // (unhookKeyboard only removes the last one). Installing anew also recovers a hook that
         // Windows removed silently because of a timeout (UnhookWindowsHookEx then just fails).
         unhookKeyboard
-        keyboardHhk = Windows.setHook(keyboardProc)
-        keyboardHhk != null
+        val hhk = Windows.setHook(keyboardProc)
+        val err = getHookError(hhk)
+        keyboardHhk = hhk
+        err
     }
 
     def unhookMouse: Unit = {
@@ -216,14 +245,14 @@ object Hook {
         }
     }
 
-    def setOrUnsetKeyboardHook(b: Boolean): Unit = {
-        if (b) {
-            if (!setKeyboardHook) {
-                Dialog.errorMessage("Failed keyboard hook install: " + Windows.getLastErrorMessage)
-            }
-        }
-        else
+    // None if done, else the error message of the install (shown by Context, translated)
+    def setOrUnsetKeyboardHook(b: Boolean): Option[String] = {
+        if (b)
+            setKeyboardHook
+        else {
             unhookKeyboard
+            None
+        }
     }
 
     def unhook: Unit = {

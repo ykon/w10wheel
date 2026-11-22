@@ -110,6 +110,7 @@ trait User32ExTrait extends User32
     def LoadImageW(hinst: HINSTANCE, ptr: Pointer, uType: Int, xDesired: Int, yDesired: Int, load: Int): Pointer
     def SystemParametersInfoW(uiAction: Int, uiParam: Int, pvParam: Pointer, fWinIni: Int): Boolean
     def SetSystemCursor(hcur: Pointer, id: Int): Boolean
+    def DestroyCursor(hCursor: Pointer): Boolean
     def ChangeWindowMessageFilterEx(hWnd: HWND, msg: Int, action: Int, pcfs: Pointer): Boolean
 
     def RegisterRawInputDevices(pRawInputDevices: Array[RAWINPUTDEVICE], uiNumDevices: Int, cbSize: Int): Boolean
