@@ -164,6 +164,7 @@ object Mouse {
         case MiddleEvent(_) => MiddleTrigger()
         case X1Event(_) => X1Trigger()
         case X2Event(_) => X2Trigger()
+        case _ => throw new IllegalArgumentException(s"Not a button event: ${me.name}")
     }
 
     def getTrigger(s: String): Trigger = s match {

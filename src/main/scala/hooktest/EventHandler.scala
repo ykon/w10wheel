@@ -42,11 +42,13 @@ object EventHandler {
     private def getLastResendEvent(me: MouseEvent) = me match {
         case LeftEvent(_) => lastResendLeftEvent
         case RightEvent(_) => lastResendRightEvent
+        case _ => throw new IllegalArgumentException(s"Not a left/right event: ${me.name}")
     }
 
     private def setLastResendEvent(me: MouseEvent) = me match {
         case LeftEvent(_) => lastResendLeftEvent = me
         case RightEvent(_) => lastResendRightEvent = me
+        case _ => throw new IllegalArgumentException(s"Not a left/right event: ${me.name}")
     }
 
     private def isCorrectOrder(pre: MouseEvent, cur: MouseEvent): Boolean = (pre, cur) match {

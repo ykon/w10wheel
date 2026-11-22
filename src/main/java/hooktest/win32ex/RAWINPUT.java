@@ -6,7 +6,8 @@ import java.util.List;
 import com.sun.jna.Pointer;
 import com.sun.jna.Structure;
 
-public class RAWINPUT extends Structure {
+// final: the Pointer constructor calls read(), so no subclass may observe a partially built instance
+public final class RAWINPUT extends Structure {
     public RAWINPUTHEADER header;
     public RAWMOUSE mouse;
 

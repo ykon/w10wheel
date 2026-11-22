@@ -406,6 +406,7 @@ object Context {
         case MiddleEvent(_) => isTrigger(MiddleDragTrigger())
         case X1Event(_) => isTrigger(X1DragTrigger())
         case X2Event(_) => isTrigger(X2DragTrigger())
+        case _ => throw new IllegalArgumentException(s"Not a button event: ${e.name}")
     }
 
     def isSingleTrigger = firstTrigger.isSingle

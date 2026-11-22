@@ -1,0 +1,5 @@
+# JVM options for the sbt launcher (not for W10Wheel itself).
+# sbt.bat drops its default -Dfile.encoding=UTF-8 when this file exists, so keep it here.
+# sbt-launch.jar calls sun.misc.Unsafe; allow it to avoid the JDK 25 warning (sbt.bat's own suppression runs too late).
+-Dfile.encoding=UTF-8
+--sun-misc-unsafe-memory-access=allow
