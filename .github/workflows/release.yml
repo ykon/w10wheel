@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v2.7 or v2.8.0)"
+        description: "Release tag (must match the build.sbt version, e.g. v2.8.0)"
         required: true
         type: string
       draft:
@@ -63,6 +63,10 @@ jobs:
           $sha = "${{ steps.build.outputs.sha }}"
           $isDraft = ("${{ github.event_name }}" -eq "workflow_dispatch") -and ("${{ inputs.draft }}" -eq "true")
 
+          # Use hand-written notes (dist/release-notes/<tag>.md) when present
+          $notesFile = "dist/release-notes/$tag.md"
+          $notesArgs = if (Test-Path $notesFile) { @("--notes-file", $notesFile) } else { @("--generate-notes") }
+
           $ErrorActionPreference = "Continue"
           gh release view $tag *> $null
           $exists = ($LASTEXITCODE -eq 0)
@@ -74,7 +78,7 @@ jobs:
               throw "gh release upload failed with exit code $LASTEXITCODE"
             }
           } else {
-            $ghArgs = @("release", "create", $tag, $zip, $sha, "--title", "W10Wheel - $ver", "--generate-notes")
+            $ghArgs = @("release", "create", $tag, $zip, $sha, "--title", "W10Wheel - $ver") + $notesArgs
             if ("${{ github.event_name }}" -eq "workflow_dispatch") {
               $ghArgs += @("--target", $env:GITHUB_SHA)
             }

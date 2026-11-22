@@ -30,7 +30,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.8.0"
+    // Single source of truth is `version` in build.sbt (written to the jar manifest as Implementation-Version)
+    val PROGRAM_VERSION: String =
+        Option(getClass.getPackage).flatMap(p => Option(p.getImplementationVersion)).getOrElse("dev")
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     private val logger = Logger.getLogger()

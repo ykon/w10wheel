@@ -68,6 +68,21 @@ $versionFromFile = (Get-Content -Raw -Encoding UTF8 $versionFile).Trim()
 $rawVer = if ([string]::IsNullOrWhiteSpace($AppVersion)) { $versionFromFile } else { $AppVersion.Trim() }
 $displayVersion = $rawVer -replace '^[vV]', ''
 
+# build.sbt is the single source of truth for the version (the jar manifest and the app's Info dialog use it).
+if ($displayVersion -ne $versionFromFile) {
+    throw "Version mismatch: requested '$displayVersion' but build.sbt version is '$versionFromFile'. Update build.sbt or use a matching tag."
+}
+
+$readmePath = Join-Path $RepoRoot "dist\Readme.ja.txt"
+$readme = [System.IO.File]::ReadAllText($readmePath, [System.Text.Encoding]::UTF8)
+$readmeVersion = [regex]::Match($readme, '(?m)^\s+(\d+(?:\.\d+)+)\s*$').Groups[1].Value
+if ($readmeVersion -ne $displayVersion) {
+    throw "Version mismatch: dist\Readme.ja.txt version is '$readmeVersion' but build version is '$displayVersion'."
+}
+if (-not $readme.Contains(": v${displayVersion}:")) {
+    throw "dist\Readme.ja.txt has no history entry for v${displayVersion}."
+}
+
 if ($displayVersion -match '^\d+\.\d+$') {
     $jpackageVersion = "$displayVersion.0"
 }
