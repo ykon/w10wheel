@@ -77,20 +77,36 @@ object EventWaiter {
         }
     }
 
-    private def fromTimeout(down: MouseEvent): Unit = {
-        ctx.LastFlags.setResent(down)
+    // w: the physical down waited for, with the Pass Mode generation and the press recorded when
+    // it was received (see start)
+    private case class Wait(down: MouseEvent, generation: Int, press: Int)
 
-        logger.debug(s"wait Trigger (${down.name} -->> Timeout): resend ${down.name}")
-        Windows.resendDown(down)
+    private def fromTimeout(w: Wait): Unit = {
+        val down = w.down
+
+        // The resent flag is also seen by the up of a later press: if Pass Mode has been turned on
+        // (or the state initialized) since the physical down, neither set it nor resend
+        if (ctx.isPassMode || ctx.getPassModeGeneration != w.generation) {
+            logger.debug(s"wait Trigger (${down.name} -->> Timeout): dropped (Pass Mode)")
+        }
+        else {
+            logger.debug(s"wait Trigger (${down.name} -->> Timeout): resend ${down.name}")
+            // The flag first: the physical up coming before the down is queued is then resent too
+            // (not passed before the down), and InputSender holds that up until the down is handled
+            ctx.LastFlags.setResent(down)
+            Windows.resendDown(w.generation, w.press, down)
+        }
     }
 
-    private def fromMove(down: MouseEvent): Unit = {
+    private def fromMove(w: Wait): Unit = {
+        val down = w.down
         //ctx.LastFlags.setResent(down)
         logger.debug(s"wait Trigger (${down.name} -->> Move): resend ${down.name}")
-        Windows.resendDown(down)
+        Windows.resendDown(w.generation, w.press, down)
     }
 
-    private def fromUp(down: MouseEvent, up: MouseEvent): Unit = {
+    private def fromUp(w: Wait, up: MouseEvent): Unit = {
+        val down = w.down
         //ctx.LastFlags.setResent(down)
 
         def resendC(mc: MouseClick) = {
@@ -100,8 +116,7 @@ object EventWaiter {
 
         def resendUD = {
             logger.debug(s"wait Trigger (${down.name} -->> ${up.name}): resend ${down.name}, ${up.name}")
-            Windows.resendDown(down)
-            Windows.resendUp(up)
+            Windows.resendDownUp(w.generation, w.press, down, up)
         }
 
         (down, up) match {
@@ -125,31 +140,37 @@ object EventWaiter {
         }
     }
 
-    private def fromDown(d1: MouseEvent, d2: MouseEvent): Unit = {
+    private def fromDown(w: Wait, d2: MouseEvent): Unit = {
         //ctx.LastFlags.setSuppressed(d1)
         //ctx.LastFlags.setSuppressed(d2)
 
-        logger.debug(s"wait Trigger (${d1.name} -->> ${d2.name}): start scroll mode")
-        Context.startScrollMode(d2.info)
+        logger.debug(s"wait Trigger (${w.down.name} -->> ${d2.name}): start scroll mode")
+        // Refused if Pass Mode has been turned on (or the state initialized) since the physical down
+        Context.startScrollModeFor(w.generation, d2.info)
     }
 
-    private def dispatchEvent(down: MouseEvent, res: MouseEvent) = res match {
-        case Move(_) => fromMove(down)
-        case LeftUp(_) | RightUp(_) => fromUp(down, res)
-        case LeftDown(_) | RightDown(_) => fromDown(down, res)
+    private def dispatchEvent(w: Wait, res: MouseEvent) = res match {
+        case Move(_) => fromMove(w)
+        case LeftUp(_) | RightUp(_) => fromUp(w, res)
+        case LeftDown(_) | RightDown(_) => fromDown(w, res)
         case Cancel(_) => logger.debug("dispatchEvent: cancel")
         case _ => throw new IllegalStateException()
     }
 
-    private val waiterQueue = new SynchronousQueue[MouseEvent](true)
+    private val waiterQueue = new SynchronousQueue[Wait](true)
 
     private val waiterThread = new Thread(() =>
         while (true) {
-            val down = waiterQueue.take
+            try {
+                val w = waiterQueue.take
 
-            poll(Context.getPollTimeout) match {
-                case Some(res) => dispatchEvent(down, res)
-                case None => fromTimeout(down)
+                poll(Context.getPollTimeout) match {
+                    case Some(res) => dispatchEvent(w, res)
+                    case None => fromTimeout(w)
+                }
+            }
+            catch {
+                case e: Exception => logger.warn(s"EventWaiter: $e")
             }
         }
     )
@@ -164,7 +185,10 @@ object EventWaiter {
             throw new IllegalArgumentException
 
         waitingEvent = down
-        waiterQueue.put(down)
+        // Called by the mouse hook when the physical down is received: record the Pass Mode
+        // generation and a new press now, the resend happens later on the waiter thread
+        val press = InputSender.newPress(Windows.getButton(down))
+        waiterQueue.put(Wait(down, ctx.getPassModeGeneration, press))
         waiting.set(true)
     }
 

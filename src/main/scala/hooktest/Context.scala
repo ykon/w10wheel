@@ -26,7 +26,7 @@ import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import scala.collection.mutable.HashMap
 import java.util.NoSuchElementException
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{ AtomicBoolean, AtomicInteger }
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
@@ -67,11 +67,31 @@ object Context {
         trayItem.setImage(getTrayIcon(b))
     }
 
+    // Incremented whenever Pass Mode is turned on and the state is initialized. A wheel event or a
+    // down resent alone queued before is not sent (InputSender), and an LR trigger wait started
+    // before neither resends nor starts scroll mode (EventWaiter), even if Pass Mode has been
+    // turned off again by then: the physical up may have passed while Pass Mode was on.
+    private val passModeGeneration = new AtomicInteger(0)
+    def getPassModeGeneration: Int = passModeGeneration.get
+
     private object Pass {
         @volatile private var __mode = false
         def mode = __mode
         def mode_= (b: Boolean): Unit = {
+            if (b) passModeGeneration.incrementAndGet()
             __mode = b
+
+            // Pass Mode bypasses the event handlers, so nothing they wait for completes while it
+            // is on (e.g. the LR trigger wait would resend a down after its up has passed), and
+            // scroll mode could not be left: leave it, cancel the wait and reset their state
+            Scroll.setPassMode(b)
+            if (b) {
+                EventWaiter.offer(Cancel(null))
+                EventHandler.initState
+                KEventHandler.initState()
+                LastFlags.init
+            }
+
             changeTrayMode(b)
             passModeMenuItem.setSelection(b)
         }
@@ -213,41 +233,15 @@ object Context {
         @volatile var swap = false // default
         @volatile var releasedMode = false // not pressed
 
+        @volatile private var closed = false // set at exit: no more scroll mode
+        @volatile private var passMode = false // Pass Mode is on: no scroll mode
+
         private def setStartPoint(x: Int, y: Int): Unit = {
             sx = x;
             sy = y;
         }
 
-        def start(info: HookInfo) = synchronized {
-            stime = info.time
-            setStartPoint(info.pt.x, info.pt.y)
-            Windows.initScroll
-
-            Windows.registerRawInput
-
-            if (cursorChange && !firstTrigger.isDrag)
-                Windows.changeCursorV
-
-            mode = true
-            starting = false
-        }
-
-        def start(kinfo: KHookInfo) = synchronized {
-            stime = kinfo.time
-            val pt = Windows.getCursorPos
-            setStartPoint(pt.x, pt.y)
-            Windows.initScroll
-
-            Windows.registerRawInput
-
-            if (cursorChange)
-                Windows.changeCursorV
-
-            mode = true
-            starting = false
-        }
-
-        def exit = synchronized {
+        private def exitMode(): Unit = {
             Windows.unregisterRawInput
 
             mode = false
@@ -255,6 +249,66 @@ object Context {
 
             if (cursorChange)
                 Windows.restoreCursor
+        }
+
+        // generation: for the LR trigger, started on the EventWaiter thread some time after the
+        // physical downs: also refused if Pass Mode has been turned on (or the state initialized)
+        // since then, even if it has been turned off again
+        private def canStart(generation: Option[Int]): Boolean =
+            !closed && !passMode && generation.forall(_ == passModeGeneration.get)
+
+        def start(info: HookInfo, generation: Option[Int]) = synchronized {
+            if (canStart(generation)) {
+                stime = info.time
+                setStartPoint(info.pt.x, info.pt.y)
+                Windows.initScroll
+
+                Windows.registerRawInput
+
+                if (cursorChange && !firstTrigger.isDrag)
+                    Windows.changeCursorV
+
+                mode = true
+            }
+            // Also when refused (exiting or Pass Mode): do not leave the LR trigger starting
+            starting = false
+        }
+
+        def start(kinfo: KHookInfo) = synchronized {
+            if (canStart(None)) {
+                stime = kinfo.time
+                val pt = Windows.getCursorPos
+                setStartPoint(pt.x, pt.y)
+                Windows.initScroll
+
+                Windows.registerRawInput
+
+                if (cursorChange)
+                    Windows.changeCursorV
+
+                mode = true
+            }
+            starting = false
+        }
+
+        def exit = synchronized {
+            exitMode()
+        }
+
+        // At exit: waits for a start in progress (on the EventWaiter thread for the LR trigger),
+        // leaves scroll mode and refuses later starts, so that the cursor is restored and RawInput
+        // is not registered again afterwards
+        def close = synchronized {
+            closed = true
+            if (mode) exitMode()
+        }
+
+        // Pass Mode bypasses the event handlers, so scroll mode could not be left while it is on.
+        // Turning it on leaves scroll mode and refuses starts until it is turned off. Under the
+        // lock, so that a start in progress on the EventWaiter thread is not missed.
+        def setPassMode(b: Boolean) = synchronized {
+            passMode = b
+            if (b && mode) exitMode()
         }
 
         def checkExit(time: Int) = {
@@ -268,16 +322,19 @@ object Context {
         def getStartPoint = (sx, sy)
 
         def setStarting = synchronized {
-            starting = !mode
+            // start refuses while closed or in Pass Mode, so do not wait for it then
+            starting = !mode && !closed && !passMode
         }
 
         def isStarting = starting
     }
 
-    def startScrollMode(info: HookInfo) = Scroll.start(info)
+    def startScrollMode(info: HookInfo) = Scroll.start(info, None)
+    def startScrollModeFor(generation: Int, info: HookInfo) = Scroll.start(info, Some(generation))
     def startScrollMode(kinfo: KHookInfo) = Scroll.start(kinfo)
 
     def exitScrollMode = Scroll.exit
+    def closeScrollMode = Scroll.close
     def isScrollMode = Scroll.isMode
     def getScrollStartPoint = Scroll.getStartPoint
     def checkExitScroll(time: Int) = Scroll.checkExit(time)
@@ -705,7 +762,7 @@ object Context {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         val add = (name: String, low: Int, up: Int) => createNumberMenuItem(menu, name, low, up)
 
-        add(DataID.pollTimeout, 150, 500)
+        add(DataID.pollTimeout, 50, 500) // as in the properties file
         add(DataID.scrollLocktime, 150, 500)
         addSeparator(menu)
 
@@ -1438,6 +1495,8 @@ object Context {
     }
 
     def initState: Unit = {
+        // First: a wait timing out meanwhile does not resend, and a down queued before is dropped
+        passModeGeneration.incrementAndGet()
         EventHandler.initState
         KEventHandler.initState()
         LastFlags.init

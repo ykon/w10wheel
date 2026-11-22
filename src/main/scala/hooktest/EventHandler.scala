@@ -15,18 +15,12 @@ object EventHandler {
     private val logger = Logger.getLogger()
 
     private var lastEvent: MouseEvent = NonEvent(null)
-    private var lastResendLeftEvent: MouseEvent = NonEvent(null)
-    private var lastResendRightEvent: MouseEvent = NonEvent(null)
 
-    private var resentDownUp = false
     private var secondTriggerUp = false
     private var dragged = false
 
     def initState: Unit = {
         lastEvent = NonEvent(null)
-        lastResendLeftEvent = NonEvent(null)
-        lastResendRightEvent = NonEvent(null)
-        resentDownUp = false
         secondTriggerUp = false
         dragged = false
     }
@@ -39,39 +33,13 @@ object EventHandler {
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
 
-    private def getLastResendEvent(me: MouseEvent) = me match {
-        case LeftEvent(_) => lastResendLeftEvent
-        case RightEvent(_) => lastResendRightEvent
-        case _ => throw new IllegalArgumentException(s"Not a left/right event: ${me.name}")
-    }
-
-    private def setLastResendEvent(me: MouseEvent) = me match {
-        case LeftEvent(_) => lastResendLeftEvent = me
-        case RightEvent(_) => lastResendRightEvent = me
-        case _ => throw new IllegalArgumentException(s"Not a left/right event: ${me.name}")
-    }
-
-    private def isCorrectOrder(pre: MouseEvent, cur: MouseEvent): Boolean = (pre, cur) match {
-        case (NonEvent(_), LeftUp(_)) | (LeftUp(_), LeftUp(_)) | (NonEvent(_), RightUp(_)) | (RightUp(_), RightUp(_)) =>
-            false
-        case _ => true
-    }
-
-    private def checkCorrectOrder(me: MouseEvent): Boolean = {
-        isCorrectOrder(getLastResendEvent(me), me)
-    }
-
     private def debug(msg: String, me: MouseEvent): Unit = {
         logger.debug(msg + ": " + me.name)
     }
 
+    // The resent downs and ups are sent in order by InputSender (an up only after its down was
+    // sent), so they are passed as they come
     private def skipResendEventLR(me: MouseEvent): Option[LRESULT] = {
-        def pass = {
-            debug("pass resend event", me)
-            setLastResendEvent(me)
-            callNextHook
-        }
-
         if (!Windows.isInjectedEvent(me)) {
             None
         }
@@ -80,21 +48,8 @@ object EventHandler {
             callNextHook
         }
         else if (Windows.isResendEvent(me)) {
-            if (resentDownUp) {
-                debug("ResendEvent: resentDownUp", me)
-                resentDownUp = false
-
-                if (checkCorrectOrder(me))
-                    pass
-                else {
-                    logger.warn(s"Bad: resendUp retry: ${me.name}")
-                    Thread.sleep(1)
-                    Windows.resendUp(me)
-                    suppress
-                }
-            }
-            else
-                pass
+            debug("pass resend event", me)
+            callNextHook
         }
         else {
             logger.info(s"pass other software event: ${me.name}")
@@ -261,7 +216,6 @@ object EventHandler {
     private def checkResentDown(up: MouseEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_ResentDown(up)) {
             debug("resendUp and suppress (checkResentDown)", up)
-            resentDownUp = true
             Windows.resendUp(up)
             suppress
         }

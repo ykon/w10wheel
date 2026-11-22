@@ -111,18 +111,6 @@ object Windows {
     wmThread.setDaemon(true)
     wmThread.start
 
-    //private val inputQueue = new ArrayBlockingQueue[Array[INPUT]](128, true)
-    private val inputQueue = new LinkedBlockingQueue[Array[INPUT]]()
-
-    private val senderThread = new Thread(() =>
-        while (true) {
-            val msgs = inputQueue.take()
-            u32.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
-        }
-    )
-    senderThread.setDaemon(true)
-    senderThread.start
-
     def unhook(hhk: HHOOK): Unit = {
         u32.UnhookWindowsHookEx(hhk)
     }
@@ -147,29 +135,32 @@ object Windows {
 
     private val rand = new Random
 
-    // Not Zero
-    private def createRandomNumber: Int = {
-        var res: Int = 0
+    // Positive (not zero): dwExtraInfo is pointer-sized, and a negative Int would be sign-extended
+    private def createRandomNumber: Int =
+        1 + rand.nextInt(Int.MaxValue - 1)
 
-        while (res == 0)
-            res = rand.nextInt
-
+    private val resendTag = createRandomNumber
+    // Not the same as resendTag: a click would be taken for another resend
+    private val resendClickTag = {
+        var res = createRandomNumber
+        while (res == resendTag)
+            res = createRandomNumber
         res
     }
 
-    private val resendTag = createRandomNumber
-    private val resendClickTag = createRandomNumber
-
     // LLMHF_INJECTED, LLMHF_LOWER_IL_INJECTED
     // https://msdn.microsoft.com/en-ca/library/windows/desktop/ms644970(v=vs.85).aspx
+    // Events injected from a lower integrity level process have both bits set (flags = 3),
+    // so test the bits instead of comparing the whole value.
     def isInjectedEvent(me: MouseEvent): Boolean =
-        me.info.flags == 1 || me.info.flags == 2
+        (me.info.flags & 0x3) != 0
 
+    // dwExtraInfo is pointer-sized: compare all of it
     def isResendEvent(me: MouseEvent): Boolean =
-        me.info.dwExtraInfo.intValue() == resendTag
+        me.info.dwExtraInfo.longValue() == resendTag.toLong
 
     def isResendClickEvent(me: MouseEvent): Boolean =
-        me.info.dwExtraInfo.intValue() == resendClickTag
+        me.info.dwExtraInfo.longValue() == resendClickTag.toLong
 
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
@@ -184,33 +175,20 @@ object Windows {
         mi.dwExtraInfo = new ULONG_PTR(extra)
     }
 
-    def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
-        val input = createInputArray(1)
-        setInput(input(0), pt, data, flags, time, extra)
-
-        try {
-            //lib.SendInput(new DWORD(1), input, input(0).size())
-            inputQueue.add(input)
-        }
-        catch {
-            case e: Exception => logger.warn(e.toString())
-        }
+    private def createInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): INPUT = {
+        val input = createInputArray(1)(0)
+        setInput(input, pt, data, flags, time, extra)
+        input
     }
+
+    // A wheel event (see InputSender.Wheel)
+    def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit =
+        InputSender.enqueue(InputSender.Wheel, Array(createInput(pt, data, flags, time, extra)))
 
     def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
         val input = createInputArray(1)
         setInput(input(0), pt, data, flags, time, extra)
         u32.SendInput(new DWORD(1), input, input(0).size())
-    }
-
-    def sendInput(msgs: Array[INPUT]): Unit = {
-        try {
-            //lib.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
-            inputQueue.add(msgs)
-        }
-        catch {
-            case e: Exception => logger.warn(e.toString())
-        }
     }
 
     private var vwCount = 0
@@ -247,7 +225,9 @@ object Windows {
             thr(i) match {
                 case n if n == ad => i
                 case n if n > ad =>
-                    if (n - ad < Math.abs(thr(i - 1) - ad)) i else i - 1
+                    // i = 0: smaller than the first threshold (custom tables may not start with 1)
+                    if (i == 0) i
+                    else if (n - ad < Math.abs(thr(i - 1) - ad)) i else i - 1
                 case _ =>
                     if (i != thr.length - 1) loop(i + 1) else i
             }
@@ -518,32 +498,54 @@ object Windows {
     }
 
     def resendClick(mc: MouseClick): Unit = {
-        sendInput(createClick(mc))
+        InputSender.enqueue(InputSender.Click, createClick(mc))
     }
 
-    def resendClick(down: MouseEvent, up: MouseEvent): Unit = {
-        (down, up) match {
-            case (LeftDown(_), LeftUp(_)) => resendClick(LeftClick(down.info))
-            case (RightDown(_), RightUp(_)) => resendClick(RightClick(down.info))
-            case x => {
-                throw new IllegalStateException("Not matched: " + x)
-            }
-        }
+    // Left (0) or right (1): only their downs and ups are resent alone
+    def getButton(me: MouseEvent): Int = me match {
+        case LeftDown(_) | LeftUp(_) => 0
+        case RightDown(_) | RightUp(_) => 1
+        case _ => throw new IllegalArgumentException(s"Not a left/right event: ${me.name}")
     }
 
-    def resendDown(me: MouseEvent): Unit = {
-        me match {
-            case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
-            case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
-            case _ => throw new IllegalArgumentException()
-        }
+    private def createResendDown(me: MouseEvent): INPUT = me match {
+        case LeftDown(info) => createInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
+        case RightDown(info) => createInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
+        case _ => throw new IllegalArgumentException(s"Not a left/right down: ${me.name}")
     }
 
+    private def createResendUp(me: MouseEvent): INPUT = me match {
+        case LeftUp(info) => createInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
+        case RightUp(info) => createInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
+        case _ => throw new IllegalArgumentException(s"Not a left/right up: ${me.name}")
+    }
+
+    // The functions taking a generation and a press are for EventWaiter, which resends on its own
+    // thread some time after the physical down: it passes the Pass Mode generation and the press
+    // recorded when the physical down was received (EventWaiter.start)
+
+    // A down resent alone: its up is resent later by resendUp
+    def resendDown(generation: Int, press: Int, me: MouseEvent): Unit =
+        InputSender.enqueue(generation, InputSender.Down(getButton(me), press), Array(createResendDown(me)))
+
+    // The up of a down resent alone (resendDown): sent only if that down was sent
     def resendUp(me: MouseEvent): Unit = {
-        me match {
-            case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
-            case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
-            case _ => throw new IllegalArgumentException()
+        val button = getButton(me)
+        val press = InputSender.getCurrentPress(button)
+        InputSender.enqueue(InputSender.Release(button, press), Array(createResendUp(me)))
+    }
+
+    // Resends a down and an up (at different points). The same button's down and up are sent as
+    // one batch, like resendClick: 10 ms apart, the up with retries.
+    def resendDownUp(generation: Int, press: Int, down: MouseEvent, up: MouseEvent): Unit = {
+        (down, up) match {
+            case (LeftDown(_), LeftUp(_)) | (RightDown(_), RightUp(_)) =>
+                InputSender.enqueue(generation, InputSender.Click, Array(createResendDown(down), createResendUp(up)))
+            case _ =>
+                // Different buttons: not a pair. The other button's down reached the application
+                // before, so its up is sent as is.
+                resendDown(generation, press, down)
+                InputSender.enqueue(generation, InputSender.Up, Array(createResendUp(up)))
         }
     }
 
@@ -582,7 +584,7 @@ object Windows {
     }
 
     private def getAsyncKeyState(vKey: Int) =
-        (u32.GetAsyncKeyState(vKey) & 0xf000) != 0
+        (u32.GetAsyncKeyState(vKey) & 0x8000) != 0  // most significant bit: the key is down
 
     def getShiftState = getAsyncKeyState(VK_SHIFT)
     def getCtrlState = getAsyncKeyState(VK_CONTROL)

@@ -20,10 +20,48 @@ object W10Wheel {
 
     val shell = new Shell(display)
 
-    def procExit: Unit = {
+    private var exited = false
+
+    // Called when the message loop ends and when the session ends (on the thread of the message
+    // window): done once. The other call waits for it to be done, or the process could end while
+    // the properties are stored.
+    def procExit: Unit = synchronized {
+        if (!exited) {
+            exited = true
+            closeAll()
+        }
+    }
+
+    private def closeAll(): Unit = {
         logger.debug("procExit")
 
+        // No more downs are resent: the hooks are removed next (see InputSender.beginClose)
+        InputSender.beginClose()
         Hook.unhook
+
+        // Cancel an LR trigger wait: after its timeout it would resend a down whose up does not
+        // come any more (the hook is removed). Must not stop the rest (storing the properties).
+        try {
+            EventWaiter.offer(Cancel(null))
+        }
+        catch {
+            case e: Exception => logger.warn(s"procExit: $e")
+        }
+
+        // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput.
+        // This also waits for a scroll start in progress and refuses later ones. Maybe on the
+        // thread of the message window (session end), where an error dialog would throw.
+        try {
+            ctx.closeScrollMode
+        }
+        catch {
+            case e: Exception => logger.warn(s"procExit: $e")
+        }
+
+        // Wait for a resent click being sent (so that its up is sent), send the ups still queued
+        // and stop sending
+        InputSender.close()
+
         ctx.storeProperties
         PreventMultiInstance.unlock
     }
