@@ -76,10 +76,11 @@ object Context {
         trayItem.setImage(getTrayIcon(b))
     }
 
-    // Incremented whenever Pass Mode is turned on and the state is initialized. A wheel event or a
-    // down resent alone queued before is not sent (InputSender), and an LR trigger wait started
-    // before neither resends nor starts scroll mode (EventWaiter), even if Pass Mode has been
-    // turned off again by then: the physical up may have passed while Pass Mode was on.
+    // Incremented whenever Pass Mode is turned on and the state is initialized. A wheel event queued
+    // before is not sent (InputSender), and an LR trigger wait started before neither resends nor
+    // starts scroll mode (EventWaiter), even if Pass Mode has been turned off again by then: the
+    // physical up may have passed while Pass Mode was on. (The resent downs and ups are checked by
+    // the hook: Windows.dropResent.)
     private val passModeGeneration = new AtomicInteger(0)
     def getPassModeGeneration: Int = passModeGeneration.get
 
@@ -1747,8 +1748,8 @@ object Context {
 
     def initState: Unit = {
         // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
-        // received before, and the wheel events and downs queued are not sent. A down resent
-        // before and sent after its physical up is dropped by the hook (Windows.dropResent).
+        // received before, and the wheel events queued are not sent. A down resent before and
+        // sent after its physical up is dropped by the hook (Windows.dropResent).
         // First, as Pass Mode does: a wait timing out while it is canceled below sees the new
         // generation and does not resend its down (its flag would be reset by init, and its up
         // not resent).

@@ -73,7 +73,8 @@ object InputSender {
     def enqueue(kind: Kind, inputs: Array[INPUT]): Unit =
         enqueue(Context.getPassModeGeneration, kind, inputs)
 
-    // generation: the Pass Mode generation to check a wheel event or a down against
+    // generation: the Pass Mode generation to check a wheel event against (the other kinds are not
+    // checked: see Click and Down)
     def enqueue(generation: Int, kind: Kind, inputs: Array[INPUT]): Unit =
         queue.add(Batch(generation, kind, inputs))
 
