@@ -38,7 +38,7 @@ object PreventMultiInstance {
         }
     }
     
-    def unlock {
+    def unlock: Unit = {
         logger.debug("unlock")
         
         if (lock.isEmpty)

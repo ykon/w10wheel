@@ -14,17 +14,14 @@ import org.eclipse.swt.widgets.Event
 import org.eclipse.swt.widgets.Display
 import org.eclipse.swt.widgets.TrayItem
 import org.eclipse.swt.widgets.MessageBox
-import org.eclipse.swt.events._
+import org.eclipse.swt.events.{MouseEvent as _, *}
 import org.eclipse.swt.graphics.Image
-
-//implicit
-import scala.language.implicitConversions
 
 import java.io.FileNotFoundException
 import java.io.{ File, FileInputStream, FileOutputStream }
 import java.io.IOException
 
-import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
+import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import scala.collection.mutable.HashMap
@@ -33,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
-    val PROGRAM_VERSION = "2.7"
+    val PROGRAM_VERSION = "2.8.0"
     val ICON_RUN_NAME = "TrayIcon-Run.png"
     val ICON_STOP_NAME = "TrayIcon-Stop.png"
     private val logger = Logger.getLogger()
@@ -63,7 +60,7 @@ object Context {
         s"$PROGRAM_NAME - ${convLang(if (b) "Stopped" else "Runnable")}"
     }
 
-    private def changeTrayMode(b: Boolean) {
+    private def changeTrayMode(b: Boolean): Unit = {
         trayItem.setToolTipText(getTrayText(b))
         trayItem.setImage(getTrayIcon(b))
     }
@@ -71,13 +68,13 @@ object Context {
     private object Pass {
         @volatile private var __mode = false
         def mode = __mode
-        def mode_= (b: Boolean) {
+        def mode_= (b: Boolean): Unit = {
             __mode = b
             changeTrayMode(b)
             passModeMenuItem.setSelection(b)
         }
 
-        def toggleMode {
+        def toggleMode: Unit = {
             mode = !mode
         }
     }
@@ -214,7 +211,7 @@ object Context {
         @volatile var swap = false // default
         @volatile var releasedMode = false // not pressed
 
-        private def setStartPoint(x: Int, y: Int) {
+        private def setStartPoint(x: Int, y: Int): Unit = {
             sx = x;
             sy = y;
         }
@@ -329,7 +326,7 @@ object Context {
 
         private val kdS = (0 until 256).map(_ => new AtomicBoolean(false));
 
-        def init {
+        def init: Unit = {
             Array(ldR, rdR, ldP, rdP, ldS, rdS, sdS).foreach(f => f.set(false))
             kdS.foreach(f => f.set(false))
         }
@@ -468,31 +465,31 @@ object Context {
 
     private def resetAllMenuItems(): Unit = {
         logger.debug("resetAllMenuItems")
-        resetTriggerMenuItems
-        resetKeyboardMenuItems
-        resetAccelMenuItems
-        resetPriorityMenuItems
-        resetLanguageMenuItems
-        resetNumberMenuItems
-        resetBoolMenuItems
-        resetVhAdjusterMenuItems
-        resetOnOffMenuItems
+        resetTriggerMenuItems()
+        resetKeyboardMenuItems()
+        resetAccelMenuItems()
+        resetPriorityMenuItems()
+        resetLanguageMenuItems()
+        resetNumberMenuItems()
+        resetBoolMenuItems()
+        resetVhAdjusterMenuItems()
+        resetOnOffMenuItems()
     }
 
     private def getFirstWord(s: String): String =
         s.split(" ")(0)
     
-    private def unselectAllItems(map: MenuMap) {
+    private def unselectAllItems(map: MenuMap): Unit = {
         map.foreach { case (_, item) =>
             item.setSelection(false)
         }
     }
 
-    private def addListener(item: MenuItem, f: Event => Unit) {
+    private def addListener(item: MenuItem, f: Event => Unit): Unit = {
         item.addListener(SWT.Selection, (e: Event) => f(e))
     }
 
-    private def addListenerSelection(item: MenuItem, f: Event => Unit) {
+    private def addListenerSelection(item: MenuItem, f: Event => Unit): Unit = {
         addListener(item, e =>
             if (item.getSelection)
                 f(e)
@@ -551,11 +548,11 @@ object Context {
         item
     }
 
-    private def createBoolMenuItem(menu: Menu, name: String) {
+    private def createBoolMenuItem(menu: Menu, name: String): Unit = {
         createBoolMenuItem(menu, MenuData(name, Some(name)))
     }
 
-    private def addSeparator(menu: Menu) {
+    private def addSeparator(menu: Menu): Unit = {
         new MenuItem(menu, SWT.SEPARATOR)
     }
     
@@ -563,7 +560,7 @@ object Context {
         item.getStyle == SWT.SEPARATOR
     }
 
-    private def createTriggerMenu(parent: Menu) {
+    private def createTriggerMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         
         val add = (text: String) => {
@@ -597,14 +594,14 @@ object Context {
         createCascadeMenuItem(parent, menu, "Trigger")
     }
 
-    private def setAccelMultiplier(name: String) {
+    private def setAccelMultiplier(name: String): Unit = {
         logger.debug(s"setAccelMultiplier: $name")
         Accel.multiplier = Accel.getMultiplier(name)
     }
 
     private val accelMenuMap = new MenuMap()
 
-    private def createAccelTableMenu(parent: Menu) {
+    private def createAccelTableMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         
         val add = (text: String) => {
@@ -644,7 +641,7 @@ object Context {
 
     private val priorityMenuMap = new MenuMap()
 
-    private def createPriorityMenu(parent: Menu) {
+    private def createPriorityMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         
         val add = (text: String, id: String) => {
@@ -687,7 +684,7 @@ object Context {
         item
     }
 
-    private def createNumberMenuItem(menu: Menu, name: String, low: Int, up: Int) {
+    private def createNumberMenuItem(menu: Menu, name: String, low: Int, up: Int): Unit = {
         val n = getNumberOfName(name)
         val item = createPushMenuItem(menu, MenuData(makeNumberText(name, n), Some(name)))
         numberMenuMap(name) = item
@@ -701,7 +698,7 @@ object Context {
         })
     }
 
-    private def createNumberMenu(parent: Menu) {
+    private def createNumberMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         val add = (name: String, low: Int, up: Int) => createNumberMenuItem(menu, name, low, up)
 
@@ -731,7 +728,7 @@ object Context {
         })
     }
 
-    private def createRealWheelModeMenu(parent: Menu) {
+    private def createRealWheelModeMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         val addNum = (name: String, low: Int, up: Int) => createNumberMenuItem(menu, name, low, up)
         val addBool = (name: String) => createBoolMenuItem(menu, name)
@@ -762,7 +759,7 @@ object Context {
         VHAdjuster.method = getVhAdjusterMethod(name)
     }
 
-    private def createVhAdjusterMenu(parent: Menu) {
+    private def createVhAdjusterMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         
         val add = (text: String) => {
@@ -789,7 +786,7 @@ object Context {
     }
 
     private def toString2F(d: Double) =
-        ("%.2f" format d)
+        ("%.2f".format(d))
 
     private val keyboardMenuMap = new MenuMap()
 
@@ -798,7 +795,7 @@ object Context {
         targetVKCode = Keyboard.getVKCode(name)
     }
 
-    private def createKeyboardMenu(parent: Menu) {
+    private def createKeyboardMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         
         val add = (text: String) => {
@@ -840,7 +837,7 @@ object Context {
 
     private val DEFAULT_DEF = Properties.DEFAULT_DEF
 
-    private def setProperties(name: String) {
+    private def setProperties(name: String): Unit = {
         if (selectedProperties != name) {
             logger.debug(s"setProperties: $name")
 
@@ -850,7 +847,7 @@ object Context {
         }
     }
 
-    private def addPropertiesMenu(menu: Menu, name: String) {
+    private def addPropertiesMenu(menu: Menu, name: String): Unit = {
         val item = createRadioMenuItem(menu, MenuData(name, None))
         item.setSelection(name == selectedProperties)
 
@@ -860,20 +857,20 @@ object Context {
         })
     }
 
-    private def addDefaultPropertiesMenu(menu: Menu) {
+    private def addDefaultPropertiesMenu(menu: Menu): Unit = {
         addPropertiesMenu(menu, DEFAULT_DEF)
     }
 
-    private def addPropertiesMenu(menu: Menu, file: File) {
+    private def addPropertiesMenu(menu: Menu, file: File): Unit = {
         addPropertiesMenu(menu, Properties.getUserDefName(file))
     }
 
-    private def openDir(path: String) {
+    private def openDir(path: String): Unit = {
         val desk = java.awt.Desktop.getDesktop
         desk.browse(new File(path).toURI())
     }
 
-    private def createOpenDirMenuItem(menu: Menu, dir: String) {
+    private def createOpenDirMenuItem(menu: Menu, dir: String): Unit = {
         val item = createPushMenuItem(menu, MenuData("Open Dir", None))
         addListener(item, _ => openDir(dir))
     }
@@ -881,7 +878,7 @@ object Context {
     private def isValidPropertiesName(name: String) =
         (name != DEFAULT_DEF) && !(name.startsWith("--"))
 
-    private def createAddPropertiesMenuItem(menu: Menu) {
+    private def createAddPropertiesMenuItem(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Add", None))
         addListener(item, _ => {
             val dialog = new Dialog.TextInputDialog(systemShell, convLang("Properties Name"), convLang("Add Properties"))
@@ -905,7 +902,7 @@ object Context {
         })
     }
 
-    private def createDeletePropertiesMenuItem(menu: Menu) {
+    private def createDeletePropertiesMenuItem(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Delete", None))
         val name = selectedProperties
         item.setEnabled(name != DEFAULT_DEF)
@@ -923,7 +920,7 @@ object Context {
         })
     }
 
-    private def createPropertiesMenu(parent: Menu) {
+    private def createPropertiesMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         val addDefault = () => addDefaultPropertiesMenu(menu)
         val add = (f: File) => addPropertiesMenu(menu, f)
@@ -950,17 +947,17 @@ object Context {
         createCascadeMenuItem(parent, menu, "Properties")
     }
 
-    def reloadProperties {
+    def reloadProperties: Unit = {
         loadProperties
         resetAllMenuItems()
     }
 
-    private def createReloadPropertiesMenu(menu: Menu) {
+    private def createReloadPropertiesMenu(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Reload", None))
         addListener(item, _ => reloadProperties)
     }
 
-    private def createSavePropertiesMenu(menu: Menu) {
+    private def createSavePropertiesMenu(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Save", None))
         addListener(item, _ => storeProperties)
     }
@@ -996,7 +993,7 @@ object Context {
 
     private var passModeMenuItem: MenuItem = null
 
-    private def createPassModeMenu(menu: Menu) {
+    private def createPassModeMenu(menu: Menu): Unit = {
         val id = DataID.passMode
         val item = createCheckMenuItem(menu, MenuData("Pass Mode", Some(id)))
         addListener(item, makeSetBooleanEvent(id))
@@ -1010,7 +1007,7 @@ object Context {
         createMapMenuItem(menu, data, languageMenuMap, setUILanguage)
     }
 
-    private def createLanguageMenu(parent: Menu) {
+    private def createLanguageMenu(parent: Menu): Unit = {
         val menu = new Menu(systemShell, SWT.DROP_DOWN)
         val add = (text: String, id: String) =>
             createLanguageMenuItem(menu, text, id)
@@ -1021,7 +1018,7 @@ object Context {
         createCascadeMenuItem(parent, menu, "Language")
     }
 
-    private def createInfoMenu(menu: Menu) {
+    private def createInfoMenu(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Info", None))
         addListener(item, _ => {
             val nameVer = s"${convLang("Name")}: $PROGRAM_NAME / ${convLang("Version")}: $PROGRAM_VERSION\n\n"
@@ -1036,12 +1033,12 @@ object Context {
         })
     }
 
-    def exitAction(e: Event) {
+    def exitAction(e: Event): Unit = {
         trayItem.setVisible(false)
         W10Wheel.exitMessageLoop
     }
 
-    private def createExitMenu(menu: Menu) {
+    private def createExitMenu(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Exit", None))
         addListener(item, exitAction)
     }
@@ -1086,7 +1083,7 @@ object Context {
         loop(toList(rootMenu))
     }
 
-    def setSystemTray() {
+    def setSystemTray(): Unit = {
         val menu = new Menu(systemShell, SWT.POP_UP)
         trayItem = createTrayItem(menu)
 
@@ -1141,7 +1138,7 @@ object Context {
         }
     }
 
-    private def setBooleanOfProperty(name: String) {
+    private def setBooleanOfProperty(name: String): Unit = {
         try {
             setBooleanOfName(name, prop.getBoolean(name))
         }
@@ -1152,7 +1149,7 @@ object Context {
         }
     }
 
-    private def setEnabledMenu(menuMap: MenuMap, key: String, enabled: Boolean) {
+    private def setEnabledMenu(menuMap: MenuMap, key: String, enabled: Boolean): Unit = {
          if (menuMap.contains(key))
             menuMap(key).setEnabled(enabled)
     }
@@ -1168,7 +1165,7 @@ object Context {
         EventHandler.changeTrigger
     }
     
-    private def setStringOfProperty(name: String, setFunc: String => Unit) {
+    private def setStringOfProperty(name: String, setFunc: String => Unit): Unit = {
         try {
             setFunc(prop.getString(name))
         }
@@ -1182,7 +1179,7 @@ object Context {
         setStringOfProperty(DataID.firstTrigger, setTrigger)
     }
 
-    private def setCustomAccelOfProperty {
+    private def setCustomAccelOfProperty: Unit = {
         try {
             val cat = prop.getIntArray(DataID.customAccelThreshold)
             val cam = prop.getDoubleArray(DataID.customAccelMultiplier)
@@ -1251,7 +1248,7 @@ object Context {
 
     private var loaded = false
 
-    def loadProperties {
+    def loadProperties: Unit = {
         loaded = true
         try {
             prop.load(getSelectedPropertiesPath)

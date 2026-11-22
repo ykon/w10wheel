@@ -2,7 +2,7 @@
         W10Wheel
 
 バージョン:
-        2.7
+        2.8.0
 
 URL:
         Blog: https://ykon0x1.blogspot.jp
@@ -13,6 +13,7 @@ URL:
         マウスホイールシミュレーター
 
 履歴:
+        2026-11-23: v2.8.0: Java 25 (LTS) / Scala 3.9.0 (LTS) へ移行、jpackage による自己完結型配布に対応、依存ライブラリを更新
         2018-01-04: v2.7.0: メニューとダイアログテキストの日本語化、水平スクロールバグ修正、他
         2017-12-10: v2.6.5: IOの高負荷状態に、入力キューが溢れていた問題を修正
         2017-11-19: v2.6.4: exewrap 1.2.2に更新 (JREの検出処理を修正)
@@ -79,20 +80,13 @@ URL:
         2016-07-05: v0.1.0: 初公開
         
 対応環境:
-        Java 8 のシステム要件項目 Windows を参照
-        https://www.java.com/ja/download/help/sysreq.xml
-        
-        最新の Java 8 または 9 をインストールしてください。
-        http://java.com/ja/
-        
-        Windows 7, 8.1:
-                WizMouse など、非アクティブウィンドウをスクロール可能にするソフトが必要です。
-                http://forest.watch.impress.co.jp/docs/serial/okiniiri/587890.html
-        
-        Windows 10:
-                オプションを有効にしてください。
-                http://www.lifehacker.jp/2015/09/150909_window_scrolling.html
-        
+        Windows 10 / 11 (64bit / x64)
+
+        Java 25 ランタイムを同梱しているため、別途 Java をインストールする必要はありません。
+
+        Windows のマウス設定で
+        「ホバーしたときに非アクティブ ウィンドウをスクロールする」を有効にしてください。
+
         Java の環境で作られていますが JNA (Java Native Access) で
         Windows API を使っているため、Mac や Linux では動作しません。
         
@@ -332,8 +326,7 @@ URL:
         http://icon-generator.net/
 
 .exe:
-        exewrap を使用しています。
-        http://exewrap.osdn.jp/
+        jpackage を使用しています。
 
 連絡:
         何かの問題や、気になる点、また改良案などがあったら

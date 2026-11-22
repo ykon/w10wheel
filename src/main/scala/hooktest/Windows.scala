@@ -19,7 +19,6 @@ import com.sun.jna.platform.win32.WinUser._
 
 import win32ex._
 import win32ex.User32Ex._
-import win32ex.Kernel32Ex._
 
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
@@ -31,7 +30,6 @@ object Windows {
     private val u32 = User32.INSTANCE
     private val u32ex = User32Ex.INSTANCE
     private val k32 = Kernel32.INSTANCE
-    private val k32ex = Kernel32Ex.INSTANCE
     //private val shcore = Shcore.INSTANCE
 
     // https://github.com/EsotericSoftware/clippy/blob/master/src/com/esotericsoftware/clippy/Tray.java
@@ -75,7 +73,7 @@ object Windows {
                     return new LRESULT(0)
                 case TaskbarCreated => {
                     logger.debug("TaskbarCreated")
-                    Context.resetSystemTray
+                    Context.resetSystemTray()
                     return new LRESULT(0)
                 }
                 case _ => {}
@@ -125,7 +123,7 @@ object Windows {
     senderThread.setDaemon(true)
     senderThread.start
 
-    def unhook(hhk: HHOOK) {
+    def unhook(hhk: HHOOK): Unit = {
         u32.UnhookWindowsHookEx(hhk)
     }
 
@@ -173,7 +171,7 @@ object Windows {
     def isResendClickEvent(me: MouseEvent): Boolean =
         me.info.dwExtraInfo.intValue() == resendClickTag
 
-    def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
+    def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
         msg.input.setType("mi")
 
@@ -186,7 +184,7 @@ object Windows {
         mi.dwExtraInfo = new ULONG_PTR(extra)
     }
 
-    def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
+    def sendInput(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
         val input = createInputArray(1)
         setInput(input(0), pt, data, flags, time, extra)
 
@@ -199,13 +197,13 @@ object Windows {
         }
     }
 
-    def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int) {
+    def sendInputDirect(pt: POINT, data: Int, flags: Int, time: Int, extra: Int): Unit = {
         val input = createInputArray(1)
         setInput(input(0), pt, data, flags, time, extra)
         u32.SendInput(new DWORD(1), input, input(0).size())
     }
 
-    def sendInput(msgs: Array[INPUT]) {
+    def sendInput(msgs: Array[INPUT]): Unit = {
         try {
             //lib.SendInput(new DWORD(msgs.length), msgs, msgs(0).size())
             inputQueue.add(msgs)
@@ -230,7 +228,7 @@ object Windows {
     private var hWheelMove = 0
     private var quickTurn = false
 
-    def startWheelCount {
+    def startWheelCount: Unit = {
         vwCount = if (ctx.isQuickFirst) vWheelMove else vWheelMove / 2
         hwCount = if (ctx.isQuickFirst) hWheelMove else hWheelMove / 2
 
@@ -261,7 +259,7 @@ object Windows {
     private var accelThreshold: Array[Int] = null
     private var accelMultiplier: Array[Double] = null
     private def passInt(d: Int) = d
-    private var addAccelIf = passInt _
+    private var addAccelIf: Int => Int = passInt
 
     private def addAccel(d: Int): Int = {
         val i = getNearestIndex(d, accelThreshold)
@@ -269,9 +267,9 @@ object Windows {
     }
 
     private def reverseIfFlip(d: Int) = -d
-    private var reverseIfV = passInt _
-    private var reverseIfH = reverseIfFlip _
-    private var reverseIfDelta = reverseIfFlip _
+    private var reverseIfV: Int => Int = passInt
+    private var reverseIfH: Int => Int = reverseIfFlip
+    private var reverseIfDelta: Int => Int = reverseIfFlip
     private var wheelDelta = 0
 
     private def getVWheelDelta(input: Int) = {
@@ -291,7 +289,7 @@ object Windows {
         case _ => false
     }
 
-    private def sendRealVWheel(pt: POINT, d: Int) {
+    private def sendRealVWheel(pt: POINT, d: Int): Unit = {
         def send = sendInput(pt, getVWheelDelta(d), MOUSEEVENTF_WHEEL, 0, 0)
         vwCount += Math.abs(d)
 
@@ -305,12 +303,12 @@ object Windows {
         vLastMove = if (d > 0) Plus() else Minus()
     }
 
-    private def sendDirectVWheel(pt: POINT, d: Int) {
+    private def sendDirectVWheel(pt: POINT, d: Int): Unit = {
         //println(s"d: $d")
         sendInput(pt, reverseIfV(addAccelIf(d)),  MOUSEEVENTF_WHEEL, 0, 0)
     }
 
-    private def sendRealHWheel(pt: POINT, d: Int) {
+    private def sendRealHWheel(pt: POINT, d: Int): Unit = {
         def send = sendInput(pt, getHWheelDelta(d), MOUSEEVENTF_HWHEEL, 0, 0)
         hwCount += Math.abs(d)
 
@@ -324,12 +322,12 @@ object Windows {
         hLastMove = if (d > 0) Plus() else Minus()
     }
 
-    private def sendDirectHWheel(pt: POINT, d: Int) {
+    private def sendDirectHWheel(pt: POINT, d: Int): Unit = {
         sendInput(pt, reverseIfH(addAccelIf(d)), MOUSEEVENTF_HWHEEL, 0, 0)
     }
 
-    private var sendVWheel = sendDirectVWheel _
-    private var sendHWheel = sendDirectHWheel _
+    private var sendVWheel: (POINT, Int) => Unit = sendDirectVWheel
+    private var sendHWheel: (POINT, Int) => Unit = sendDirectHWheel
 
     sealed abstract class VHDirection
     case class Vertical() extends VHDirection
@@ -340,9 +338,9 @@ object Windows {
     private var fixedVHD: VHDirection = NonDirection()
     private var latestVHD: VHDirection = NonDirection()
 
-    private def initFuncs {
+    private def initFuncs: Unit = {
         addAccelIf = if (ctx.isAccelTable) addAccel else passInt
-        swapIf = if (ctx.isSwapScroll) swapIfOn _ else swapIfOff _
+        swapIf = if (ctx.isSwapScroll) swapIfOn else swapIfOff
 
         reverseIfV = if (ctx.isReverseScroll) passInt else reverseIfFlip
         reverseIfH = if (ctx.isReverseScroll) reverseIfFlip else passInt
@@ -353,12 +351,12 @@ object Windows {
         sendWheelIf = if (ctx.isHorizontalScroll && ctx.isVhAdjusterMode) sendWheelVHA else sendWheelStd
     }
 
-    private def initAccelTable {
+    private def initAccelTable: Unit = {
         accelThreshold = ctx.getAccelThreshold
         accelMultiplier = ctx.getAccelMultiplier
     }
 
-    private def initRealWheelMode {
+    private def initRealWheelMode: Unit = {
         vWheelMove = ctx.getVWheelMove
         hWheelMove = ctx.getHWheelMove
         quickTurn = ctx.isQuickTurn
@@ -368,21 +366,21 @@ object Windows {
         startWheelCount
     }
 
-    private def initVhAdjusterMode {
+    private def initVhAdjusterMode: Unit = {
         //vhDirection = NonDirection()
         fixedVHD = NonDirection()
         latestVHD = NonDirection()
         switchingThreshold = ctx.getSwitchingThreshold
-        switchVHDif = if (ctx.isVhAdjusterSwitching) switchVHD _ else switchVHDifNone _
+        switchVHDif = if (ctx.isVhAdjusterSwitching) switchVHD else switchVHDifNone
     }
 
-    private def initStdMode {
+    private def initStdMode: Unit = {
         verticalThreshold = ctx.getVerticalThreshold
         horizontalThreshold = ctx.getHorizontalThreshold
-        sendWheelStdIfHorizontal = if (ctx.isHorizontalScroll) sendWheelStdHorizontal _ else sendWheelStdNone _
+        sendWheelStdIfHorizontal = if (ctx.isHorizontalScroll) sendWheelStdHorizontal else sendWheelStdNone
     }
 
-    def initScroll {
+    def initScroll: Unit = {
         scrollStartPoint = ctx.getScrollStartPoint
         initFuncs
 
@@ -430,7 +428,7 @@ object Windows {
     }
 
     private def switchVHDifNone(adx: Int, ady: Int): VHDirection = fixedVHD
-    private var switchVHDif = switchVHD _
+    private var switchVHDif: (Int, Int) => VHDirection = switchVHD
 
     private def sendWheelVHA(wspt: POINT, dx: Int, dy: Int): Unit = {
         val adx = Math.abs(dx)
@@ -459,16 +457,16 @@ object Windows {
     private var verticalThreshold = 0
     private var horizontalThreshold = 0
 
-    private def sendWheelStdHorizontal(wspt: POINT, dx: Int, dy: Int) {
+    private def sendWheelStdHorizontal(wspt: POINT, dx: Int, dy: Int): Unit = {
         if (Math.abs(dx) > horizontalThreshold)
             sendHWheel(wspt, dx)
     }
 
-    private def sendWheelStdNone(wspt: POINT, dx: Int, dy: Int) {}
-    private var sendWheelStdIfHorizontal = sendWheelStdHorizontal _
-    private var sendWheelIf = sendWheelStd _
+    private def sendWheelStdNone(wspt: POINT, dx: Int, dy: Int): Unit = {}
+    private var sendWheelStdIfHorizontal: (POINT, Int, Int) => Unit = sendWheelStdHorizontal
+    private var sendWheelIf: (POINT, Int, Int) => Unit = sendWheelStd
 
-    private def sendWheelStd(wspt: POINT, dx: Int, dy: Int) {
+    private def sendWheelStd(wspt: POINT, dx: Int, dy: Int): Unit = {
         if (Math.abs(dy) > verticalThreshold)
             sendVWheel(wspt, dy)
 
@@ -477,11 +475,11 @@ object Windows {
 
     private def swapIfOff(x: Int, y: Int) = (x, y)
     private def swapIfOn(x: Int, y: Int) = (y, x)
-    private var swapIf = swapIfOff _
+    private var swapIf: (Int, Int) => (Int, Int) = swapIfOff
 
     private var scrollStartPoint: (Int, Int) = null
 
-    def sendWheel(movePt: POINT) {
+    def sendWheel(movePt: POINT): Unit = {
          //logger.debug("movePT: " + movePt.x + "," + movePt.y);
 
         val (sx, sy) = scrollStartPoint
@@ -490,7 +488,7 @@ object Windows {
         sendWheelIf(new POINT(sx, sy), dx, dy)
     }
 
-    def sendWheelRaw(x: Int, y: Int) {
+    def sendWheelRaw(x: Int, y: Int): Unit = {
         //logger.debug("sendWheelRaw: " + x + "," + y)
 
         val (sx, sy) = scrollStartPoint
@@ -504,7 +502,7 @@ object Windows {
         val extra = resendClickTag
         val input = createInputArray(2)
 
-        def set(mouseData: Int, down: Int, up: Int) {
+        def set(mouseData: Int, down: Int, up: Int): Unit = {
             setInput(input(0), mc.info.pt, mouseData, down, 0, extra)
             setInput(input(1), mc.info.pt, mouseData, up, 0, extra)
         }
@@ -519,11 +517,11 @@ object Windows {
         input
     }
 
-    def resendClick(mc: MouseClick) {
+    def resendClick(mc: MouseClick): Unit = {
         sendInput(createClick(mc))
     }
 
-    def resendClick(down: MouseEvent, up: MouseEvent) {
+    def resendClick(down: MouseEvent, up: MouseEvent): Unit = {
         (down, up) match {
             case (LeftDown(_), LeftUp(_)) => resendClick(LeftClick(down.info))
             case (RightDown(_), RightUp(_)) => resendClick(RightClick(down.info))
@@ -533,7 +531,7 @@ object Windows {
         }
     }
 
-    def resendDown(me: MouseEvent) {
+    def resendDown(me: MouseEvent): Unit = {
         me match {
             case LeftDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTDOWN, 0, resendTag)
             case RightDown(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTDOWN, 0, resendTag)
@@ -541,7 +539,7 @@ object Windows {
         }
     }
 
-    def resendUp(me: MouseEvent) {
+    def resendUp(me: MouseEvent): Unit = {
         me match {
             case LeftUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_LEFTUP, 0, resendTag)
             case RightUp(info) => sendInput(info.pt, 0, MOUSEEVENTF_RIGHTUP, 0, resendTag)
@@ -584,7 +582,7 @@ object Windows {
     }
 
     private def getAsyncKeyState(vKey: Int) =
-        (u32ex.GetAsyncKeyState(vKey) & 0xf000) != 0
+        (u32.GetAsyncKeyState(vKey) & 0xf000) != 0
 
     def getShiftState = getAsyncKeyState(VK_SHIFT)
     def getCtrlState = getAsyncKeyState(VK_CONTROL)
@@ -608,12 +606,12 @@ object Windows {
 
     def setPriority(p: Priority) = {
         val process = k32.GetCurrentProcess()
-        def setPriorityClass(pc: Int) = k32ex.SetPriorityClass(process, pc)
+        def setPriorityClass(pc: DWORD) = k32.SetPriorityClass(process, pc)
 
         p match {
-            case Normal() => setPriorityClass(NORMAL_PRIORITY_CLASS)
-            case AboveNormal() => setPriorityClass(ABOVE_NORMAL_PRIORITY_CLASS)
-            case High() => setPriorityClass(HIGH_PRIORITY_CLASS)
+            case Normal() => setPriorityClass(Kernel32.NORMAL_PRIORITY_CLASS)
+            case AboveNormal() => setPriorityClass(Kernel32.ABOVE_NORMAL_PRIORITY_CLASS)
+            case High() => setPriorityClass(Kernel32.HIGH_PRIORITY_CLASS)
         }
     }
 
@@ -645,12 +643,12 @@ object Windows {
         return Kernel32Util.formatMessage(getLastErrorCode);
     }
 
-    def registerRawInput {
+    def registerRawInput: Unit = {
         if (!registerMouseRawInputDevice(RIDEV_INPUTSINK, messageHwnd))
            Dialog.errorMessage("Failed register RawInput: " + getLastErrorMessage)
     }
 
-    def unregisterRawInput {
+    def unregisterRawInput: Unit = {
         if (!registerMouseRawInputDevice(RIDEV_REMOVE, null))
             Dialog.errorMessage("Failed unregister RawInput: " + getLastErrorMessage)
     }

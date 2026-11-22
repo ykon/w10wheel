@@ -2,22 +2,9 @@ package hooktest.win32ex
 
 import com.sun.jna.Native
 import com.sun.jna.Pointer
-import com.sun.jna.Structure
 import com.sun.jna.ptr.ByReference
 import com.sun.jna.platform.win32.User32
-import com.sun.jna.platform.win32.Kernel32
-import com.sun.jna.platform.win32.WinUser._
 import com.sun.jna.platform.win32.WinDef._
-import com.sun.jna.platform.win32.WinNT._
-
-import scala.collection.JavaConverters._
-
-// http://stackoverflow.com/questions/7004810/from-java-capture-mouse-click-and-use-as-hotkey
-// https://msdn.microsoft.com/library/windows/desktop/ms644986.aspx
-trait LowLevelMouseProc extends HOOKPROC
-{
-    def callback(nCode: Int, wParam: WPARAM, lParam: MSLLHOOKSTRUCT): LRESULT
-}
 
 object User32Ex {
     // https://msdn.microsoft.com/library/ff468877.aspx
@@ -112,36 +99,17 @@ object User32Ex {
     val MOUSE_MOVE_RELATIVE = 0
     //val RIM_TYPEMOUSE = 0
 
-    val INSTANCE = Native.loadLibrary("user32", classOf[User32ExTrait]).asInstanceOf[User32ExTrait]
+    val INSTANCE = Native.load("user32", classOf[User32ExTrait])
 }
 
 trait User32ExTrait extends User32
 {
-    def GetKeyState(vKey: Int): Short
-    def GetAsyncKeyState(vKey: Int): Short
-
     // https://msdn.microsoft.com/library/windows/desktop/aa383751.aspx
     def LoadImageW(hinst: HINSTANCE, ptr: Pointer, uType: Int, xDesired: Int, yDesired: Int, load: Int): Pointer
-    def LoadCursorW(hInstance: HINSTANCE, lpCursorName: Pointer): Pointer
     def SystemParametersInfoW(uiAction: Int, uiParam: Int, pvParam: Pointer, fWinIni: Int): Boolean
     def SetSystemCursor(hcur: Pointer, id: Int): Boolean
-    def MonitorFromPoint(pt: POINT, dwFlags: Int): HMONITOR
     def ChangeWindowMessageFilterEx(hWnd: HWND, msg: Int, action: Int, pcfs: Pointer): Boolean
 
     def RegisterRawInputDevices(pRawInputDevices: Array[RAWINPUTDEVICE], uiNumDevices: Int, cbSize: Int): Boolean
     def GetRawInputData(hRawInput: Pointer, uiCommand: Int, pData: Pointer, pcbSize: ByReference, cbSizeHeader: Int): Int
-}
-
-object Kernel32Ex {
-    // https://msdn.microsoft.com/library/windows/desktop/ms686219.aspx
-    val ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000
-    val HIGH_PRIORITY_CLASS = 0x00000080
-    val NORMAL_PRIORITY_CLASS = 0x00000020
-
-    val INSTANCE = Native.loadLibrary("kernel32", classOf[Kernel32ExTrait]).asInstanceOf[Kernel32ExTrait]
-}
-
-trait Kernel32ExTrait extends Kernel32
-{
-    def SetPriorityClass(hProcess: HANDLE, dwPriorityClass: Int): Boolean
 }

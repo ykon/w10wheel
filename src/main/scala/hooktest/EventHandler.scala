@@ -8,7 +8,7 @@ package hooktest
 import scala.annotation.tailrec
 
 import com.sun.jna.platform.win32.WinDef.LRESULT
-import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
+import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 
 object EventHandler {
     private val ctx = Context
@@ -22,7 +22,7 @@ object EventHandler {
     private var secondTriggerUp = false
     private var dragged = false
 
-    def initState {
+    def initState: Unit = {
         lastEvent = NonEvent(null)
         lastResendLeftEvent = NonEvent(null)
         lastResendRightEvent = NonEvent(null)
@@ -59,7 +59,7 @@ object EventHandler {
         isCorrectOrder(getLastResendEvent(me), me)
     }
 
-    private def debug(msg: String, me: MouseEvent) {
+    private def debug(msg: String, me: MouseEvent): Unit = {
         logger.debug(msg + ": " + me.name)
     }
 
@@ -394,7 +394,7 @@ object EventHandler {
     }
 
     private def endSuppress(me: MouseEvent, msg: Option[String] = None): Option[LRESULT] = {
-        msg.foreach(logger.debug(_))
+        msg.foreach(m => logger.debug(m))
         suppress
     }
 
@@ -612,25 +612,26 @@ object EventHandler {
             callNextHook.get
     }
 
-    def changeTrigger {
+    def changeTrigger: Unit = {
         logger.debug("changeTrigger: EventHandler")
 
-        val (downLR, upLR, downS, upS) = if (ctx.isDoubleTrigger) {
+        val handlers: (MouseEvent => LRESULT, MouseEvent => LRESULT, MouseEvent => LRESULT, MouseEvent => LRESULT) = if (ctx.isDoubleTrigger) {
             logger.debug("set double down/up")
-            (lrDown _, lrUp _, noneDown _, noneUp _)
+            (lrDown, lrUp, noneDown, noneUp)
         }
         else if (ctx.isSingleTrigger) {
             logger.debug("set single down/up")
-            (noneDown _, noneUp _, singleDown _, singleUp _)
+            (noneDown, noneUp, singleDown, singleUp)
         }
         else if (ctx.isDragTrigger) {
             logger.debug("set drag down/up")
-            (dragDown _, dragUp _, dragDown _, dragUp _)
+            (dragDown, dragUp, dragDown, dragUp)
         }
         else {
             logger.debug("set none down/up")
-            (noneDown _, noneUp _, noneDown _, noneUp _)
+            (noneDown, noneUp, noneDown, noneUp)
         }
+        val (downLR, upLR, downS, upS) = handlers
 
         procDownLR = downLR; procUpLR = upLR
         procDownS = downS; procUpS = upS

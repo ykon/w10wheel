@@ -9,18 +9,18 @@ import scala.collection.immutable.List
 
 // SWT
 import org.eclipse.swt.SWT
-import org.eclipse.swt.widgets._
+import org.eclipse.swt.widgets.{Dialog as _, *}
 
 object W10Wheel {
     private val ctx = Context
     private val logger = Logger.getLogger()
     private val display = Display.getDefault
     
-    private lazy val convLang = ctx.convLang _
+    private lazy val convLang: String => String = ctx.convLang
 
     val shell = new Shell(display)
 
-    def procExit {
+    def procExit: Unit = {
         logger.debug("procExit")
 
         Hook.unhook
@@ -28,18 +28,18 @@ object W10Wheel {
         PreventMultiInstance.unlock
     }
 
-    private def messageDoubleLaunch {
+    private def messageDoubleLaunch: Unit = {
         Dialog.errorMessage(convLang("Double Launch?"))
     }
 
-    private def swtMessageLoop {
+    private def swtMessageLoop: Unit = {
         while (!shell.isDisposed) {
             if (!display.readAndDispatch)
                 display.sleep
         }
     }
 
-    def exitMessageLoop {
+    def exitMessageLoop: Unit = {
         display.dispose()
     }
 
@@ -72,23 +72,23 @@ object W10Wheel {
         }
     }
 
-    private def setSelectedProperties(name: String) {
+    private def setSelectedProperties(name: String): Unit = {
         if (Properties.exists(name))
             Context.setSelectedProperties(name)
         else
             Dialog.errorMessage(s"${convLang("Properties does not exist")}: $name")
     }
 
-    private def unknownCommand(name: String) {
+    private def unknownCommand(name: String): Unit = {
         Dialog.errorMessage(s"${convLang("Unknown Command")}: $name", convLang("Command Error"))
         System.exit(1)
     }
 
-    private def procArgs(args: Array[String]) {
+    private def procArgs(args: Array[String]): Unit = {
         logger.debug("procArgs")
         
         args.toList match {
-            case "--sendExit" :: _ => W10Message.sendExit
+            case "--sendExit" :: _ => W10Message.sendExit()
             case "--sendPassMode" :: rest => W10Message.sendPassMode(getBool(rest))
             case "--sendReloadProp" :: _ => W10Message.sendReloadProp
             case "--sendInitState" :: _ => W10Message.sendInitState
@@ -103,7 +103,7 @@ object W10Wheel {
         }
     }
 
-    def main(args: Array[String]) {
+    def main(args: Array[String]): Unit = {
         procArgs(args)
 
         if (!PreventMultiInstance.tryLock) {
@@ -112,7 +112,7 @@ object W10Wheel {
         }
 
         ctx.loadProperties
-        ctx.setSystemTray
+        ctx.setSystemTray()
 
         if (!Hook.setMouseHook) {
             Dialog.errorMessage(s"${convLang("Failed mouse hook install")}: " + Windows.getLastErrorMessage)

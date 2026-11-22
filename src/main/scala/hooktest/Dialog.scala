@@ -5,8 +5,6 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import scala.language.implicitConversions
-
 import org.eclipse.swt.SWT
 import org.eclipse.swt.widgets._
 import org.eclipse.swt.events._
@@ -16,13 +14,9 @@ import org.eclipse.swt.layout.GridData
 import org.eclipse.swt.layout.GridLayout
 
 object Dialog {
-    implicit def toListener(f: Event => Unit) = new Listener {
-        override def handleEvent(e: Event) { f(e) }
-    }
+    private lazy val convLang: String => String = Context.convLang
     
-    private lazy val convLang = Context.convLang _
-    
-    def __errorMessage(parent: Shell, msg: String, title: String = "Error") {
+    def __errorMessage(parent: Shell, msg: String, title: String = "Error"): Unit = {
         val mb = new MessageBox(parent, SWT.OK | SWT.ICON_ERROR)
         mb.setText(convLang(title))
         mb.setMessage(msg)
@@ -31,15 +25,15 @@ object Dialog {
     
     private lazy val defaultShell = W10Wheel.shell
     
-    def errorMessage(msg: String, title: String = "Error") {
+    def errorMessage(msg: String, title: String = "Error"): Unit = {
         __errorMessage(defaultShell, msg, title);
     }
     
-    def __errorMessageE(parent: Shell, e: Exception) {
+    def __errorMessageE(parent: Shell, e: Exception): Unit = {
         __errorMessage(parent, e.getMessage, e.getClass.getName)
     }
     
-    def errorMessageE(e: Exception) {
+    def errorMessageE(e: Exception): Unit = {
         __errorMessageE(defaultShell, e);
     }
     
@@ -85,7 +79,7 @@ object Dialog {
         
         private def makeKeyAdapter(ok: Button, cancel: Button) = {
             new KeyAdapter {
-                override def keyReleased(e: KeyEvent) {
+                override def keyReleased(e: KeyEvent): Unit = {
                     if (e.character == SWT.CR)
                         ok.notifyListeners(SWT.Selection, null)
                     else if (e.keyCode == SWT.ESC)
@@ -102,7 +96,7 @@ object Dialog {
             }            
         }
         
-        private def setLocation(shell: Shell) {
+        private def setLocation(shell: Shell): Unit = {
             val pt = Display.getDefault.getCursorLocation
             shell.setLocation(pt.x - (shell.getBounds.width / 2), pt.y - (shell.getBounds.height / 2))                
         }
@@ -116,7 +110,7 @@ object Dialog {
         private def isValidNumber(res: Int) =
             res >= low && res <= up
             
-        private def errorMessage(input: Int) {
+        private def errorMessage(input: Int): Unit = {
             Dialog.__errorMessage(parent, s"${convLang("Invalid Number")}: $input")
         }
         
@@ -183,7 +177,7 @@ object Dialog {
         
         private def makeKeyAdapter(ok: Button, cancel: Button) = {
             new KeyAdapter {
-                override def keyReleased(e: KeyEvent) {
+                override def keyReleased(e: KeyEvent): Unit = {
                     if (e.character == SWT.CR)
                         ok.notifyListeners(SWT.Selection, null)
                     else if (e.keyCode == SWT.ESC)
@@ -200,7 +194,7 @@ object Dialog {
             }            
         }
         
-        private def setLocation(shell: Shell) {
+        private def setLocation(shell: Shell): Unit = {
             val pt = Display.getDefault.getCursorLocation
             shell.setLocation(pt.x - (shell.getBounds.width / 2), pt.y - (shell.getBounds.height / 2))                
         }

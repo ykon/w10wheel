@@ -5,7 +5,7 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
+import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 import win32ex.User32Ex._
 
 sealed trait MouseEvent {

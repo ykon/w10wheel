@@ -10,10 +10,9 @@ import com.sun.jna.platform.win32._
 import com.sun.jna.platform.win32.WinDef._
 import com.sun.jna.platform.win32.WinUser._
 
-import win32ex._
-import win32ex.{ MSLLHOOKSTRUCT => HookInfo }
 import win32ex.User32Ex._
 
+import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 object Hook {
@@ -91,21 +90,21 @@ object Hook {
         keyboardHhk != null
     }
 
-    def unhookMouse {
+    def unhookMouse: Unit = {
         if (mouseHhk != null) {
             Windows.unhook(mouseHhk)
             mouseHhk = null
         }
     }
 
-    def unhookKeyboard {
+    def unhookKeyboard: Unit = {
         if (keyboardHhk != null) {
             Windows.unhook(keyboardHhk)
             keyboardHhk = null
         }
     }
 
-    def setOrUnsetKeyboardHook(b: Boolean) {
+    def setOrUnsetKeyboardHook(b: Boolean): Unit = {
         if (b) {
             if (!setKeyboardHook) {
                 Dialog.errorMessage("Failed keyboard hook install: " + Windows.getLastErrorMessage)
@@ -115,7 +114,7 @@ object Hook {
             unhookKeyboard
     }
 
-    def unhook {
+    def unhook: Unit = {
         unhookMouse
         unhookKeyboard
     }

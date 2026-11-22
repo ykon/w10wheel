@@ -9,12 +9,7 @@ import java.io._
 import java.nio.file._
 
 object Properties {
-    class SProperties extends java.util.Properties {        
-        // http://stackoverflow.com/questions/17011108/how-can-i-write-java-properties-in-a-defined-order
-        override def keys(): java.util.Enumeration[Object] = synchronized {
-            java.util.Collections.enumeration(new java.util.TreeSet[Object](super.keySet))
-        }
-        
+    class SProperties extends java.util.Properties {
         override def load(inStream: java.io.InputStream) = synchronized {
             super.load(inStream)
             inStream.close
@@ -83,7 +78,7 @@ object Properties {
         }
         
         def setDouble(key: String, d: Double) = synchronized {
-            super.setProperty(key, ("%.2f" format d))
+            super.setProperty(key, ("%.2f".format(d)))
         }
         
         def setBoolean(key: String, b: Boolean) = synchronized {
@@ -108,8 +103,10 @@ object Properties {
     }
     
     def getUserDefName(file: File) = {
-        val userDefReg(uname) = file.getName
-        uname
+        file.getName match {
+            case userDefReg(uname) => uname
+            case s => throw new MatchError(s)
+        }
     }
     
     def getPropFiles = {

@@ -21,7 +21,7 @@ object EventWaiter {
     private val waiting = new AtomicBoolean(false)
     private var waitingEvent: MouseEvent = NonEvent(null)
 
-    private def setFlagsOffer(me: MouseEvent) {
+    private def setFlagsOffer(me: MouseEvent): Unit = {
         //logger.debug("setFlagsOffer")
         me match {
             case Move(_) => {
@@ -77,20 +77,20 @@ object EventWaiter {
         }
     }
 
-    private def fromTimeout(down: MouseEvent) {
+    private def fromTimeout(down: MouseEvent): Unit = {
         ctx.LastFlags.setResent(down)
 
         logger.debug(s"wait Trigger (${down.name} -->> Timeout): resend ${down.name}")
         Windows.resendDown(down)
     }
 
-    private def fromMove(down: MouseEvent) {
+    private def fromMove(down: MouseEvent): Unit = {
         //ctx.LastFlags.setResent(down)
         logger.debug(s"wait Trigger (${down.name} -->> Move): resend ${down.name}")
         Windows.resendDown(down)
     }
 
-    private def fromUp(down: MouseEvent, up: MouseEvent) {
+    private def fromUp(down: MouseEvent, up: MouseEvent): Unit = {
         //ctx.LastFlags.setResent(down)
 
         def resendC(mc: MouseClick) = {
@@ -125,7 +125,7 @@ object EventWaiter {
         }
     }
 
-    private def fromDown(d1: MouseEvent, d2: MouseEvent) {
+    private def fromDown(d1: MouseEvent, d2: MouseEvent): Unit = {
         //ctx.LastFlags.setSuppressed(d1)
         //ctx.LastFlags.setSuppressed(d2)
 
@@ -159,7 +159,7 @@ object EventWaiter {
     waiterThread.start
 
     // RightDown or LeftDown
-    def start(down: MouseEvent) {
+    def start(down: MouseEvent): Unit = {
         if (!down.isDown)
             throw new IllegalArgumentException
 

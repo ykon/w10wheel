@@ -73,7 +73,7 @@ object W10Message {
 
     def procMessage(msg: Int): Boolean = {
         getFlag(msg) match {
-            case W10_MESSAGE_EXIT => recvExit; true
+            case W10_MESSAGE_EXIT => recvExit(); true
             case W10_MESSAGE_PASSMODE => recvPassMode(msg); true
             case W10_MESSAGE_RELOAD_PROP => recvReloadProp; true
             case W10_MESSAGE_INIT_STATE => recvInitState; true

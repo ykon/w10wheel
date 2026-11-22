@@ -1,14 +1,10 @@
 # W10Wheel
-W10Wheel is the Mouse Wheel Simulator for Windows 10.
+W10Wheel is the Mouse Wheel Simulator for Windows.
 ## Supported
-Windows and Java version 8 Update 101 (8u101) or later.  
-<https://www.java.com/>
-### Windows 7, 8.1
-Requires software to enable scroll inactive windows, such as WizMouse.  
-<http://antibody-software.com/web/software/software/wizmouse-makes-your-mouse-wheel-work-on-the-window-under-the-mouse/>
-### Windows 10
-Enable the option.  
-<https://www.thurrott.com/windows/windows-10/2435/windows-10-tip-scroll-inactive-windows>
+Windows 10 / 11 (x64).  
+Bundled with a Java 25 runtime (separate Java installation is not required).
+### Windows Settings
+Enable "Scroll inactive windows when I hover over them" in Mouse settings.
 ## Usage
 Settings are available in the system tray.  
 Properties file is stored in the user directory.

@@ -1,5 +1,5 @@
 Scala
-http://www.scala-lang.org/
+https://www.scala-lang.org/
 
 Java Native Access (JNA)
 https://github.com/java-native-access/jna
@@ -8,10 +8,10 @@ SWT: The Standard Widget Toolkit
 https://www.eclipse.org/swt/
 
 Logback
-http://logback.qos.ch/
+https://logback.qos.ch/
 
 SLF4J
-http://www.slf4j.org/
+https://www.slf4j.org/
 
 scala-logging
-https://github.com/typesafehub/scala-logging
+https://github.com/lightbend/scala-logging

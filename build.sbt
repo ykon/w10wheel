@@ -1,26 +1,48 @@
-lazy val root = (project in file(".")).
-  settings(
-    name := "W10Wheel",
-    version := "2.7",
-    scalaVersion := "2.12.4",
-    compileOrder := CompileOrder.JavaThenScala
-  )
- 
-scalacOptions += "-target:jvm-1.8"
- 
-// http://stackoverflow.com/questions/29696288/how-to-set-class-path-in-manifest-mf-to-custom-classpath
-val classPath = Seq(
-  ".",
-  "lib/jna-4.5.0.jar",
-  "lib/jna-platform-4.5.0.jar",
-  "lib/logback-classic-1.2.3.jar",
-  "lib/logback-core-1.2.3.jar",
-  "lib/scala-library.jar",
-  "lib/scala-logging_2.12-3.5.0.jar",
-  "lib/slf4j-api-1.7.25.jar",
-  "lib/swt.jar"
-)
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 
-packageOptions += Package.ManifestAttributes(
-  "Class-Path" -> classPath.mkString(" ")
-)
+val stageJpackageInput = taskKey[File]("Stage application JAR and runtime dependencies for jpackage")
+
+lazy val root = (project in file("."))
+  .settings(
+    name := "W10Wheel",
+    version := "2.8.0",
+    scalaVersion := "3.9.0",
+    Compile / compileOrder := CompileOrder.JavaThenScala,
+    scalacOptions ++= Seq("-java-output-version", "25"),
+    javacOptions ++= Seq("--release", "25"),
+    Compile / mainClass := Some("hooktest.W10Wheel"),
+    run / fork := true,
+    run / javaOptions += "--enable-native-access=ALL-UNNAMED",
+    libraryDependencies ++= Seq(
+      "com.typesafe.scala-logging" %% "scala-logging" % "3.9.6",
+      "org.slf4j" % "slf4j-api" % "2.0.20",
+      "ch.qos.logback" % "logback-classic" % "1.6.8",
+      "net.java.dev.jna" % "jna" % "5.19.1",
+      "net.java.dev.jna" % "jna-platform" % "5.19.1",
+      ("org.eclipse.platform" % "org.eclipse.swt.win32.win32.x86_64" % "3.135.0")
+        .exclude("org.eclipse.platform" % "org.eclipse.swt.${osgi.platform}")
+    ),
+    dependencyOverrides += "org.slf4j" % "slf4j-api" % "2.0.20",
+    stageJpackageInput := Def.uncached {
+      val conv = fileConverter.value
+      val jpackageDir = baseDirectory.value / "target" / "jpackage"
+      val inputDir = jpackageDir / "input"
+      IO.delete(inputDir)
+      IO.createDirectory(inputDir)
+
+      val mainJarFile = conv.toPath((Compile / packageBin).value).toFile
+      IO.copyFile(mainJarFile, inputDir / mainJarFile.getName)
+
+      (Runtime / dependencyClasspath).value.foreach { entry =>
+        val file = conv.toPath(entry.data).toFile
+        if (file.isFile && file.getName.endsWith(".jar")) {
+          IO.copyFile(file, inputDir / file.getName)
+        }
+      }
+
+      Files.writeString((jpackageDir / "main-jar.txt").toPath, mainJarFile.getName, StandardCharsets.UTF_8)
+      Files.writeString((jpackageDir / "version.txt").toPath, version.value, StandardCharsets.UTF_8)
+      inputDir
+    }
+  )

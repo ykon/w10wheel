@@ -18,14 +18,14 @@ object KEventHandler {
     def setCallNextHook(f: () => LRESULT) =
         __callNextHook = f
 
-    def initState() {
+    def initState(): Unit = {
         lastEvent = KNonEvent(null)
     }
 
     private def callNextHook: Option[LRESULT] = Some(__callNextHook())
     private def suppress: Option[LRESULT] = Some(new LRESULT(1))
 
-    private def debug(msg: String, ke: KeyboardEvent) {
+    private def debug(msg: String, ke: KeyboardEvent): Unit = {
         logger.debug(msg + ": " + ke.name)
     }
 
