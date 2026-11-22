@@ -10,18 +10,23 @@ import java.nio.file._
 
 object Properties {
     class SProperties extends java.util.Properties {
+        // The stream is closed also when the load fails (e.g. a malformed \u escape): left open, the
+        // file would stay locked
         override def load(inStream: java.io.InputStream) = synchronized {
-            super.load(inStream)
-            inStream.close
+            try super.load(inStream)
+            finally inStream.close
         }
-        
+
         override def load(reader: java.io.Reader) = synchronized {
-            super.load(reader)
-            reader.close
+            try super.load(reader)
+            finally reader.close
         }
-        
+
+        // A missing file throws NoSuchFileException, and only it: a file locked by another process
+        // or not readable throws another IOException (FileInputStream throws FileNotFoundException
+        // for all of them on Windows, so a locked file was taken for a missing one)
         def load(path: Path): Unit = synchronized {
-            this.load(new FileInputStream(path.toFile))
+            this.load(Files.newInputStream(path))
         }
         
         private def getPropertyE(key: String): String = synchronized {

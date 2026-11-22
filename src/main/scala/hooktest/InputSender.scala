@@ -28,7 +28,10 @@ object InputSender {
     // BATCH_INPUT_INTERVAL_MS. Sent even if Pass Mode has been turned on since it was queued: it
     // cannot leave the button pressed, and the user clicked before.
     case object Click extends Kind
-    // A down resent alone (its up comes later), for a press of the left (0) or right (1) button
+    // A down resent alone (its up comes later), for a press of the left (0) or right (1) button.
+    // Sent even if Pass Mode has been turned on (or the state initialized) since it was queued:
+    // the hook drops it if its physical up has passed, and lets it pass if its up has been resent
+    // (Windows.dropResent), so that a press whose up is queued already is not lost
     case class Down(button: Int, press: Int) extends Kind
     // The up for that down: sent only if that down was sent, or it would be an up without a down
     // (e.g. a right up opens a context menu)
@@ -136,11 +139,7 @@ object InputSender {
                 logger.debug("InputSender: dropped a down (unsent ups)")
                 false
             }
-            else if (isPassModeSince(b.generation)) {
-                // In Pass Mode the physical up passes W10Wheel and may have come already
-                logger.debug("InputSender: dropped a down (Pass Mode)")
-                false
-            }
+            // (not checked against Pass Mode: see Down)
             else if (sendOne(b.inputs(0)))
                 true
             else {
@@ -203,17 +202,28 @@ object InputSender {
         }
     }
 
-    // At exit only the ups for downs sent before are sent
-    private def sendAtExit(b: Batch): Unit = b.kind match {
-        case Up => sendUps(b.inputs.toSeq)
-        case Release(button, press) if press != 0 && sentPress(button) == press => sendRelease(button, b)
-        case _ => logger.debug("InputSender: dropped (closing)")
+    // At exit only the ups for downs sent before are sent: the ups to send (empty if b is not one).
+    // The hooks are removed (or about to be), and nothing drops the up of a down resent alone that
+    // was not sent: it is sent only if that down was, or it would be an up without a down.
+    private def upsAtExit(b: Batch): Seq[INPUT] = b.kind match {
+        case Up => b.inputs.toSeq
+        case Release(button, press) if press != 0 && sentPress(button) == press =>
+            sentPress(button) = 0
+            b.inputs.toSeq
+        case _ =>
+            logger.debug("InputSender: dropped (closing)")
+            Seq.empty
     }
 
     private def send(b: Batch): Unit = {
         sendLock.lock()
         try {
-            if (closing) sendAtExit(b) else sendNow(b)
+            if (closing) {
+                val ups = upsAtExit(b)
+                if (ups.nonEmpty) sendUps(ups)
+            }
+            else
+                sendNow(b)
         }
         finally {
             sendLock.unlock()
@@ -243,9 +253,10 @@ object InputSender {
         closing = true
         if (sendLock.tryLock(1, TimeUnit.SECONDS)) {
             try {
+                // All the ups queued after the unsent ones, then tried once (in order, with retries)
                 var b = queue.poll()
                 while (b != null) {
-                    sendAtExit(b)
+                    unsent = unsent ++ upsAtExit(b)
                     b = queue.poll()
                 }
                 retryUnsent(withRetry = true)

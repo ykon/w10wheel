@@ -17,7 +17,7 @@ import org.eclipse.swt.widgets.MessageBox
 import org.eclipse.swt.events.{MouseEvent as _, *}
 import org.eclipse.swt.graphics.Image
 
-import java.io.FileNotFoundException
+import java.nio.file.NoSuchFileException
 import java.io.{ File, FileInputStream, FileOutputStream }
 import java.io.IOException
 
@@ -1032,9 +1032,13 @@ object Context {
     private def setKeyboardHookOf(b: Boolean): Unit = {
         Hook.setOrUnsetKeyboardHook(b) match {
             case Some(err) =>
-                // Not installed (the previous hook removed): off, as the menu shows
+                // Not installed (the previous hook removed): off, and the menu shows it (its check
+                // too: the on/off items are check items, resetOnOffMenuItems sets only the text)
                 keyboardHook = false
-                if (isCreatedMenuItems()) resetOnOffMenuItems()
+                if (isCreatedMenuItems()) {
+                    boolMenuMap.get(DataID.keyboardHook).foreach(_.setSelection(false))
+                    resetOnOffMenuItems()
+                }
 
                 KEventHandler.changeTrigger(targetVKCode, false)
                 Dialog.errorMessage(s"${convLang("Failed keyboard hook install")}: $err", "Error")
@@ -1549,7 +1553,7 @@ object Context {
             }
             catch {
                 // All the settings get their default values (see setOrDefault)
-                case _: FileNotFoundException => logger.debug("Properties file not found")
+                case _: NoSuchFileException => logger.debug("Properties file not found")
             }
             loaded = true
 
@@ -1725,7 +1729,7 @@ object Context {
                         true
                     }
                     catch {
-                        case _: FileNotFoundException => logger.debug("First write properties"); false
+                        case _: NoSuchFileException => logger.debug("First write properties"); false
                     }
 
                 if (found && !isChangedProperties(file))

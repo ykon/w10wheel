@@ -618,7 +618,9 @@ object Windows {
     private def swapIfOn(x: Int, y: Int) = (y, x)
     private var swapIf: (Int, Int) => (Int, Int) = swapIfOff
 
-    private var scrollStartPoint: (Int, Int) = null
+    // Set by initScroll, before Context.Scroll sets scroll mode (a volatile write): read after
+    // checking scroll mode, it is the one of the current scroll
+    private var scrollStartPoint: (Int, Int) = (0, 0)
 
     def sendWheel(movePt: POINT): Unit = {
          //logger.debug("movePT: " + movePt.x + "," + movePt.y);
@@ -632,11 +634,13 @@ object Windows {
     def sendWheelRaw(x: Int, y: Int): Unit = {
         //logger.debug("sendWheelRaw: " + x + "," + y)
 
-        val (sx, sy) = scrollStartPoint
         // x and y are relative moves (they were compared with the start point, so e.g. a vertical
         // move was dropped when the scroll started at the left edge). WM_INPUT already queued is
-        // still handled after scroll mode has ended (RawInput unregistered).
+        // still handled after scroll mode has ended (RawInput unregistered), and it can come before
+        // scroll mode is set: RawInput is registered first (Context.Scroll.start, maybe on the
+        // EventWaiter thread). The start point is read after checking scroll mode (see above).
         if (ctx.isScrollMode && (x != 0 || y != 0)) {
+            val (sx, sy) = scrollStartPoint
             val (dx, dy) = swapIf(x, y)
             sendWheelIf(new POINT(sx, sy), dx, dy)
         }
