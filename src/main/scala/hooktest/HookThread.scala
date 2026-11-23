@@ -12,7 +12,8 @@ import com.sun.jna.platform.win32.WinDef.{ LPARAM, WPARAM }
 import com.sun.jna.platform.win32.WinUser.MSG
 
 // The thread of the low-level hooks: the main thread (as in W10Wheel 0.6 and before, with AWT and
-// Swing). It installs the hooks and runs the Win32 message loop in which Windows calls them.
+// Swing). It installs the hooks and runs the Win32 message loop in which Windows calls them, and
+// that of the message window (Windows.createMessageWindow: RawInput, the end of the session).
 //
 // The settings and the state of the event handlers are changed on this thread only (post, call):
 // the hook procedures read and change them without locks, as they did when the menu ran on the
@@ -129,13 +130,15 @@ object HookThread {
             }
         }
         finally {
-            looping = false
             lock.synchronized {
                 running = false
             }
             threadId = 0
-            // Those queued meanwhile (none can be queued from now on: see call)
+            // Those queued meanwhile (none can be queued from now on: see call). Still looping: the
+            // Swing thread may wait for one of them (call), so a dialog it shows (e.g. an error of a
+            // load) must not wait for the Swing thread (see Dialog.onUI)
             runTasks()
+            looping = false
         }
     }
 

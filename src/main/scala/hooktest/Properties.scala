@@ -156,7 +156,8 @@ object Properties {
     private case class TextFile(lines: List[String], newline: String, bom: Boolean)
 
     private object TextFile {
-        private val BOM = "﻿"
+        // U+FEFF (not written as the character itself: invisible, it could be removed by mistake)
+        private val BOM = 0xFEFF.toChar.toString
 
         // UTF-8: an invalid byte (e.g. a comment in another encoding) is replaced, not an error
         def read(path: Path): TextFile = {
@@ -174,26 +175,37 @@ object Properties {
         }
 
         // Written to a file next to it, then moved over it: the file is not left half written if
-        // the write fails (e.g. the disk is full) or W10Wheel ends meanwhile. A link is followed (the
-        // file it points to is replaced, not the link). A read-only file is not replaced (an error).
+        // the write fails (e.g. the disk is full) or W10Wheel ends meanwhile. The name of the file
+        // written is unique (e.g. W10Wheel.NET may write the same properties at the same time). A
+        // link is followed (the file it points to is replaced, not the link). A read-only file is
+        // not replaced (an error). Where a file cannot be moved atomically (e.g. some network
+        // drives), it is moved over the file as it can be.
         def write(path: Path, file: TextFile): Unit = {
             val target = if (Files.exists(path)) path.toRealPath() else path
             if (Files.exists(target) && !Files.isWritable(target))
                 throw new AccessDeniedException(target.toString, null, "The file is read-only")
 
             val text = (if (file.bom) BOM else "") + file.lines.map(_ + file.newline).mkString
-            val tmp = target.resolveSibling(target.getFileName.toString + ".tmp")
+            val dir = Option(target.toAbsolutePath.getParent).getOrElse(Paths.get(USER_DIR))
+            val tmp = Files.createTempFile(dir, target.getFileName.toString + "-", ".tmp")
             try {
                 Files.write(tmp, text.getBytes(StandardCharsets.UTF_8))
-                Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                try {
+                    Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                }
+                catch {
+                    case _: AtomicMoveNotSupportedException =>
+                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
+                }
             }
             finally {
-                Files.deleteIfExists(tmp)
+                // Not over the error of the write
+                try Files.deleteIfExists(tmp)
+                catch { case e: IOException => () }
             }
         }
     }
 
-    
     val PROGRAM_NAME = Context.PROGRAM_NAME
     val PROP_NAME = s".$PROGRAM_NAME"
     val PROP_EXT = "properties"
@@ -205,9 +217,11 @@ object Properties {
     private val BAD_DEFAULT_NAME = s"$PROP_NAME.$DEFAULT_DEF.$PROP_EXT"
     private val userDefReg = s"^\\.$PROGRAM_NAME\\.(?!--)(.+)\\.$PROP_EXT$$".r
     
+    // Files only. Not the file of Default whatever its case (Default cannot be a name of
+    // properties: Context.whyNotFileName).
     private def isPropFile(f: File): Boolean = {
         val name = f.getName
-        name != BAD_DEFAULT_NAME && userDefReg.findFirstIn(name).isDefined
+        f.isFile && !name.equalsIgnoreCase(BAD_DEFAULT_NAME) && userDefReg.findFirstIn(name).isDefined
     }
     
     def getUserDefName(file: File) = {
@@ -217,8 +231,9 @@ object Properties {
         }
     }
     
-    def getPropFiles = {
-        new File(USER_DIR).listFiles().filter(isPropFile)
+    // Empty if the folder cannot be listed
+    def getPropFiles: Array[File] = {
+        Option(new File(USER_DIR).listFiles()).getOrElse(Array.empty[File]).filter(isPropFile)
     }
      
     def getDefaultPath =
@@ -233,6 +248,22 @@ object Properties {
     
     def exists(name: String): Boolean =
         Files.exists(getPath(name))
+
+    // The name of existing properties as in their file name (None if they do not exist, as the file
+    // system tells): name may differ in case (e.g. typed as an argument), which Windows ignores, but
+    // not the list of the settings dialog, which compares the names (the selected properties would
+    // not be shown). The same name if it is listed (only a folder made case-sensitive can have both
+    // cases).
+    def findName(name: String): Option[String] = {
+        if (!exists(name))
+            None
+        else {
+            val names = try getPropFiles.map(getUserDefName) catch { case _: Exception => Array.empty[String] }
+            names.find(_ == name)
+                .orElse(names.find(_.equalsIgnoreCase(name)))
+                .orElse(Some(name))
+        }
+    }
     
     def copy(srcName: String, destName: String) = {
         val srcPath = getPath(srcName)

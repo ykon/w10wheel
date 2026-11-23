@@ -8,11 +8,12 @@ package hooktest
 import javax.swing.{ SwingUtilities, ToolTipManager, UIManager }
 
 import com.formdev.flatlaf.{ FlatDarkLaf, FlatLaf, FlatLightLaf }
-import com.sun.jna.platform.win32.{ Advapi32Util, WinReg }
+import com.sun.jna.platform.win32.{ Advapi32, Advapi32Util, WinError, WinNT, WinReg }
 
 // The look and feel of the UI (FlatLaf): light or dark as the apps of Windows are (Settings >
-// Personalization > Colors > "Choose your default app mode"), followed when it is changed
-// (Windows: WM_SETTINGCHANGE "ImmersiveColorSet").
+// Personalization > Colors > "Choose your default app mode"), followed when it is changed: the
+// value is watched in the registry (watch). Not WM_SETTINGCHANGE "ImmersiveColorSet": running as
+// administrator, W10Wheel did not get it (sent by programs not running as administrator).
 object Theme {
     private val logger = Logger.getLogger()
 
@@ -70,8 +71,34 @@ object Theme {
         }
     }
 
-    // The mode of the apps may have changed (from the thread of the message window): the look and
-    // feel changed if it has, and the windows updated
+    // Watches the key of the mode of the apps on a thread of its own (it waits for each change):
+    // started once, after setup. Not if the key cannot be opened (the mode is not followed then).
+    def watch(): Unit = {
+        val t = new Thread(() => {
+            val ref = new WinReg.HKEYByReference()
+            val opened = Advapi32.INSTANCE.RegOpenKeyEx(WinReg.HKEY_CURRENT_USER, PERSONALIZE, 0,
+                                                         WinNT.KEY_NOTIFY | WinNT.KEY_READ, ref)
+            if (opened != WinError.ERROR_SUCCESS)
+                logger.warn(s"Theme.watch: RegOpenKeyEx: $opened")
+            else {
+                try {
+                    // Waits for a value of the key set (synchronous), then reads the mode
+                    while (Advapi32.INSTANCE.RegNotifyChangeKeyValue(ref.getValue, false,
+                               WinNT.REG_NOTIFY_CHANGE_LAST_SET, null, false) == WinError.ERROR_SUCCESS)
+                        windowsThemeChanged()
+                    logger.warn("Theme.watch: RegNotifyChangeKeyValue failed")
+                }
+                finally {
+                    Advapi32.INSTANCE.RegCloseKey(ref.getValue)
+                }
+            }
+        }, "W10Wheel theme watcher")
+        t.setDaemon(true)
+        t.start()
+    }
+
+    // A value of the key of the mode of the apps has changed (from the watcher, watch): the look
+    // and feel changed if the mode has, and the windows updated
     def windowsThemeChanged(): Unit = {
         if (initialized) {
             val d = isWindowsDark

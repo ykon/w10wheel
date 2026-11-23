@@ -15,9 +15,8 @@ object W10Wheel {
 
     private var exited = false
 
-    // Called when the message loop ends and when the session ends (on the thread of the message
-    // window): done once. The other call waits for it to be done, or the process could end while
-    // the properties are stored.
+    // Called when the message loop ends and when the session ends (WM_ENDSESSION, in the loop): both
+    // on the hook thread, done once.
     def procExit: Unit = synchronized {
         if (!exited) {
             exited = true
@@ -42,8 +41,8 @@ object W10Wheel {
         }
 
         // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput.
-        // This also waits for a scroll start in progress and refuses later ones. Maybe on the
-        // thread of the message window (session end): no dialog.
+        // This also waits for a scroll start in progress and refuses later ones. Maybe at the end
+        // of the session (WM_ENDSESSION): no dialog.
         try {
             ctx.closeScrollMode
         }
@@ -79,16 +78,23 @@ object W10Wheel {
         }
     }
 
+    // The errors of the arguments are shown in the language of the properties (Default: no other
+    // is selected then)
     private def setSelectedProperties(name: String): Unit = {
-        // Default is always valid (its file is not written until exit)
-        if (name == Properties.DEFAULT_DEF || Properties.exists(name))
-            Context.setSelectedProperties(name)
-        else
-            Dialog.errorMessage(s"${convLang("Properties does not exist")}: $name")
+        // Default is always valid (its file is not written until a setting is changed or W10Wheel
+        // exits). Other properties are selected by the name of their file (the case may differ).
+        val found = if (name == Properties.DEFAULT_DEF) Some(name) else Properties.findName(name)
+        found match {
+            case Some(n) => Context.setSelectedProperties(n)
+            case None =>
+                ctx.readStartupProperties()
+                Dialog.errorMessage(s"${convLang("Properties does not exist")}: $name")
+        }
     }
 
     private def unknownCommand(name: String): Unit = {
-        Dialog.errorMessage(s"${convLang("Unknown Command")}: $name", convLang("Command Error"))
+        ctx.readStartupProperties()
+        Dialog.errorMessage(s"${convLang("Unknown Command")}: $name", "Command Error")
         System.exit(1)
     }
 
@@ -165,6 +171,9 @@ object W10Wheel {
     // On the hook thread (the main thread), before its message loop: the hooks are installed on
     // the thread that runs it (Windows calls them from it)
     private def init(): Unit = {
+        // First: RawInput is sent to it once scrolling (it would fail without it)
+        Windows.createMessageWindow()
+
         // If the file cannot be read (an error is shown), the default settings are used, and not
         // stored at exit (Context.storeProperties)
         ctx.loadProperties
@@ -193,6 +202,8 @@ object W10Wheel {
 
         // Before the first component (a dialog, the tray icon)
         Theme.setup()
+        // The mode of the apps followed while running
+        Theme.watch()
         // The language of the dialogs before the load, and whether to ask for administrator rights
         ctx.readStartupProperties()
 

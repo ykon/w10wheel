@@ -65,7 +65,7 @@ object Dialog {
     }
 
     def errorMessageE(e: Exception): Unit =
-        errorMessage(e.getMessage, e.getClass.getName)
+        errorMessage(Option(e.getMessage).getOrElse(e.toString), e.getClass.getName)
 
     // An error of an action of the settings dialog (owner): what failed (heading) and why
     def showError(owner: Window, heading: String, e: Throwable): Unit = {

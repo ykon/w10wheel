@@ -848,7 +848,7 @@ object Context {
     // selected properties at once, its other lines kept. A new file has all the settings, as at a
     // first exit (their default values). Not if it cannot be written: asked again at the next
     // startup.
-    def storeNoAdminCheck(): Unit = {
+    def storeNoAdminCheck(): Unit = storeLock.synchronized {
         try {
             val path = getSelectedPropertiesPath
             if (java.nio.file.Files.exists(path)) {
@@ -887,7 +887,7 @@ object Context {
                 hasUnstoredChanges
             }
             val go = !unstored || {
-                val why = storeError.orElse(loadError).map(e => s"${e.getMessage}\n").getOrElse("")
+                val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
                 Dialog.confirm(owner, convLang("The changes could not be saved"),
                                why + convLang("Restarting loses the changes that could not be saved."),
                                convLang("Restart as administrator"))
@@ -929,7 +929,7 @@ object Context {
         }
 
         val go = !unstored || {
-            val why = storeError.orElse(loadError).map(e => s"${e.getMessage}\n").getOrElse("")
+            val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
             Dialog.confirm(owner, convLang("The changes could not be saved"),
                            why + convLang("Switching loses the changes that could not be saved."), convLang("Switch"))
         }
@@ -1306,7 +1306,11 @@ object Context {
                 val isValidThreshold = cat.forall(_ >= 0) && isAscending
                 val isValidMultiplier = cam.forall(d => java.lang.Double.isFinite(d) && d >= 0.0)
 
-                if (cat.length == 0 || cat.length != cam.length)
+                if (cat.length == 0 && cam.length == 0)
+                    // Written without values (e.g. customAccelThreshold=,): shown as not written
+                    // (the state set above), not as numbers that differ
+                    ()
+                else if (cat.length != cam.length)
                     customTableState = CustomTableState.Invalid("Not used: the numbers of thresholds and multipliers differ")
                 else if (!isValidThreshold)
                     customTableState = CustomTableState.Invalid("Not used: the thresholds must be ascending numbers of 0 or more")
@@ -1388,10 +1392,19 @@ object Context {
     @volatile private var loadError: Option[Throwable] = None
     @volatile private var storeError: Option[Throwable] = None
 
+    // The message of an error as shown (some have none)
+    private def messageOf(e: Throwable): String =
+        Option(e.getMessage).getOrElse(e.toString)
+
     // The settings as they were loaded, or last stored: only those changed since are stored
     // (storeProperties); those not stored (e.g. the file could not be written) are lost by a switch,
     // which is asked
-    private var storedSettings = new Properties.SProperties
+    @volatile private var storedSettings = new Properties.SProperties
+
+    // The properties files are written under it (storeProperties, storeNoAdminCheck): on the hook
+    // thread, but also on the Swing thread after the message loop (HookThread.call), while the
+    // main thread may store them at exit
+    private val storeLock = new Object
 
     private def currentSettings: Properties.SProperties = {
         val p = new Properties.SProperties
@@ -1472,7 +1485,7 @@ object Context {
             case Right(p) => Some(p)
             case Left(e) =>
                 loadError = Some(e)
-                Dialog.errorMessage(s"${convLang("The properties file could not be read")}: $name\n\n${e.getMessage}")
+                Dialog.errorMessage(s"${convLang("The properties file could not be read")}: $name\n\n${messageOf(e)}")
                 None
         }
     }
@@ -1555,10 +1568,6 @@ object Context {
         )
     }
 
-    private val OnOffNames: Array[String] = {
-        Array(DataID.realWheelMode, DataID.accelTable, DataID.keyboardHook, DataID.vhAdjusterMode)
-    }
-
     private def setNumberOfName(name: String, n: Int): Unit = {
         logger.debug(s"setNumber: $name = $n")
 
@@ -1628,7 +1637,7 @@ object Context {
         case DataID.passMode => Pass.mode
     }
 
-    def storeProperties: Unit = {
+    def storeProperties: Unit = storeLock.synchronized {
         logger.debug("storeProperties")
 
         // Only the settings changed since they were loaded (or stored) are written, in the file as it

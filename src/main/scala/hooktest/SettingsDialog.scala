@@ -585,7 +585,12 @@ final class SettingsDialog(conv: String => String) {
         }
 
         cb.addPopupMenuListener(new PopupMenuListener {
-            def popupMenuWillBecomeVisible(e: PopupMenuEvent): Unit = withRefreshing(() => reload())
+            // Also fitted and kept on the screen: a longer name added outside W10Wheel may widen the
+            // dialog
+            def popupMenuWillBecomeVisible(e: PopupMenuEvent): Unit = {
+                withRefreshing(() => reload())
+                fit()
+            }
             def popupMenuWillBecomeInvisible(e: PopupMenuEvent): Unit = ()
             def popupMenuCanceled(e: PopupMenuEvent): Unit = ()
         })

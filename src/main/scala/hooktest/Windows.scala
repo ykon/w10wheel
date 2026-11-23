@@ -72,10 +72,10 @@ object Windows {
         false
     }
 
-    // The window that receives RawInput (WM_INPUT while scrolling), the end of the session and the
-    // changes of the settings of Windows (the theme), on a thread of its own: WM_INPUT is handled
-    // while the hook thread handles a hook or a task. (The tray icon is AWT's: it is added again
-    // when Explorer restarts, TaskbarCreated.)
+    // The window that receives RawInput (WM_INPUT while scrolling) and the end of the session. On
+    // the hook thread (as in the SWT version and W10Wheel.NET): WM_INPUT is handled between the hook
+    // procedures, never while one changes the state of scroll mode (e.g. the scroll ended: no wheel
+    // sent nor cursor changed after it). (The mode of the apps is watched in the registry: Theme.)
     private val windowProc = new WindowProc {
         override def callback(hwnd: HWND, uMsg: Int, wParam: WPARAM, lParam: LPARAM): LRESULT = {
             uMsg match {
@@ -90,11 +90,6 @@ object Windows {
                     if (wParam.intValue != 0)
                         W10Wheel.procExit
                     return new LRESULT(0)
-                // The light or dark mode of the apps may have changed
-                case WM_SETTINGCHANGE =>
-                    val area = Option(lParam.toPointer).map(_.getWideString(0)).getOrElse("")
-                    if (area == "ImmersiveColorSet")
-                        Theme.windowsThemeChanged()
                 case _ => {}
             }
 
@@ -104,34 +99,36 @@ object Windows {
     
     private val CLASS_NAME = Context.PROGRAM_NAME + "_WM"
 
-    // A top-level window (not message-only): the broadcasts (WM_ENDSESSION, WM_SETTINGCHANGE) are
-    // sent to the top-level windows only. Made on its thread, which gets its messages.
-    private def createMessageWindow(): HWND = {
+    // Explorer started again: the tray icon is added again by AWT (its hidden window)
+    private val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
+
+    @volatile private var messageHwnd: HWND = null
+
+    // A top-level window (not message-only): WM_ENDSESSION is sent to the top-level windows only.
+    // Made on the hook thread before the hooks (W10Wheel.init): its messages are dispatched by the
+    // loop of that thread (HookThread).
+    //
+    // As administrator, TaskbarCreated (sent by Explorer, not as administrator) is blocked by
+    // Windows (UIPI) unless allowed: for the process (AWT does not allow it for its window, and the
+    // tray icon would not come back after Explorer restarts).
+    def createMessageWindow(): Unit = {
+        if (!u32ex.ChangeWindowMessageFilter(TaskbarCreated, MSGFLT_ADD))
+            logger.warn("ChangeWindowMessageFilter (TaskbarCreated): " + getLastErrorMessage)
+
         val wx = new WNDCLASSEX
         wx.lpszClassName = CLASS_NAME
         wx.lpfnWndProc = windowProc
 
-        if (u32.RegisterClassEx(wx).intValue() != 0)
-            u32.CreateWindowEx(0, CLASS_NAME, null, 0, 0, 0, 0, 0, null, null, null, null)
-        else
-            null
-    }
+        val hwnd =
+            if (u32.RegisterClassEx(wx).intValue() != 0)
+                u32.CreateWindowEx(0, CLASS_NAME, null, 0, 0, 0, 0, 0, null, null, null, null)
+            else
+                null
 
-    @volatile private var messageHwnd: HWND = null
-
-    // The thread of the message window
-    private val wmThread = new Thread(() => {
-        messageHwnd = createMessageWindow()
-        if (messageHwnd == null)
+        if (hwnd == null)
             logger.warn("Failed create the message window: " + getLastErrorMessage)
-        val msg = new MSG
-        while (u32.GetMessage(msg, null, 0, 0) > 0) {
-            u32.TranslateMessage(msg)
-            u32.DispatchMessage(msg)
-        }
-    }, "W10Wheel message window")
-    wmThread.setDaemon(true)
-    wmThread.start()
+        messageHwnd = hwnd
+    }
 
     // false if the hook was not installed any more (e.g. removed by Windows for a timeout)
     def unhook(hhk: HHOOK): Boolean =

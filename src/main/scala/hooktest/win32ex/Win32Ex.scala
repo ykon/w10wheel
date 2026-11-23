@@ -83,10 +83,11 @@ object User32Ex {
     val MSGFLT_ALLOW = 1
     val MSGFLT_DISALLOW = 2
     val MSGFLT_RESET = 0
+    // ChangeWindowMessageFilter
+    val MSGFLT_ADD = 1
 
     val WM_QUERYENDSESSION = 0x0011
     val WM_ENDSESSION = 0x0016
-    val WM_SETTINGCHANGE = 0x001A
     val WM_INPUT = 0x00ff
     val RIM_INPUT = 0
     val RIM_INPUTSINK = 1
@@ -113,6 +114,8 @@ trait User32ExTrait extends User32
     def SetSystemCursor(hcur: Pointer, id: Int): Boolean
     def DestroyCursor(hCursor: Pointer): Boolean
     def ChangeWindowMessageFilterEx(hWnd: HWND, msg: Int, action: Int, pcfs: Pointer): Boolean
+    // For the process (all its windows, also those of AWT)
+    def ChangeWindowMessageFilter(msg: Int, flag: Int): Boolean
 
     def RegisterRawInputDevices(pRawInputDevices: Array[RAWINPUTDEVICE], uiNumDevices: Int, cbSize: Int): Boolean
     def GetRawInputData(hRawInput: Pointer, uiCommand: Int, pData: Pointer, pcbSize: ByReference, cbSizeHeader: Int): Int
