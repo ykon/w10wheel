@@ -87,11 +87,22 @@ object KEventHandler {
             None
     }
 
+    // Scroll mode could not start (RawInput could not be registered, see Context.Scroll.start, or
+    // W10Wheel is exiting): the down passes, as if the key were not the trigger (as the mouse
+    // triggers do, EventHandler.passNotStartedScroll). Its repeats and its up pass too (a passed
+    // key: keyDown, keyUp), and its next down is not taken for a repeat (lastEvent). Suppressed,
+    // the key would be lost, and its up taken for an illegal state.
     private def checkTriggerScrollStart(ke: KeyboardEvent): Option[LRESULT] = {
         if (ctx.isTriggerKey(ke)) {
             debug("start scroll mode", ke)
             ctx.startScrollMode(ke.info)
-            suppress
+            if (!ctx.isScrollMode) {
+                debug("pass (scroll mode not started)", ke)
+                lastEvent = KNonEvent(null)
+                endPassDown(ke)
+            }
+            else
+                suppress
         }
         else
             None

@@ -906,8 +906,7 @@ object Context {
             // Stored first: the new instance may read them before this one stores them again at its
             // exit. If some could not be (e.g. a read-only file), the new one would load the file
             // without them: asked as when switching.
-            storeProperties
-            val unstored = hasUnstoredChanges
+            val unstored = storeAndCheckUnstored()
             val go = !unstored || {
                 val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
                 Dialog.confirm(owner, convLang("The changes could not be saved"),
@@ -945,8 +944,7 @@ object Context {
     // which is asked. The properties switched to are loaded only if they can be read: else nothing
     // changes, and why is shown.
     private def switchProperties(owner: java.awt.Window, name: String): Unit = {
-        storeProperties
-        val unstored = hasUnstoredChanges
+        val unstored = storeAndCheckUnstored()
 
         val go = !unstored || {
             val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
@@ -1439,6 +1437,15 @@ object Context {
 
     private def hasUnstoredChanges: Boolean =
         changedSettings(currentSettings).nonEmpty
+
+    // Before leaving the selected properties (a switch, the restart as administrator), from the
+    // settings dialog: stores the settings, then tells whether some are left not stored. Under one
+    // lock: a load in between (--sendReloadProp, see loadPropertiesOf) would be taken for changes
+    // not stored (the settings applied, not yet the stored ones).
+    private def storeAndCheckUnstored(): Boolean = storeLock.synchronized {
+        storeProperties
+        hasUnstoredChanges
+    }
 
     // The default values are kept (defaultProp) once, before the first read of a properties file is
     // tried (readPropertiesOrShowError, at startup): the settings are the default values only then.
