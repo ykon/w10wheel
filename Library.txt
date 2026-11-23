@@ -4,8 +4,8 @@ https://www.scala-lang.org/
 Java Native Access (JNA)
 https://github.com/java-native-access/jna
 
-SWT: The Standard Widget Toolkit
-https://www.eclipse.org/swt/
+FlatLaf
+https://www.formdev.com/flatlaf/
 
 Logback
 https://logback.qos.ch/

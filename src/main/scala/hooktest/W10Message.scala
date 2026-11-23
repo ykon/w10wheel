@@ -5,9 +5,6 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import org.eclipse.swt.SWTException
-import org.eclipse.swt.widgets.Display
-
 import win32ex.User32Ex._
 
 object W10Message {
@@ -32,7 +29,7 @@ object W10Message {
 
     private def recvExit(): Unit = {
         logger.debug("recv W10_MESSAGE_EXIT")
-        Context.exitAction(null)
+        Context.exitAction()
     }
 
     private def setBoolBit(msg: Int, b: Boolean): Int =
@@ -75,33 +72,20 @@ object W10Message {
         Context.initState
     }
 
-    // Run after the mouse hook has returned, from the message loop (the hook runs on the UI
-    // thread): a hook must return quickly, or Windows removes it (W10Wheel would stop working,
-    // saying nothing). A load reads the file and installs the keyboard hook again (an error shown
-    // in a message box if it fails), and the exit disposes the display. The display exists before
-    // the mouse hook is installed; no display on this thread means it has been disposed (dispose
-    // deregisters it: Display.getCurrent is null then), W10Wheel is exiting: the command is
-    // dropped, not run in the hook. An exception is logged, as the hook does (Hook.mouseProc).
+    // Run after the mouse hook has returned, on the hook thread (HookThread.post): a hook must return
+    // quickly, or Windows removes it (W10Wheel would stop working, saying nothing). A load reads the
+    // file and installs the keyboard hook again (an error shown if it fails). After the message loop
+    // has ended (W10Wheel is exiting), the command is dropped. An exception is logged, as the hook
+    // does (Hook.mouseProc).
     private def afterHook(f: () => Unit): Unit = {
-        val run: Runnable = () => {
+        HookThread.post(() => {
             try {
                 f()
             }
             catch {
                 case e: Exception => logger.warn(s"command: $e")
             }
-        }
-
-        val display = Display.getCurrent
-        try {
-            if (display == null || display.isDisposed)
-                logger.debug("command dropped: the message loop has ended")
-            else
-                display.asyncExec(run)
-        }
-        catch {
-            case e: SWTException => logger.debug(s"command dropped: $e")
-        }
+        })
     }
 
     // Called by the mouse hook (Hook.procCommand): true if msg is a command (its event is not

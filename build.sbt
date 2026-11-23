@@ -21,8 +21,8 @@ lazy val root = (project in file("."))
       "ch.qos.logback" % "logback-classic" % "1.6.8",
       "net.java.dev.jna" % "jna" % "5.19.1",
       "net.java.dev.jna" % "jna-platform" % "5.19.1",
-      ("org.eclipse.platform" % "org.eclipse.swt.win32.win32.x86_64" % "3.135.0")
-        .exclude("org.eclipse.platform" % "org.eclipse.swt.${osgi.platform}")
+      // Swing look and feel (light and dark themes, Windows 11 style)
+      "com.formdev" % "flatlaf" % "3.8"
     ),
     dependencyOverrides += "org.slf4j" % "slf4j-api" % "2.0.20",
     stageJpackageInput := Def.uncached {

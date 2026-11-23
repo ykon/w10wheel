@@ -5,26 +5,12 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-// SWT
-import org.eclipse.swt.SWT
-//import org.eclipse.swt.widgets._
-import org.eclipse.swt.widgets.Menu
-import org.eclipse.swt.widgets.MenuItem
-import org.eclipse.swt.widgets.Event
-import org.eclipse.swt.widgets.Display
-import org.eclipse.swt.widgets.TrayItem
-import org.eclipse.swt.widgets.MessageBox
-import org.eclipse.swt.events.{MouseEvent as _, *}
-import org.eclipse.swt.graphics.Image
-
 import java.nio.file.NoSuchFileException
-import java.io.{ File, FileInputStream, FileOutputStream }
-import java.io.IOException
+import java.io.File
 
 import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
-import scala.collection.mutable.HashMap
 import java.util.NoSuchElementException
 import java.util.concurrent.atomic.{ AtomicBoolean, AtomicInteger }
 
@@ -33,10 +19,8 @@ object Context {
     // Single source of truth is `version` in build.sbt (written to the jar manifest as Implementation-Version)
     val PROGRAM_VERSION: String =
         Option(getClass.getPackage).flatMap(p => Option(p.getImplementationVersion)).getOrElse("dev")
-    val ICON_RUN_NAME = "TrayIcon-Run.png"
-    val ICON_STOP_NAME = "TrayIcon-Stop.png"
+    val PROJECT_URL = "https://github.com/ykon/w10wheel"
     private val logger = Logger.getLogger()
-    lazy val systemShell = W10Wheel.shell
 
     @volatile private var selectedProperties = Properties.DEFAULT_DEF // default
 
@@ -48,33 +32,6 @@ object Context {
     @volatile private var keyboardHook = false // default
     @volatile private var targetVKCode = Keyboard.getVKCode(DataID.VK_NONCONVERT) // default
     @volatile private var uiLanguage = Locale.getLanguage() // default
-
-    private def getImage(name: String) = {
-        val stream = getClass.getClassLoader.getResourceAsStream(name)
-        try {
-            new Image(Display.getDefault, stream)
-        }
-        finally {
-            stream.close()
-        }
-    }
-
-    // Made once: a new image for every switch of Pass Mode would not be released
-    private lazy val trayIconRun = getImage(ICON_RUN_NAME)
-    private lazy val trayIconStop = getImage(ICON_STOP_NAME)
-
-    private def getTrayIcon(b: Boolean): Image = {
-        if (b) trayIconStop else trayIconRun
-    }
-
-    private def getTrayText(b: Boolean) = {
-        s"$PROGRAM_NAME - ${convLang(if (b) "Stopped" else "Runnable")}"
-    }
-
-    private def changeTrayMode(b: Boolean): Unit = {
-        trayItem.setToolTipText(getTrayText(b))
-        trayItem.setImage(getTrayIcon(b))
-    }
 
     // Incremented whenever Pass Mode is turned on and the state is initialized. A wheel event queued
     // before is not sent (InputSender), and an LR trigger wait started before neither resends nor
@@ -113,8 +70,8 @@ object Context {
                 LastFlags.init
             }
 
-            changeTrayMode(b)
-            passModeMenuItem.setSelection(b)
+            // The icon and the menu of the tray
+            Tray.update()
         }
 
         def toggleMode: Unit = {
@@ -137,21 +94,17 @@ object Context {
     
     def getUILanguage = uiLanguage
     
-    private def isCreatedMenuItems(): Boolean = {
-        rootMenu != null
-    }
-    
     private def setUILanguage(lang: String): Unit = {
         logger.debug(s"setUILanguage: $lang")
         val reset = uiLanguage != lang
         uiLanguage = lang
-        
-        if (reset && isCreatedMenuItems()) {
-            resetMenuText()
-            resetNumberMenuItems()
+
+        if (reset) {
+            Tray.retext()
+            retextSettingsDialog()
         }
     }
-    
+
     def convLang(msg: String): String = {
         logger.debug(s"convLang: msg = $msg")
         Locale.convLang(getUILanguage, msg)
@@ -650,228 +603,14 @@ object Context {
     def isDragTrigger = firstTrigger.isDrag
     def isNoneTrigger = firstTrigger.isNone
     
-    type MenuMap = HashMap[String, MenuItem]
-
-    private def resetMapMenuItems(map: MenuMap, pred: String => Boolean): Unit = {
-        logger.debug("resetMapMenuItems")
-        map.foreach { case (id, item) =>
-            item.setSelection(pred(id))
-        }
-    }
-
-    private def resetTriggerMenuItems(): Unit = {
-        resetMapMenuItems(triggerMenuMap, (id => Mouse.getTrigger(id) == firstTrigger))
-    }
-
-    private def resetAccelMenuItems(): Unit = {
-        resetMapMenuItems(accelMenuMap, (id => Accel.getMultiplier(id) == Accel.multiplier))
-    }
-
-    private def resetPriorityMenuItems(): Unit = {
-        resetMapMenuItems(priorityMenuMap, (id => Windows.getPriority(id) == processPriority))
-    }
-    
-    private def resetLanguageMenuItems(): Unit = {
-        resetMapMenuItems(languageMenuMap, (id => id == getUILanguage))
-    }
-
-    private def resetNumberMenuItems(): Unit = {
-        numberMenuMap.foreach { case (id, item) =>
-            val n = getNumberOfName(id)
-            item.setText(makeNumberText(id, n))
-        }
-    }
-
-    private def resetBoolMenuItems(): Unit = {
-        resetMapMenuItems(boolMenuMap, getBooleanOfName)
-    }
-
-    private def resetKeyboardMenuItems(): Unit = {
-        resetMapMenuItems(keyboardMenuMap, (id => Keyboard.getVKCode(id) == targetVKCode))
-    }
-
-    private def resetVhAdjusterMenuItems(): Unit = {
-        boolMenuMap(DataID.vhAdjusterMode).setEnabled(Scroll.horizontal)
-        resetMapMenuItems(vhAdjusterMenuMap, (id => getVhAdjusterMethod(id) == VHAdjuster.method))
-    }
-
-    private def resetOnOffMenuItems(): Unit = {
-        OnOffNames.foreach(name => {
-            val item = boolMenuMap(name)
-            item.setText(convLang(getOnOffText(getBooleanOfName(name))))
-        })
-    }
-
-    private def resetAllMenuItems(): Unit = {
-        logger.debug("resetAllMenuItems")
-        resetTriggerMenuItems()
-        resetKeyboardMenuItems()
-        resetAccelMenuItems()
-        resetPriorityMenuItems()
-        resetLanguageMenuItems()
-        resetNumberMenuItems()
-        resetBoolMenuItems()
-        // Reload or switching properties can add or remove the custom table
-        setEnabledMenu(boolMenuMap, DataID.customAccelTable, !Accel.customDisabled)
-        resetVhAdjusterMenuItems()
-        resetOnOffMenuItems()
-    }
-
-    private def getFirstWord(s: String): String =
-        s.split(" ")(0)
-    
-    private def unselectAllItems(map: MenuMap): Unit = {
-        map.foreach { case (_, item) =>
-            item.setSelection(false)
-        }
-    }
-
-    private def addListener(item: MenuItem, f: Event => Unit): Unit = {
-        item.addListener(SWT.Selection, (e: Event) => f(e))
-    }
-
-    private def addListenerSelection(item: MenuItem, f: Event => Unit): Unit = {
-        addListener(item, e =>
-            if (item.getSelection)
-                f(e)
-        )
-    }
-    
-    private case class MenuData(engText: String, id: Option[String])
-    
-    /*
-    private def dataToID(item: MenuItem): String = item.getData() match {
-        case data: MenuData => data.id match {
-            case Some(id) => id
-            case None => throw new IllegalArgumentException("id is None.")
-        }
-        case _ => throw new IllegalArgumentException("data is not MenuData.")
-    }
-    */
-    
-    /*
-    private def dataToEngText(item: MenuItem): String = item.getData() match {
-        case data: MenuData => data.engText
-        case _ => throw new IllegalArgumentException("data is not MenuData.")
-    }
-    */
-        
-    private def dataToEngText(item: MenuItem): String = item.getData() match {
-        case data: String => data
-        case _ => throw new IllegalArgumentException("data is not String.")
-    }
-        
-    private val triggerMenuMap = new MenuMap()
-
-    private def createMapMenuItem(menu: Menu, data: MenuData, map: MenuMap, setID: String => Unit): MenuItem = {
-        val item = createRadioMenuItem(menu, data)
-        val id = data.id.get
-        
-        logger.debug("addClickMapMenuItem: " + id)
-        
-        map(id) = item
-
-        addListenerSelection(item, _ => {
-            logger.debug("Listener(Selection): " + id)
-            unselectAllItems(map)
-            item.setSelection(true)
-            setID(id)
-        })
-        
-        item
-    }
-   
-    private def createBoolMenuItem(menu: Menu, data: MenuData, enabled: Boolean = true) = {
-        val item = createCheckMenuItem(menu, data)
-        item.setEnabled(enabled)
-        addListener(item, makeSetBooleanEvent(data.id.get))
-        boolMenuMap(data.id.get) = item
-        item
-    }
-
-    private def createBoolMenuItem(menu: Menu, name: String): Unit = {
-        createBoolMenuItem(menu, MenuData(name, Some(name)))
-    }
-
-    private def addSeparator(menu: Menu): Unit = {
-        new MenuItem(menu, SWT.SEPARATOR)
-    }
-    
-    private def isSeparator(item: MenuItem): Boolean = {
-        item.getStyle == SWT.SEPARATOR
-    }
-
-    private def createTriggerMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        
-        val add = (text: String) => {
-            val data = MenuData(text, Some(getFirstWord(text)))
-            createMapMenuItem(menu, data, triggerMenuMap, setTrigger)
-        }
-
-        add(DataID.LR + " (Left <<-->> Right)")
-        add(DataID.Left + " (Left -->> Right)")
-        add(DataID.Right + " (Right -->> Left)")
-        addSeparator(menu)
-
-        add(DataID.Middle)
-        add(DataID.X1)
-        add(DataID.X2)
-        addSeparator(menu)
-
-        add(DataID.LeftDrag)
-        add(DataID.RightDrag)
-        add(DataID.MiddleDrag)
-        add(DataID.X1Drag)
-        add(DataID.X2Drag)
-        addSeparator(menu)
-
-        add(DataID.None)
-        addSeparator(menu)
-
-        createBoolMenuItem(menu, MenuData("Send MiddleClick", Some(DataID.sendMiddleClick)), isSingleTrigger)
-        createBoolMenuItem(menu, MenuData("Dragged Lock", Some(DataID.draggedLock)), isDragTrigger)
-
-        createCascadeMenuItem(parent, menu, "Trigger")
-    }
+    // The mouse trigger last set other than None: shown in the settings dialog while the trigger is
+    // None (Mouse unchecked), and set again when Mouse is checked
+    @volatile private var lastMouseTrigger: Trigger = firstTrigger
 
     private def setAccelMultiplier(name: String): Unit = {
         logger.debug(s"setAccelMultiplier: $name")
         Accel.multiplier = Accel.getMultiplier(name)
     }
-
-    private val accelMenuMap = new MenuMap()
-
-    private def createAccelTableMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        
-        val add = (text: String) => {
-            val data = MenuData(text, Some(getFirstWord(text)))
-            createMapMenuItem(menu, data, accelMenuMap, setAccelMultiplier)
-        }
-
-        createOnOffMenuItem(menu, DataID.accelTable)
-        addSeparator(menu)
-
-        add(DataID.M5 + " (1.0 ... 4.8)")
-        add(DataID.M6 + " (1.2 ... 5.8)")
-        add(DataID.M7 + " (1.4 ... 6.7)")
-        add(DataID.M8 + " (1.6 ... 7.7)")
-        add(DataID.M9 + " (1.8 ... 8.7)")
-        addSeparator(menu)
-        createBoolMenuItem(menu, MenuData("Custom Table", Some(DataID.customAccelTable)), !Accel.customDisabled)
-
-        createCascadeMenuItem(parent, menu, "Accel Table")
-    }
-
-    private def openNumberInputDialog(name: String, low: Int, up: Int) = {
-        val cur = getNumberOfName(name)
-        val dialog = new Dialog.NumberInputDialog(systemShell, convLang(name), low, up, cur)
-        dialog.open
-    }
-
-    private def makeNumberText(name: String, n: Int) =
-        s"${convLang(name)} = $n"
 
     private def setPriority(name: String) = {
         val p = Windows.getPriority(name)
@@ -879,116 +618,6 @@ object Context {
         processPriority = p
         Windows.setPriority(p)
     }
-
-    private val priorityMenuMap = new MenuMap()
-
-    private def createPriorityMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        
-        val add = (text: String, id: String) => {
-            val data = MenuData(text, Some(id))
-            createMapMenuItem(menu, data, priorityMenuMap, setPriority)
-        }
-
-        add("High", DataID.High)
-        add("Above Normal", DataID.AboveNormal)
-        add("Normal", DataID.Normal)
-
-        createCascadeMenuItem(parent, menu, "Priority")
-    }
-
-    private val numberMenuMap = new MenuMap()
-
-    private def createMenuItem(parent: Menu, style: Int, data: MenuData): MenuItem = {
-        val item = new MenuItem(parent, style)
-        item.setText(convLang(data.engText))
-        //item.setData(data)
-        item.setData(data.engText)
-        item
-    }
-
-    private def createPushMenuItem(parent: Menu, data: MenuData): MenuItem = {
-        createMenuItem(parent, SWT.PUSH, data)
-    }
-
-    private def createRadioMenuItem(parent: Menu, data: MenuData): MenuItem = {
-        createMenuItem(parent, SWT.RADIO, data)
-    }
-
-    private def createCheckMenuItem(parent: Menu, data: MenuData): MenuItem = {
-        createMenuItem(parent, SWT.CHECK, data)
-    }
-
-    private def createCascadeMenuItem(parent: Menu, pulldown: Menu, text: String): MenuItem = {
-        val item = createMenuItem(parent, SWT.CASCADE, MenuData(text, None))
-        item.setMenu(pulldown)
-        item
-    }
-
-    private def createNumberMenuItem(menu: Menu, name: String, low: Int, up: Int): Unit = {
-        val n = getNumberOfName(name)
-        val item = createPushMenuItem(menu, MenuData(makeNumberText(name, n), Some(name)))
-        numberMenuMap(name) = item
-
-        addListener(item, _ => {
-            val num = openNumberInputDialog(name, low, up)
-            num.foreach(n => {
-                setNumberOfName(name, n)
-                item.setText(makeNumberText(name, n))
-            })
-        })
-    }
-
-    private def createNumberMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        val add = (name: String, low: Int, up: Int) => createNumberMenuItem(menu, name, low, up)
-
-        add(DataID.pollTimeout, 50, 500) // as in the properties file
-        add(DataID.scrollLocktime, 150, 500)
-        addSeparator(menu)
-
-        add(DataID.verticalThreshold, 0, 500)
-        add(DataID.horizontalThreshold, 0, 500)
-
-        createCascadeMenuItem(parent, menu, "Set Number")
-    }
-
-    private def getOnOffText(b: Boolean) =
-        //if (b) "ON (-->> OFF)" else "OFF (-->> ON)"
-        "ON / OFF"
-
-    private def createOnOffMenuItem(menu: Menu, id: String, action: Boolean => Unit = _ => {}): Unit = {
-        val item = createCheckMenuItem(menu, MenuData(getOnOffText(getBooleanOfName(id)), Some(id)))
-        boolMenuMap(id) = item
-
-        addListener(item, _ => {
-            val b = item.getSelection
-            item.setText(convLang(getOnOffText(b)))
-            setBooleanOfName(id, b)
-            action(b)
-        })
-    }
-
-    private def createRealWheelModeMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        val addNum = (name: String, low: Int, up: Int) => createNumberMenuItem(menu, name, low, up)
-        val addBool = (name: String) => createBoolMenuItem(menu, name)
-
-        createOnOffMenuItem(menu, DataID.realWheelMode)
-        addSeparator(menu)
-
-        addNum(DataID.wheelDelta, 10, 500)
-        addNum(DataID.vWheelMove, 10, 500)
-        addNum(DataID.hWheelMove, 10, 500)
-        addSeparator(menu)
-
-        addBool(DataID.quickFirst)
-        addBool(DataID.quickTurn)
-
-        createCascadeMenuItem(parent, menu, "Real Wheel Mode")
-    }
-
-    private val vhAdjusterMenuMap = new MenuMap()
 
     private def getVhAdjusterMethod(name: String) = name match {
         case DataID.Fixed => Fixed()
@@ -999,37 +628,6 @@ object Context {
         logger.debug(s"setVhAdjusterMethod: $name")
         VHAdjuster.method = getVhAdjusterMethod(name)
     }
-
-    private def createVhAdjusterMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        
-        val add = (text: String) => {
-            val data = MenuData(text, Some(text))
-            createMapMenuItem(menu, data, vhAdjusterMenuMap, setVhAdjusterMethod)
-        }
-        
-        val addNum = (name: String, low: Int, up: Int) => createNumberMenuItem(menu, name, low, up)
-        val addBool = (name: String) => createBoolMenuItem(menu, name)
-
-        createOnOffMenuItem(menu, DataID.vhAdjusterMode)
-        boolMenuMap(DataID.vhAdjusterMode).setEnabled(Scroll.horizontal)
-        addSeparator(menu)
-
-        add(DataID.Fixed)
-        add(DataID.Switching)
-        addSeparator(menu)
-
-        addBool(DataID.firstPreferVertical)
-        addNum(DataID.firstMinThreshold, 1, 10)
-        addNum(DataID.switchingThreshold, 10, 500)
-
-        createCascadeMenuItem(parent, menu, "VH Adjuster")
-    }
-
-    private def toString2F(d: Double) =
-        ("%.2f".format(d))
-
-    private val keyboardMenuMap = new MenuMap()
 
     private def setTargetVKCode(name: String): Unit = {
         logger.debug(s"setTargetVKCode: $name")
@@ -1044,13 +642,9 @@ object Context {
     private def setKeyboardHookOf(b: Boolean): Unit = {
         Hook.setOrUnsetKeyboardHook(b) match {
             case Some(err) =>
-                // Not installed (the previous hook removed): off, and the menu shows it (its check
-                // too: the on/off items are check items, resetOnOffMenuItems sets only the text)
+                // Not installed (the previous hook removed): off, and the settings dialog shows it
                 keyboardHook = false
-                if (isCreatedMenuItems()) {
-                    boolMenuMap.get(DataID.keyboardHook).foreach(_.setSelection(false))
-                    resetOnOffMenuItems()
-                }
+                refreshSettingsLater()
 
                 KEventHandler.changeTrigger(targetVKCode, false)
                 Dialog.errorMessage(s"${convLang("Failed keyboard hook install")}: $err", "Error")
@@ -1064,358 +658,458 @@ object Context {
         }
     }
 
-    private def createKeyboardMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        
-        val add = (text: String) => {
-            val data = MenuData(text, Some(getFirstWord(text)))
-            createMapMenuItem(menu, data, keyboardMenuMap, setTargetVKCode)
-        }
-
-        createOnOffMenuItem(menu, DataID.keyboardHook, setKeyboardHookOf)
-        addSeparator(menu)
-        
-        add(DataID.VK_TAB + " (Tab)")
-        add(DataID.VK_PAUSE + " (Pause)")
-        add(DataID.VK_CAPITAL + " (Caps Lock)")
-        add(DataID.VK_CONVERT + " (Henkan)")
-        add(DataID.VK_NONCONVERT + " (Muhenkan)")
-        add(DataID.VK_PRIOR + " (Page Up)")
-        add(DataID.VK_NEXT + " (Page Down)")
-        add(DataID.VK_END + " (End)")
-        add(DataID.VK_HOME + " (Home)")
-        add(DataID.VK_SNAPSHOT + " (Print Screen)")
-        add(DataID.VK_INSERT + " (Insert)")
-        add(DataID.VK_DELETE + " (Delete)")
-        add(DataID.VK_LWIN + " (Left Windows)")
-        add(DataID.VK_RWIN + " (Right Windows)")
-        add(DataID.VK_APPS + " (Application)")
-        add(DataID.VK_NUMLOCK + " (Number Lock)")
-        add(DataID.VK_SCROLL + " (Scroll Lock)")
-        add(DataID.VK_LSHIFT + " (Left Shift)")
-        add(DataID.VK_RSHIFT + " (Right Shift)")
-        add(DataID.VK_LCONTROL + " (Left Ctrl)")
-        add(DataID.VK_RCONTROL + " (Right Ctrl)")
-        add(DataID.VK_LMENU + " (Left Alt)")
-        add(DataID.VK_RMENU + " (Right Alt)")
-        addSeparator(menu)
-        add(DataID.None)
-
-        createCascadeMenuItem(parent, menu, "Keyboard")
-    }
-
     private val DEFAULT_DEF = Properties.DEFAULT_DEF
 
-    // Selects the properties name if its file can be read (see loadPropertiesOf)
-    private def setProperties(name: String): Unit = {
-        if (selectedProperties != name) {
-            logger.debug(s"setProperties: $name")
-
-            if (loadPropertiesOf(name))
-                resetAllMenuItems()
-        }
-    }
-
-    private def addPropertiesMenu(menu: Menu, name: String): Unit = {
-        val item = createRadioMenuItem(menu, MenuData(name, None))
-        item.setSelection(name == selectedProperties)
-
-        addListenerSelection(item, _ => {
-            storeProperties
-            setProperties(name)
-        })
-    }
-
-    private def addDefaultPropertiesMenu(menu: Menu): Unit = {
-        addPropertiesMenu(menu, DEFAULT_DEF)
-    }
-
-    private def addPropertiesMenu(menu: Menu, file: File): Unit = {
-        addPropertiesMenu(menu, Properties.getUserDefName(file))
-    }
-
-    private def openDir(path: String): Unit = {
-        val desk = java.awt.Desktop.getDesktop
-        desk.browse(new File(path).toURI())
-    }
-
-    private def createOpenDirMenuItem(menu: Menu, dir: String): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Open Dir", None))
-        addListener(item, _ => openDir(dir))
-    }
+    def getSelectedProperties: String = selectedProperties
 
     // The characters not allowed in a Windows file name (as .NET's Path.GetInvalidFileNameChars)
     private val InvalidFileNameChars: Set[Char] = "\"<>|:*?\\/".toSet ++ (0 until 32).map(_.toChar)
 
-    // A part of a file name (see Properties.getPath), not Default whatever its case (a name only
-    // differing in case would be confused with it), nor a command (--)
+    // Why a name cannot be a part of a file name (see Properties.getPath), None if it can: one
+    // reason, on a line under the box of Dialog.askText. Not Default whatever its case (a name only
+    // differing in case would be confused with it), nor a command (--). An empty name too.
+    private def whyNotFileName(name: String): Option[String] = {
+        if (name.isBlank || name.strip != name)
+            Some("Spaces at either end cannot be used")
+        else if (name.startsWith("--"))
+            Some("Cannot start with --")
+        else if (name.equalsIgnoreCase(DEFAULT_DEF))
+            Some("Default cannot be used")
+        else if (name.exists(InvalidFileNameChars.contains))
+            Some("Contains characters not allowed in file names")
+        else
+            None
+    }
+
     private def isValidPropertiesName(name: String) =
-        !name.isBlank && name.strip == name &&
-        !name.equalsIgnoreCase(DEFAULT_DEF) &&
-        !name.startsWith("--") &&
-        !name.exists(InvalidFileNameChars.contains)
+        whyNotFileName(name).isEmpty
 
-    private def createAddPropertiesMenuItem(menu: Menu): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Add", None))
-        addListener(item, _ => {
-            val dialog = new Dialog.TextInputDialog(systemShell, convLang("Properties Name"), convLang("Add Properties"))
-            val res = dialog.open
+    // Why a name cannot be used for new properties, checked as it is typed (and again after OK)
+    private def whyInvalidPropertiesName(name: String): Option[String] =
+        whyNotFileName(name).orElse(
+            if (Properties.exists(name)) Some("Properties of this name already exist") else None)
 
-            try {
-                res.foreach(name => {
-                    if (isValidPropertiesName(name)) {
+    // Reload, --sendReloadProp: the file of the selected properties read again (true if it has
+    // been). If it cannot be (e.g. locked), nothing changes: the settings stay as they are (still
+    // stored, if they were loaded), and why is shown.
+    private def tryReloadProperties(): Boolean =
+        loadProperties
+
+    def reloadProperties: Unit =
+        tryReloadProperties()
+
+    // The settings dialog: made when it is opened first, then kept (closing hides it). On the Swing
+    // thread; the settings are changed on the hook thread (HookThread.call), which refreshes it
+    // later (its refresh methods can be called from any thread).
+    @volatile private var settingsDialog: SettingsDialog = null
+
+    private def refreshSettingsDialog(): Unit =
+        Option(settingsDialog).foreach(_.refreshAllLater())
+
+    private def refreshSettingsLater(): Unit =
+        Option(settingsDialog).foreach(_.refreshLater())
+
+    private def retextSettingsDialog(): Unit =
+        Option(settingsDialog).foreach(_.retextLater())
+
+    // On the hook thread, from the Swing thread (waits for it)
+    private def onHook[T](f: => T): T =
+        HookThread.call(f)
+
+    // The name of properties as shown: only Default is translated
+    private def shownPropertiesName(name: String) =
+        if (name == DEFAULT_DEF) convLang(name) else name
+
+    private def openPropertiesDir(): Unit = {
+        try {
+            java.awt.Desktop.getDesktop.open(new File(Properties.USER_DIR))
+        }
+        catch {
+            case e: Exception => Dialog.errorMessageE(e)
+        }
+    }
+
+    // The new properties: a copy of the file of the selected ones (their other keys, e.g. the custom
+    // table) with the settings running (also those not stored), then selected and loaded as by a
+    // switch. From the settings dialog (owner).
+    private def addProperties(owner: java.awt.Window): Unit = {
+        val res = Dialog.askText(owner, convLang("Add Properties"), convLang("Properties Name"), whyInvalidPropertiesName)
+
+        res.foreach(name => {
+            if (!isValidPropertiesName(name))
+                Dialog.errorMessage(s"${convLang("Invalid Name")}: $name", "Name Error")
+            else {
+                val err: Option[Throwable] = onHook {
+                    try {
                         storeProperties
-                        Properties.copy(selectedProperties, name)
-                        selectedProperties = name
+                        val path = Properties.getPath(name)
+                        if (java.nio.file.Files.exists(getSelectedPropertiesPath))
+                            Properties.copy(selectedProperties, name)
+
+                        val file = new Properties.SProperties
+                        if (java.nio.file.Files.exists(path)) file.load(path)
+                        setSettings(file)
+                        file.store(path)
+
+                        readProperties(name) match {
+                            case Right(p) => selectProperties(name, p); None
+                            case Left(e) => Some(e)
+                        }
                     }
-                    else
-                        Dialog.errorMessage(s"${convLang("Invalid Name")}: $name", convLang("Name Error"))
-                })
-            }
-            catch {
-                case e: Exception =>
-                    Dialog.errorMessageE(e)
+                    catch {
+                        case e: Exception => Some(e)
+                    }
+                }
+                err.foreach(e => Dialog.showError(owner, convLang("Add Properties"), e))
             }
         })
     }
 
-    private def createDeletePropertiesMenuItem(menu: Menu): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Delete", None))
+    // The selected properties (not Default) deleted, then Default selected. Default is read first:
+    // if it cannot be (e.g. locked), these properties are not deleted (their settings would run as
+    // Default, and be written again as these properties). From the settings dialog (owner).
+    private def deleteProperties(owner: java.awt.Window): Unit = {
         val name = selectedProperties
-        item.setEnabled(name != DEFAULT_DEF)
-        addListener(item, _ => {
-            try {
-                if (Dialog.openYesNoMessage(s"${convLang("Delete properties")}: $name")) {
-                    // Default is read first, then the file is deleted, then Default is selected
-                    // (as W10Wheel.NET): if either fails, nothing changes (an error is shown) and
-                    // the settings of these properties are kept, those not stored too. Selected
-                    // before the delete, a failed delete would leave Default selected (the changes
-                    // lost); deleted before Default is read, the deleted properties could stay
-                    // selected (and their file written again at exit).
-                    readPropertiesOrShowError(DEFAULT_DEF).foreach(p => {
-                        Properties.delete(name)
-                        selectProperties(DEFAULT_DEF, p)
-                        resetAllMenuItems()
-                    })
+        if (Dialog.confirm(owner, convLang("Delete these properties?"), s"${convLang("Properties")}: $name",
+                           convLang("Delete"))) {
+            val err: Option[(String, Throwable)] = onHook {
+                readProperties(DEFAULT_DEF) match {
+                    case Left(e) => Some((convLang("The properties file could not be read"), e))
+                    case Right(p) =>
+                        try {
+                            Properties.delete(name)
+                            selectProperties(DEFAULT_DEF, p)
+                            None
+                        }
+                        catch {
+                            case e: Exception => Some((convLang("Delete"), e))
+                        }
                 }
             }
-            catch {
-                case e: Exception =>
-                    Dialog.errorMessageE(e)
-            }
-        })
-    }
-
-    private def createPropertiesMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        val addDefault = () => addDefaultPropertiesMenu(menu)
-        val add = (f: File) => addPropertiesMenu(menu, f)
-
-        menu.addListener(SWT.Show, (_: Event) => {
-            logger.debug("Listener - Show: PropertiesMenu")
-            menu.getItems.foreach(_.dispose)
-
-            createReloadPropertiesMenu(menu)
-            createSavePropertiesMenu(menu)
-            addSeparator(menu)
-
-            createOpenDirMenuItem(menu, Properties.USER_DIR)
-            createAddPropertiesMenuItem(menu)
-            createDeletePropertiesMenuItem(menu)
-            addSeparator(menu)
-
-            addDefault()
-            addSeparator(menu)
-
-            Properties.getPropFiles.foreach(add)
-        })
-
-        createCascadeMenuItem(parent, menu, "Properties")
-    }
-
-    def reloadProperties: Unit = {
-        if (loadProperties)
-            resetAllMenuItems()
-    }
-
-    private def createReloadPropertiesMenu(menu: Menu): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Reload", None))
-        addListener(item, _ => reloadProperties)
-    }
-
-    private def createSavePropertiesMenu(menu: Menu): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Save", None))
-        addListener(item, _ => storeProperties)
-    }
-
-    private def makeSetBooleanEvent(id: String) = {
-        (e: Event) => {
-            val item = e.widget.asInstanceOf[MenuItem]
-            val b = item.getSelection
-            setBooleanOfName(id, b)
+            err.foreach { case (heading, e) => Dialog.showError(owner, heading, e) }
         }
     }
 
-    private val boolMenuMap = new MenuMap()
+    // The settings of the selected properties back to their default values (defaultProp), except the
+    // language: written into prop (the keys that are not settings stay, e.g. the custom accel table),
+    // applied as a load does, and stored
+    private def resetSettings(owner: java.awt.Window): Unit = {
+        val text = s"${convLang("The language is kept.")}\n${convLang("Properties")}: ${shownPropertiesName(selectedProperties)}"
+        if (Dialog.confirm(owner, convLang("Reset all the settings to their defaults?"), text,
+                           convLang("Reset to defaults"))) {
+            onHook {
+                // prop has the values of the last load: the current settings first, or the language
+                // changed since would be set back
+                setSettings(prop)
+                val keys = Seq(DataID.firstTrigger, DataID.accelMultiplier, DataID.processPriority,
+                               DataID.targetVKCode, DataID.vhAdjusterMethod) ++ BooleanNames ++ NumberNames
+                keys.foreach(k => prop.setProperty(k, defaultProp.getProperty(k)))
 
-    private def createCursorChangeMenu(menu: Menu) = {
-        createBoolMenuItem(menu, MenuData("Cursor Change", Some(DataID.cursorChange)))
-    }
-
-    private def createHorizontalScrollMenu(menu: Menu) = {
-        val item = createBoolMenuItem(menu, MenuData("Horizontal Scroll", Some(DataID.horizontalScroll)))
-        addListener(item, _ =>
-            boolMenuMap("vhAdjusterMode").setEnabled(item.getSelection)
-        )
-    }
-
-    private def createReverseScrollMenu(menu: Menu) = {
-        createBoolMenuItem(menu, MenuData("Reverse Scroll (Flip)", Some(DataID.reverseScroll)))
-    }
-
-    private def createSwapScrollMenu(menu: Menu) = {
-        createBoolMenuItem(menu, MenuData("Swap Scroll (V.H)", Some(DataID.swapScroll)))
-    }
-
-    private var passModeMenuItem: MenuItem = null
-
-    private def createPassModeMenu(menu: Menu): Unit = {
-        val id = DataID.passMode
-        val item = createCheckMenuItem(menu, MenuData("Pass Mode", Some(id)))
-        addListener(item, makeSetBooleanEvent(id))
-        passModeMenuItem = item
-    }
-    
-    private val languageMenuMap = new MenuMap()
-
-    private def createLanguageMenuItem(menu: Menu, text: String, id: String): Unit = {
-        val data = MenuData(text, Some(id))
-        createMapMenuItem(menu, data, languageMenuMap, setUILanguage)
-    }
-
-    private def createLanguageMenu(parent: Menu): Unit = {
-        val menu = new Menu(systemShell, SWT.DROP_DOWN)
-        val add = (text: String, id: String) =>
-            createLanguageMenuItem(menu, text, id)
-
-        add("English", DataID.English)
-        add("Japanese", DataID.Japanese)
-
-        createCascadeMenuItem(parent, menu, "Language")
-    }
-
-    private def createInfoMenu(menu: Menu): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Info", None))
-        addListener(item, _ => {
-            val nameVer = s"${convLang("Name")}: $PROGRAM_NAME / ${convLang("Version")}: $PROGRAM_VERSION\n\n"
-            val jVer = s"java.version: ${System.getProperty("java.version")}\n"
-            val osArch = s"os.arch: ${System.getProperty("os.arch")}\n"
-            val dataModel = s"sun.arch.data.model: ${System.getProperty("sun.arch.data.model")}"
-
-            val mb = new MessageBox(systemShell, SWT.OK | SWT.ICON_INFORMATION)
-            mb.setText(convLang("Info"))
-            mb.setMessage(nameVer + jVer + osArch + dataModel)
-            mb.open()
-        })
-    }
-
-    def exitAction(e: Event): Unit = {
-        trayItem.setVisible(false)
-        W10Wheel.exitMessageLoop
-    }
-
-    // Before exiting without the message loop (System.exit): the icon would remain in the tray
-    def hideSystemTray(): Unit = {
-        if (trayItem != null) {
-            trayItem.setVisible(false)
-            trayItem.dispose()
-        }
-    }
-
-    private def createExitMenu(menu: Menu): Unit = {
-        val item = createPushMenuItem(menu, MenuData("Exit", None))
-        addListener(item, exitAction)
-    }
-
-    private def createTrayItem(menu: Menu) = {
-        val tray = new TrayItem(Display.getDefault.getSystemTray, SWT.NONE)
-        tray.setToolTipText(getTrayText(false))
-        tray.setImage(getTrayIcon(false))
-
-        tray.addListener(SWT.MenuDetect, (e: Event) => menu.setVisible(true))
-        tray.addListener(SWT.DefaultSelection, (e: Event) => Pass.toggleMode) // Double Click
-
-        tray
-    }
-
-    private var rootMenu: Menu = null 
-    private var trayItem: TrayItem = null
-    
-    private def isNumberMenuItem(item: MenuItem): Boolean = item.getData() match {
-        case engText: String => numberMenuMap.contains(getFirstWord(engText))
-        case _ => false
-    }
-    
-    private def resetMenuText(): Unit = {
-        val toList = (menu: Menu) =>
-            menu.getItems.toList.filter(!isSeparator(_)).filter(!isNumberMenuItem(_))
-            
-        def loop(items: List[MenuItem]): Unit = items match {
-            case Nil => ()
-            case item :: rest => {
-                item.setText(convLang(dataToEngText(item)))
-                
-                Option(item.getMenu()) match  {
-                    case Some(cascadeMenu) => loop(toList(cascadeMenu))
-                    case None => ()
+                try {
+                    applyProperties()
                 }
-                
-                loop(rest)
+                catch {
+                    case e: Exception => logger.warn(s"reset: $e")
+                }
+                storeProperties
             }
+            refreshSettingsDialog()
         }
-        
-        loop(toList(rootMenu))
     }
 
-    def setSystemTray(): Unit = {
-        val menu = new Menu(systemShell, SWT.POP_UP)
-        trayItem = createTrayItem(menu)
+    // From the settings dialog (owner). The settings of the selected properties are stored first: if
+    // some could not be (e.g. a read-only file, or properties not loaded), switching loses them,
+    // which is asked. The properties switched to are loaded only if they can be read: else nothing
+    // changes, and why is shown.
+    private def switchProperties(owner: java.awt.Window, name: String): Unit = {
+        val unstored = onHook {
+            storeProperties
+            hasUnstoredChanges
+        }
 
-        createTriggerMenu(menu)
-        createKeyboardMenu(menu)
-        addSeparator(menu)
+        val go = !unstored || {
+            val why = storeError.orElse(loadError).map(e => s"${e.getMessage}\n").getOrElse("")
+            Dialog.confirm(owner, convLang("The changes could not be saved"),
+                           why + convLang("Switching loses the changes that could not be saved."), convLang("Switch"))
+        }
 
-        createAccelTableMenu(menu)
-        createPriorityMenu(menu)
-        createNumberMenu(menu)
-        createRealWheelModeMenu(menu)
-        createVhAdjusterMenu(menu)
-        addSeparator(menu)
-
-        createPropertiesMenu(menu)
-        addSeparator(menu)
-
-        createCursorChangeMenu(menu)
-        createHorizontalScrollMenu(menu)
-        createReverseScrollMenu(menu)
-        createSwapScrollMenu(menu)
-        createPassModeMenu(menu)
-        addSeparator(menu)
-
-        createLanguageMenu(menu)
-        createInfoMenu(menu)
-        createExitMenu(menu)
-
-        resetAllMenuItems()
-        rootMenu = menu
+        if (!go)
+            // The current properties selected again in the list
+            refreshSettingsDialog()
+        else {
+            val err = onHook {
+                readProperties(name) match {
+                    case Right(p) => selectProperties(name, p); None
+                    case Left(e) => Some(e)
+                }
+            }
+            err.foreach(e => {
+                refreshSettingsDialog()
+                Dialog.showError(owner, convLang("The properties file could not be read"), e)
+            })
+        }
     }
 
-    def resetSystemTray(): Unit = {
-        Display.getDefault.asyncExec(() => {
-            trayItem.dispose()
-            setSystemTray()
-        })
+    // Not None: it is Mouse unchecked in the settings dialog
+    private val triggerItems = Seq(
+        DataID.LR -> s"${DataID.LR} (Left <<-->> Right)",
+        DataID.Left -> s"${DataID.Left} (Left -->> Right)",
+        DataID.Right -> s"${DataID.Right} (Right -->> Left)",
+        DataID.Middle -> DataID.Middle, DataID.X1 -> DataID.X1, DataID.X2 -> DataID.X2,
+        DataID.LeftDrag -> DataID.LeftDrag, DataID.RightDrag -> DataID.RightDrag,
+        DataID.MiddleDrag -> DataID.MiddleDrag, DataID.X1Drag -> DataID.X1Drag, DataID.X2Drag -> DataID.X2Drag)
+
+    // The mouse trigger shown in the settings dialog: the last one while it is None
+    private def getShownMouseTrigger: Trigger =
+        if (firstTrigger.isNone) lastMouseTrigger else firstTrigger
+
+    // Not None: Keyboard unchecked turns the keyboard trigger off. (None, the hook without a trigger
+    // key, is still read from the properties: the dialog then shows no key.)
+    private val keyboardItems = Seq(
+        DataID.VK_TAB -> " (Tab)", DataID.VK_PAUSE -> " (Pause)", DataID.VK_CAPITAL -> " (Caps Lock)",
+        DataID.VK_CONVERT -> " (Henkan)", DataID.VK_NONCONVERT -> " (Muhenkan)",
+        DataID.VK_PRIOR -> " (Page Up)", DataID.VK_NEXT -> " (Page Down)", DataID.VK_END -> " (End)",
+        DataID.VK_HOME -> " (Home)", DataID.VK_SNAPSHOT -> " (Print Screen)", DataID.VK_INSERT -> " (Insert)",
+        DataID.VK_DELETE -> " (Delete)", DataID.VK_LWIN -> " (Left Windows)", DataID.VK_RWIN -> " (Right Windows)",
+        DataID.VK_APPS -> " (Application)", DataID.VK_NUMLOCK -> " (Number Lock)", DataID.VK_SCROLL -> " (Scroll Lock)",
+        DataID.VK_LSHIFT -> " (Left Shift)", DataID.VK_RSHIFT -> " (Right Shift)",
+        DataID.VK_LCONTROL -> " (Left Ctrl)", DataID.VK_RCONTROL -> " (Right Ctrl)",
+        DataID.VK_LMENU -> " (Left Alt)", DataID.VK_RMENU -> " (Right Alt)"
+    ).map { case (id, name) => id -> (id + name) }
+
+    private val accelItems = Seq(
+        DataID.M5 -> s"${DataID.M5} (1.0 ... 4.8)", DataID.M6 -> s"${DataID.M6} (1.2 ... 5.8)",
+        DataID.M7 -> s"${DataID.M7} (1.4 ... 6.7)", DataID.M8 -> s"${DataID.M8} (1.6 ... 7.7)",
+        DataID.M9 -> s"${DataID.M9} (1.8 ... 8.7)")
+
+    // The labels of the numbers (their names in the properties file are in the tooltips)
+    private def numberLabel(id: String) = id match {
+        case DataID.pollTimeout => "Simultaneous press time"
+        case DataID.scrollLocktime => "Scroll mode lock time"
+        case DataID.verticalThreshold => "Vertical scroll threshold"
+        case DataID.horizontalThreshold => "Horizontal scroll threshold"
+        case DataID.wheelDelta => "Wheel delta"
+        case DataID.vWheelMove => "Vertical move per notch"
+        case DataID.hWheelMove => "Horizontal move per notch"
+        case DataID.firstMinThreshold => "First direction threshold"
+        case DataID.switchingThreshold => "Switching threshold"
+        case _ => id
     }
+
+    // A number of the custom table as in the properties file (no ".0" for a whole number)
+    private def numberText(d: Double): String =
+        java.math.BigDecimal.valueOf(d).stripTrailingZeros.toPlainString
+
+    // The settings dialog (as in W10Wheel.NET). A change is applied and stored at once. Not for Pass
+    // Mode (Pause, in the tray menu): it is not stored.
+    private def createSettingsDialog(): SettingsDialog = {
+        val dialog = new SettingsDialog(convLang)
+        val owner = dialog.frame
+        dialog.changed = () => {
+            onHook(storeProperties)
+            // The settings depending on it (e.g. Dragged Lock is for a drag trigger only, the keyboard
+            // hook is off again if it could not be installed)
+            dialog.refreshValues()
+        }
+
+        def setBool(id: String): Boolean => Unit = b => onHook(setBooleanOfName(id, b))
+        def getBool(id: String): () => Boolean = () => getBooleanOfName(id)
+
+        // tip: the explanation of the setting (from the Readme), converted as the other texts; the
+        // name of the setting in the properties file (id) is shown after it
+        def addBool(page: SettingsPage, engText: String, id: String, tip: String): Unit =
+            page.addCheck(engText, getBool(id), setBool(id), tip = Some(tip), key = Some(id))
+        // enabled: whether the setting is used (see Windows.initScroll), else grayed
+        def addBoolIf(page: SettingsPage, engText: String, id: String, enabled: () => Boolean, tip: String): Unit =
+            page.addCheck(engText, getBool(id), setBool(id), enabled = Some(enabled), tip = Some(tip), key = Some(id))
+        // The ranges of loadProperties
+        def addNumberIf(page: SettingsPage, id: String, low: Int, up: Int, enabled: () => Boolean, tip: String,
+                        unit: Option[String] = None): Unit =
+            page.addNumber(numberLabel(id), low, up, () => getNumberOfName(id), n => onHook(setNumberOfName(id, n)),
+                           enabled = Some(enabled), unit = unit, tip = Some(tip), key = Some(id))
+        def addTime(page: SettingsPage, id: String, low: Int, up: Int, enabled: () => Boolean, tip: String): Unit =
+            addNumberIf(page, id, low, up, enabled, tip, Some("ms"))
+
+        dialog.addPropertiesLabel("Properties")
+        dialog.addPropertiesComboBox(
+            // Only Default is translated: the other names are the user's
+            () => (DEFAULT_DEF -> convLang(DEFAULT_DEF)) +:
+                  Properties.getPropFiles.toSeq.map(Properties.getUserDefName).sorted.map(n => n -> n),
+            name => name == selectedProperties,
+            name => switchProperties(owner, name))
+        dialog.addPropertiesButton("Add", () => addProperties(owner))
+        dialog.addPropertiesButton("Delete", () => deleteProperties(owner),
+                                   enabled = Some(() => selectedProperties != DEFAULT_DEF))
+        dialog.addPropertiesButton("Open Dir", () => openPropertiesDir())
+        // The change waiting to be stored is dropped, and waits again if nothing could be loaded: not
+        // stored at once (the file may still be locked)
+        dialog.addPropertiesButton("Reload", () => if (!onHook(tryReloadProperties())) dialog.restorePending(),
+                                   dropPending = true)
+        dialog.addBottomButton("Reset to defaults", () => resetSettings(owner))
+        // Instead of the hint that the changes are stored: the properties could not be read (Reload
+        // again), or written (e.g. a read-only file: tried again at the next change)
+        dialog.status = () => {
+            if (!loaded)
+                Some((NoteKind.Warning, convLang("The properties file could not be read: changes are not saved")))
+            // Before a Reload that failed: the changes made after it are not stored
+            else if (storeError.isDefined)
+                Some((NoteKind.Warning, convLang("The changes could not be saved to the properties file")))
+            else if (loadError.isDefined)
+                // Reload: the settings are those before, still stored
+                Some((NoteKind.Warning, convLang("The properties file could not be read")))
+            else
+                None
+        }
+
+        val general = dialog.addPage("General")
+        general.addComboBox("Language", Seq(DataID.English -> "English", DataID.Japanese -> "Japanese"),
+                            id => id == getUILanguage, id => onHook(setUILanguage(id)),
+                            tip = Some("The language of the menu and the dialogs"), key = Some(DataID.uiLanguage))
+        general.addComboBox("Priority", Seq(DataID.High -> "High", DataID.AboveNormal -> "Above Normal", DataID.Normal -> "Normal"),
+                            id => Windows.getPriority(id) == processPriority, id => onHook(setPriority(id)),
+                            tip = Some("The priority of the process of W10Wheel"), key = Some(DataID.processPriority))
+
+        val trigger = dialog.addPage("Trigger")
+        // A key that starts scroll mode: the hook on and a key (not None, from old properties:
+        // Keyboard is shown unchecked then, and checking it sets the default key)
+        val isKeyboardTrigger = () => keyboardHook && !isNoneTriggerKey
+        // Mouse unchecked is the trigger None, as Keyboard unchecked is the keyboard hook off
+        trigger.addCheckComboBox("Mouse", () => !isNoneTrigger,
+                                 b => onHook(setTrigger(if (b) lastMouseTrigger.name else DataID.None)),
+                                 triggerItems, id => Mouse.getTrigger(id) == getShownMouseTrigger, id => onHook(setTrigger(id)),
+                                 tip = Some("The mouse buttons that start scroll mode\nUnchecked: no mouse trigger (the keyboard trigger only)"),
+                                 key = Some(DataID.firstTrigger))
+        trigger.addCheck("Send MiddleClick", getBool(DataID.sendMiddleClick), setBool(DataID.sendMiddleClick),
+                         enabled = Some(() => isSingleTrigger), indent = true,
+                         tip = Some("The trigger pressed with Shift, Ctrl or Alt sends a middle click (Middle, X1, X2 only)"),
+                         key = Some(DataID.sendMiddleClick))
+        trigger.addCheck("Dragged Lock", getBool(DataID.draggedLock), setBool(DataID.draggedLock),
+                         enabled = Some(() => isDragTrigger), indent = true,
+                         tip = Some("After a drag with a Drag trigger, scroll mode stays locked"),
+                         key = Some(DataID.draggedLock))
+        trigger.addCheckComboBox("Keyboard", isKeyboardTrigger, b => onHook {
+                                     // Without a key (None, from old properties: not in the list), the
+                                     // default key: Keyboard checked would do nothing
+                                     if (b && isNoneTriggerKey) setTargetVKCode(DataID.VK_NONCONVERT)
+                                     setBooleanOfName(DataID.keyboardHook, b)
+                                     setKeyboardHookOf(b)
+                                 },
+                                 keyboardItems, id => Keyboard.getVKCode(id) == targetVKCode, id => onHook(setTargetVKCode(id)),
+                                 tip = Some("The key that starts scroll mode\nThe keys sent by other software (autofill, macros, key remapping tools) are not triggers"),
+                                 key = Some(s"${DataID.keyboardHook}, ${DataID.targetVKCode}"))
+        trigger.addGap()
+        // The wait for the second button: the LR, Left and Right triggers only (EventWaiter)
+        addTime(trigger, DataID.pollTimeout, 50, 500, () => isDoubleTrigger,
+                "How long the LR, Left and Right triggers wait for the other button")
+        // The lock by a quick release: not for the drag triggers (EventHandler.dragUp), but for the
+        // keyboard trigger (KEventHandler.checkExitScrollUp)
+        addTime(trigger, DataID.scrollLocktime, 150, 500,
+                () => isSingleTrigger || isDoubleTrigger || isKeyboardTrigger(),
+                "A trigger released within this time locks scroll mode")
+        // Neither trigger: nothing starts scroll mode
+        trigger.addStatus(() =>
+            if (isNoneTrigger && !isKeyboardTrigger()) Some((NoteKind.Warning, convLang("Scrolling is disabled")))
+            else None)
+
+        val scroll = dialog.addPage("Scroll")
+        addBool(scroll, "Cursor Change", DataID.cursorChange, "Changes the cursor in scroll mode")
+        addBool(scroll, "Horizontal Scroll", DataID.horizontalScroll, "Scrolls horizontally too\nDisable it if you do not use it")
+        addBool(scroll, "Reverse Scroll (Flip)", DataID.reverseScroll, "Reverses the direction of the scroll")
+        addBool(scroll, "Swap Scroll (V.H)", DataID.swapScroll, "Swaps the vertical and the horizontal scroll")
+        scroll.addGap()
+        // The thresholds of the standard scroll: not with VH Adjuster (Windows.initStdMode)
+        addNumberIf(scroll, DataID.verticalThreshold, 0, 500, () => !isVhAdjusterMode,
+                    "A vertical move up to this does not scroll")
+        addNumberIf(scroll, DataID.horizontalThreshold, 0, 500, () => isHorizontalScroll && !isVhAdjusterMode,
+                    "A horizontal move up to this does not scroll\nToo small, the vertical scroll becomes hard to use")
+        scroll.addNote("The thresholds are not used while VH Adjuster is enabled")
+
+        // Not with Real Wheel Mode: its wheel events are not accelerated (Windows.sendRealVWheel)
+        val accel = dialog.addPage("Accel Table")
+        val accelUsed = () => !isRealWheelMode
+        val customUsed = () => !Accel.customDisabled && Accel.customTable
+        addBoolIf(accel, "Enabled", DataID.accelTable, accelUsed,
+                  "Accelerates the scroll by the speed of the move, with the multipliers of the table")
+        // The multipliers are not used with the custom table (getAccelMultiplier)
+        accel.addRadioButtons(accelItems, id => id == Accel.multiplier.name, id => onHook(setAccelMultiplier(id)),
+                              enabled = Some(() => accelUsed() && Accel.table && !customUsed()),
+                              tip = Some("The multipliers of the table"), key = Some(DataID.accelMultiplier))
+        accel.addCheck("Custom Table", getBool(DataID.customAccelTable), setBool(DataID.customAccelTable),
+                       enabled = Some(() => accelUsed() && Accel.table && !Accel.customDisabled),
+                       tip = Some("Uses customAccelThreshold and customAccelMultiplier of the properties file (only when they are valid)"),
+                       key = Some(DataID.customAccelTable))
+        // The custom table as read from the properties: why it cannot be checked (a warning if it is
+        // not valid, else a plain text: the info icon is for the note of the page)
+        accel.addStatus(() => customTableState match {
+            case CustomTableState.NotWritten => Some((NoteKind.Plain, convLang("Not in the properties file")))
+            case CustomTableState.Invalid(why) => Some((NoteKind.Warning, convLang(why)))
+            case CustomTableState.Loaded(t, m) =>
+                val args = Seq(t.length.toString, t.head.toString, t.last.toString, numberText(m.head), numberText(m.last))
+                val text = args.zipWithIndex.foldLeft(convLang("Loaded: {0} steps (thresholds {1} ... {2}, multipliers {3} ... {4})")) {
+                    case (s, (a, i)) => s.replace(s"{$i}", a)
+                }
+                Some((NoteKind.Plain, text))
+        }, indent = true)
+        accel.addNote("Not used while Real Wheel Mode is enabled")
+
+        val realWheel = dialog.addPage("Real Wheel Mode")
+        addBool(realWheel, "Enabled", DataID.realWheelMode,
+                "Scrolls as a real wheel does, a notch at a time\nThe accel table is not used")
+        realWheel.addGap()
+        addNumberIf(realWheel, DataID.wheelDelta, 10, 500, () => isRealWheelMode,
+                    "The wheel value of a notch (a usual mouse sends 120)")
+        addNumberIf(realWheel, DataID.vWheelMove, 10, 500, () => isRealWheelMode,
+                    "The vertical move made into a notch")
+        // With Horizontal Scroll only (Windows.sendRealHWheel)
+        addNumberIf(realWheel, DataID.hWheelMove, 10, 500, () => isRealWheelMode && isHorizontalScroll,
+                    "The horizontal move made into a notch")
+        realWheel.addGap()
+        addBoolIf(realWheel, "Quick first response", DataID.quickFirst, () => isRealWheelMode,
+                  "Sends the first notch whatever the move (else after half of the move)")
+        addBoolIf(realWheel, "Quick turn response", DataID.quickTurn, () => isRealWheelMode,
+                  "Sends a notch at once when the move turns back, whatever the move")
+
+        // Used with Horizontal Scroll only (isVhAdjusterMode)
+        val vhAdjuster = dialog.addPage("VH Adjuster")
+        addBoolIf(vhAdjuster, "Enabled", DataID.vhAdjusterMode, () => Scroll.horizontal,
+                  "Scrolls in one direction at a time, vertical or horizontal")
+        vhAdjuster.addRadioButtons(Seq(DataID.Fixed -> "Fixed", DataID.Switching -> "Switching"),
+                                   id => getVhAdjusterMethod(id) == VHAdjuster.method, id => onHook(setVhAdjusterMethod(id)),
+                                   enabled = Some(() => isVhAdjusterMode),
+                                   tip = Some("Fixed: the direction of the larger first move\nSwitching: also switched by a move above the switching threshold"),
+                                   key = Some(DataID.vhAdjusterMethod))
+        vhAdjuster.addGap()
+        addBoolIf(vhAdjuster, "Prefer vertical first", DataID.firstPreferVertical, () => isVhAdjusterMode,
+                  "The first direction prefers vertical")
+        addNumberIf(vhAdjuster, DataID.firstMinThreshold, 1, 10, () => isVhAdjusterMode,
+                    "The first direction is decided by a move above this (smaller moves are ignored)")
+        // For Switching only (Windows.switchVHD)
+        addNumberIf(vhAdjuster, DataID.switchingThreshold, 10, 500, () => isVhAdjusterMode && isVhAdjusterSwitching,
+                    "A move above this switches the direction (Switching)")
+        vhAdjuster.addNote("Used when Horizontal Scroll is enabled")
+
+        dialog
+    }
+
+    // From the tray menu, on the Swing thread
+    def showSettingsDialog(): Unit = {
+        if (settingsDialog == null) {
+            settingsDialog = createSettingsDialog()
+            // The message boxes are modal to it while it is shown
+            Dialog.setDefaultOwner(() => Option(settingsDialog).filter(_.isVisible).map(_.frame))
+        }
+        settingsDialog.show()
+    }
+
+    // At exit, on the Swing thread: a number being typed, or waiting to be stored, is set (stored at
+    // exit with the other settings)
+    def commitSettingsDialog(): Unit =
+        Option(settingsDialog).foreach(_.commitAll())
+
+    // Exit (the tray menu, --sendExit): the message loop of the hook thread ends, then W10Wheel exits
+    // (W10Wheel.main). From any thread.
+    def exitAction(): Unit =
+        HookThread.quit()
 
     private def isInvalidValue(e: Throwable) = e match {
         // NumberFormatException is an IllegalArgumentException (as toBoolean throws)
@@ -1451,19 +1145,12 @@ object Context {
         setOrDefault(name)(p => setBooleanOfName(name, p.getBoolean(name)))
     }
 
-    private def setEnabledMenu(menuMap: MenuMap, key: String, enabled: Boolean): Unit = {
-         if (menuMap.contains(key))
-            menuMap(key).setEnabled(enabled)
-    }
-
     private def setTrigger(s: String): Unit = {
         val res = Mouse.getTrigger(s)
         logger.debug("setTrigger: " + res.name);
         val changed = res != firstTrigger
         firstTrigger = res
-
-        setEnabledMenu(boolMenuMap, DataID.sendMiddleClick, res.isSingle)
-        setEnabledMenu(boolMenuMap, DataID.draggedLock, res.isDrag)
+        if (!res.isNone) lastMouseTrigger = res
 
         // With whether the trigger has changed (not on every properties load)
         EventHandler.changeTrigger(changed)
@@ -1477,33 +1164,59 @@ object Context {
         setStringOfProperty(DataID.firstTrigger, setTrigger)
     }
 
+    // The custom accel table as read from the properties (shown in the settings dialog)
+    private enum CustomTableState {
+        case NotWritten
+        case Invalid(why: String)
+        case Loaded(threshold: Array[Int], multiplier: Array[Double])
+    }
+
+    @volatile private var customTableState: CustomTableState = CustomTableState.NotWritten
+
     private def setCustomAccelOfProperty: Unit = {
         // Without a valid custom table in this file, do not keep the table of the previous file
         Accel.customDisabled = true
+        customTableState = CustomTableState.NotWritten
 
-        try {
-            val cat = prop.getIntArray(DataID.customAccelThreshold)
-            val cam = prop.getDoubleArray(DataID.customAccelMultiplier)
+        val hasT = prop.containsKey(DataID.customAccelThreshold)
+        val hasM = prop.containsKey(DataID.customAccelMultiplier)
+        if (hasT != hasM)
+            customTableState = CustomTableState.Invalid("Not used: customAccelThreshold and customAccelMultiplier are both needed")
+        else if (hasT) {
+            try {
+                val cat = prop.getIntArray(DataID.customAccelThreshold)
+                val cam = prop.getDoubleArray(DataID.customAccelMultiplier)
 
-            // The thresholds are looked up in ascending order (Windows.getNearestIndex), and a
-            // multiplier that is not a number (NaN, Infinity: parsed without error) would make the
-            // delta invalid
-            val isAscending = cat.sliding(2).forall(p => p.length < 2 || p(0) < p(1))
-            val isValidThreshold = cat.forall(_ >= 0) && isAscending
-            val isValidMultiplier = cam.forall(d => java.lang.Double.isFinite(d) && d >= 0.0)
+                // The thresholds are looked up in ascending order (Windows.getNearestIndex), and a
+                // multiplier that is not a number (NaN, Infinity: parsed without error) would make
+                // the delta invalid
+                val isAscending = cat.sliding(2).forall(p => p.length < 2 || p(0) < p(1))
+                val isValidThreshold = cat.forall(_ >= 0) && isAscending
+                val isValidMultiplier = cam.forall(d => java.lang.Double.isFinite(d) && d >= 0.0)
 
-            if (cat.length != 0 && cat.length == cam.length && isValidThreshold && isValidMultiplier) {
-                logger.debug(s"customAccelThreshold: ${cat.toList}")
-                logger.debug(s"customAccelMultiplier: ${cam.toList}")
+                if (cat.length == 0 || cat.length != cam.length)
+                    customTableState = CustomTableState.Invalid("Not used: the numbers of thresholds and multipliers differ")
+                else if (!isValidThreshold)
+                    customTableState = CustomTableState.Invalid("Not used: the thresholds must be ascending numbers of 0 or more")
+                else if (!isValidMultiplier)
+                    customTableState = CustomTableState.Invalid("Not used: the multipliers must be numbers of 0 or more")
+                else {
+                    logger.debug(s"customAccelThreshold: ${cat.toList}")
+                    logger.debug(s"customAccelMultiplier: ${cam.toList}")
 
-                Accel.customThreshold = cat
-                Accel.customMultiplier = cam
-                Accel.customDisabled = false
+                    Accel.customThreshold = cat
+                    Accel.customMultiplier = cam
+                    Accel.customDisabled = false
+                    customTableState = CustomTableState.Loaded(cat, cam)
+                }
             }
-        }
-        catch {
-            case e: NoSuchElementException => logger.debug(s"Not found: ${e.getMessage}")
-            case e: NumberFormatException => logger.warn(s"Parse error: ${e.getMessage}")
+            catch {
+                case e: NoSuchElementException =>
+                    logger.debug(s"Not found: ${e.getMessage}")
+                case e: NumberFormatException =>
+                    logger.warn(s"Parse error: ${e.getMessage}")
+                    customTableState = CustomTableState.Invalid("Not used: a value is not a number")
+            }
         }
     }
 
@@ -1556,7 +1269,25 @@ object Context {
     private def getSelectedPropertiesPath =
         Properties.getPath(selectedProperties)
 
-    private var loaded = false
+    @volatile private var loaded = false
+
+    // Why the properties could not be read (the last load), or the settings stored (the last
+    // time): told in the settings dialog. Cleared by a load that succeeds.
+    @volatile private var loadError: Option[Throwable] = None
+    @volatile private var storeError: Option[Throwable] = None
+
+    // The settings as they were loaded, or last stored: those changed since may be lost (e.g. the
+    // file could not be written), which is asked before switching
+    private var storedSettings = new Properties.SProperties
+
+    private def currentSettings: Properties.SProperties = {
+        val p = new Properties.SProperties
+        setSettings(p)
+        p
+    }
+
+    private def hasUnstoredChanges: Boolean =
+        currentSettings != storedSettings
 
     // The default values are kept (defaultProp) once, before the first read of a properties file is
     // tried (readPropertiesOrShowError, at startup): the settings are the default values only then.
@@ -1571,22 +1302,26 @@ object Context {
         }
     }
 
-    // Reads the file of the properties name: None if it cannot be read (e.g. locked by another
-    // process, malformed, or deleted since the menu was shown). Default may have no file yet (it
-    // is written at the first exit): its settings are the default values then.
-    private def readProperties(name: String): Option[Properties.SProperties] = {
+    // Reads the file of the properties name: why if it cannot be read (e.g. locked by another
+    // process, malformed, or deleted outside W10Wheel). Default may have no file yet (it is written
+    // at the first exit): its settings are the default values then.
+    private def readProperties(name: String): Either[Throwable, Properties.SProperties] = {
         val p = new Properties.SProperties
+        val path = Properties.getPath(name)
         try {
-            p.load(Properties.getPath(name))
-            Some(p)
+            p.load(path)
+            Right(p)
         }
         catch {
             case _: NoSuchFileException if name == DEFAULT_DEF =>
                 logger.debug("Properties file not found (Default)")
-                Some(p)
+                Right(p)
+            case _: NoSuchFileException =>
+                logger.warn(s"Properties not found: $name")
+                Left(new NoSuchFileException(path.toString, null, s"${convLang("Properties does not exist")}: $name"))
             case e: Exception =>
                 logger.warn(s"Cannot read the properties $name: $e")
-                None
+                Left(e)
         }
     }
 
@@ -1601,7 +1336,12 @@ object Context {
     // write the file again at exit.
     private def loadPropertiesOf(name: String): Boolean = {
         readPropertiesOrShowError(name) match {
-            case None => false
+            case None =>
+                // At startup: the settings running (the default values), those changed from now on
+                // are not stored
+                if (!loaded) storedSettings = currentSettings
+                refreshSettingsLater()
+                false
             case Some(p) =>
                 selectProperties(name, p)
                 true
@@ -1611,10 +1351,13 @@ object Context {
     // readProperties, with an error shown if the file cannot be read
     private def readPropertiesOrShowError(name: String): Option[Properties.SProperties] = {
         saveDefaultsOnce()
-        val res = readProperties(name)
-        if (res.isEmpty)
-            Dialog.errorMessage(s"${convLang("Cannot read properties")}: $name")
-        res
+        readProperties(name) match {
+            case Right(p) => Some(p)
+            case Left(e) =>
+                loadError = Some(e)
+                Dialog.errorMessage(s"${convLang("The properties file could not be read")}: $name\n\n${e.getMessage}")
+                None
+        }
     }
 
     // Selects the properties name, read in p (readProperties), and applies them
@@ -1627,6 +1370,8 @@ object Context {
         prop.clear()
         prop.putAll(p)
         loaded = true
+        loadError = None
+        storeError = None
 
         try {
             applyProperties()
@@ -1634,6 +1379,11 @@ object Context {
         catch {
             case e: Exception => logger.warn(s"load: ${e.toString}")
         }
+        storedSettings = currentSettings
+
+        refreshSettingsDialog()
+        // The tip of the tray icon has the name of the properties
+        Tray.update()
     }
 
     private def applyProperties(): Unit = {
@@ -1792,11 +1542,14 @@ object Context {
         // The settings are stored in the file as it is now (read anew): its keys that are not
         // settings (e.g. customAccelThreshold) are kept as they are, and those removed from it since
         // it was loaded are not stored again. Not stored if it cannot be read (it could not be
-        // written either).
+        // written either). Other properties than Default not found have been renamed or deleted
+        // outside W10Wheel since they were loaded: not written again (they would come back under the
+        // old name); if settings have changed, they are not stored, which is told.
         try {
             if (!loaded)
                 logger.debug("Not loaded properties")
             else {
+                val name = selectedProperties
                 val path = getSelectedPropertiesPath
                 val file = new Properties.SProperties
                 val found =
@@ -1805,19 +1558,29 @@ object Context {
                         true
                     }
                     catch {
-                        case _: NoSuchFileException => logger.debug("First write properties"); false
+                        case _: NoSuchFileException => false
                     }
 
-                if (found && !isChangedProperties(file))
+                if (!found && name != DEFAULT_DEF) {
+                    if (hasUnstoredChanges)
+                        throw new NoSuchFileException(path.toString, null, s"${convLang("Properties does not exist")}: $name")
+                    logger.debug("Properties file not found, not changed")
+                }
+                else if (found && !isChangedProperties(file))
                     logger.debug("Not changed properties")
                 else {
+                    if (!found) logger.debug("First write properties")
                     setSettings(file)
                     file.store(path)
                 }
+                storedSettings = currentSettings
+                storeError = None
             }
         }
         catch {
-            case e: Exception => logger.warn(s"store: ${e.toString}")
+            case e: Exception =>
+                storeError = Some(e)
+                logger.warn(s"store: ${e.toString}")
         }
     }
 

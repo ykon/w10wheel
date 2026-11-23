@@ -20,7 +20,8 @@ If you downloaded it from the Releases page above, click "More info" and then "R
 - Your settings files (`.W10Wheel*.properties` in your user folder) are kept and used as they are.
 - If you start W10Wheel from a shortcut (e.g. in the Startup folder), change its target to the new `W10Wheel.exe`.
 ## Usage
-Settings are available in the system tray.  
+Right-click the tray icon and choose Settings... to open the settings dialog: a change is applied and saved at once.  
+Double-click the tray icon (or choose Pause) to pause W10Wheel. The dialog and the menu follow the light or dark mode of Windows apps.  
 Properties file is stored in the user directory.
 
 * LRTrigger: Press Left to Right, or vice versa. (simultaneously)

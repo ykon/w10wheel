@@ -86,6 +86,7 @@ object User32Ex {
 
     val WM_QUERYENDSESSION = 0x0011
     val WM_ENDSESSION = 0x0016
+    val WM_SETTINGCHANGE = 0x001A
     val WM_INPUT = 0x00ff
     val RIM_INPUT = 0
     val RIM_INPUTSINK = 1

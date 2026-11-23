@@ -33,8 +33,6 @@ object Windows {
     private val k32 = Kernel32.INSTANCE
     //private val shcore = Shcore.INSTANCE
 
-    // https://github.com/EsotericSoftware/clippy/blob/master/src/com/esotericsoftware/clippy/Tray.java
-    private val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
 
     private val rawInputSize = new RAWINPUT().size()
 
@@ -74,6 +72,10 @@ object Windows {
         false
     }
 
+    // The window that receives RawInput (WM_INPUT while scrolling), the end of the session and the
+    // changes of the settings of Windows (the theme), on a thread of its own: WM_INPUT is handled
+    // while the hook thread handles a hook or a task. (The tray icon is AWT's: it is added again
+    // when Explorer restarts, TaskbarCreated.)
     private val windowProc = new WindowProc {
         override def callback(hwnd: HWND, uMsg: Int, wParam: WPARAM, lParam: LPARAM): LRESULT = {
             uMsg match {
@@ -88,11 +90,11 @@ object Windows {
                     if (wParam.intValue != 0)
                         W10Wheel.procExit
                     return new LRESULT(0)
-                case TaskbarCreated => {
-                    logger.debug("TaskbarCreated")
-                    Context.resetSystemTray()
-                    return new LRESULT(0)
-                }
+                // The light or dark mode of the apps may have changed
+                case WM_SETTINGCHANGE =>
+                    val area = Option(lParam.toPointer).map(_.getWideString(0)).getOrElse("")
+                    if (area == "ImmersiveColorSet")
+                        Theme.windowsThemeChanged()
                 case _ => {}
             }
 
@@ -102,31 +104,34 @@ object Windows {
     
     private val CLASS_NAME = Context.PROGRAM_NAME + "_WM"
 
-    private val messageHwnd: HWND = {
+    // A top-level window (not message-only): the broadcasts (WM_ENDSESSION, WM_SETTINGCHANGE) are
+    // sent to the top-level windows only. Made on its thread, which gets its messages.
+    private def createMessageWindow(): HWND = {
         val wx = new WNDCLASSEX
         wx.lpszClassName = CLASS_NAME
         wx.lpfnWndProc = windowProc
 
-        if (u32.RegisterClassEx(wx).intValue() != 0) {
-            val hwnd = u32.CreateWindowEx(0, CLASS_NAME, null, 0, 0, 0, 0, 0, null, null, null, null)
-            u32ex.ChangeWindowMessageFilterEx(hwnd, TaskbarCreated, MSGFLT_ALLOW, null);
-
-            hwnd
-        }
+        if (u32.RegisterClassEx(wx).intValue() != 0)
+            u32.CreateWindowEx(0, CLASS_NAME, null, 0, 0, 0, 0, 0, null, null, null, null)
         else
             null
     }
 
-    // window message therad
+    @volatile private var messageHwnd: HWND = null
+
+    // The thread of the message window
     private val wmThread = new Thread(() => {
+        messageHwnd = createMessageWindow()
+        if (messageHwnd == null)
+            logger.warn("Failed create the message window: " + getLastErrorMessage)
         val msg = new MSG
         while (u32.GetMessage(msg, null, 0, 0) > 0) {
             u32.TranslateMessage(msg)
             u32.DispatchMessage(msg)
         }
-    })
+    }, "W10Wheel message window")
     wmThread.setDaemon(true)
-    wmThread.start
+    wmThread.start()
 
     // false if the hook was not installed any more (e.g. removed by Windows for a timeout)
     def unhook(hhk: HHOOK): Boolean =
@@ -851,7 +856,7 @@ object Windows {
 
     // Called by Context.Scroll under its lock, maybe on the EventWaiter thread (LR trigger): no
     // dialog, it would block the lock that the hook waits for (no mouse input, the dialog could
-    // not be closed), and SWT dialogs need the UI thread. Returns whether it succeeded: scroll
+    // not be closed). Returns whether it succeeded: scroll
     // mode does not start if it failed.
     def registerRawInput: Boolean = {
         val res = registerMouseRawInputDevice(RIDEV_INPUTSINK, messageHwnd)

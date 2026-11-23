@@ -5,235 +5,185 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import org.eclipse.swt.SWT
-import org.eclipse.swt.widgets._
-import org.eclipse.swt.events._
-import org.eclipse.swt.graphics.Image
-import org.eclipse.swt.graphics.Point
-import org.eclipse.swt.layout.GridData
-import org.eclipse.swt.layout.GridLayout
+import java.awt.{ BorderLayout, Component, Cursor, Desktop, Dimension, FlowLayout, Window }
+import java.awt.event.{ MouseAdapter, MouseEvent => AwtMouseEvent }
+import java.net.URI
+import java.util.concurrent.{ CountDownLatch, TimeUnit }
+import javax.swing._
+import javax.swing.event.{ DocumentEvent, DocumentListener }
 
+// The message boxes (Swing, JOptionPane), in the language of W10Wheel.
+//
+// The thread: shown at once on the Swing thread. From the hook thread while its loop runs (e.g. an
+// error of a load by --sendReloadProp), later on the Swing thread: the hooks must not wait for it.
+// Else (at startup and exit, before the hooks run), shown and waited for.
 object Dialog {
+    private val logger = Logger.getLogger()
     private lazy val convLang: String => String = Context.convLang
-    
-    def __errorMessage(parent: Shell, msg: String, title: String = "Error"): Unit = {
-        val mb = new MessageBox(parent, SWT.OK | SWT.ICON_ERROR)
-        mb.setText(convLang(title))
-        mb.setMessage(msg)
-        mb.open()
+
+    // The owner of the boxes shown without one: the settings dialog while it is shown (they are
+    // modal to it and centered on it), else none (on top of the other windows: W10Wheel has no
+    // window in the foreground)
+    @volatile private var defaultOwner: () => Option[Window] = () => None
+
+    def setDefaultOwner(f: () => Option[Window]): Unit =
+        defaultOwner = f
+
+    private def onUI(f: () => Unit): Unit = {
+        if (SwingUtilities.isEventDispatchThread)
+            f()
+        else {
+            Theme.setup()
+            if (HookThread.isCurrent && HookThread.isLooping)
+                SwingUtilities.invokeLater(() => f())
+            else
+                SwingUtilities.invokeAndWait(() => f())
+        }
     }
-    
-    private lazy val defaultShell = W10Wheel.shell
-    
+
+    // On the Swing thread
+    private def show(owner: Option[Window], pane: JOptionPane, title: String): Unit = {
+        val o = owner.orElse(defaultOwner())
+        val dialog = pane.createDialog(o.orNull, title)
+        if (o.isEmpty) {
+            dialog.setAlwaysOnTop(true)
+            dialog.setIconImages(Tray.appIcons)
+        }
+        dialog.setVisible(true)
+        dialog.dispose()
+    }
+
+    private def messagePane(msg: Any, kind: Int) = {
+        val pane = new JOptionPane(msg, kind)
+        pane.setOptions(Array[AnyRef](convLang("OK")))
+        pane
+    }
+
     def errorMessage(msg: String, title: String = "Error"): Unit = {
-        __errorMessage(defaultShell, msg, title);
+        logger.debug(s"errorMessage: $msg")
+        onUI(() => show(None, messagePane(msg, JOptionPane.ERROR_MESSAGE), convLang(title)))
     }
-    
-    def __errorMessageE(parent: Shell, e: Exception): Unit = {
-        __errorMessage(parent, e.getMessage, e.getClass.getName)
+
+    def errorMessageE(e: Exception): Unit =
+        errorMessage(e.getMessage, e.getClass.getName)
+
+    // An error of an action of the settings dialog (owner): what failed (heading) and why
+    def showError(owner: Window, heading: String, e: Throwable): Unit = {
+        val msg = Option(e.getMessage).getOrElse(e.toString)
+        show(Some(owner), messagePane(s"$heading\n\n$msg", JOptionPane.ERROR_MESSAGE), Context.PROGRAM_NAME)
     }
-    
-    def errorMessageE(e: Exception): Unit = {
-        __errorMessageE(defaultShell, e);
+
+    // The confirmation of an action that cannot be undone, modal to owner (the settings dialog): its
+    // button says what it does, and Cancel is the default (Enter does not do it by mistake). On the
+    // Swing thread.
+    def confirm(owner: Window, heading: String, text: String, actionText: String): Boolean = {
+        val cancel = convLang("Cancel")
+        val options = Array[AnyRef](actionText, cancel)
+        val pane = new JOptionPane(s"$heading\n\n$text", JOptionPane.WARNING_MESSAGE,
+                                   JOptionPane.DEFAULT_OPTION, null, options, cancel)
+        show(Some(owner), pane, Context.PROGRAM_NAME)
+        pane.getValue == actionText
     }
-    
-    def __openYesNoMessage(parent: Shell, msg: String, title: String = "Question"): Boolean = {
-        val mb = new MessageBox(parent, SWT.YES | SWT.NO | SWT.ICON_QUESTION)
-        mb.setText(convLang(title))
-        mb.setMessage(msg)
-        mb.open() == SWT.YES
-    }
-    
-    def openYesNoMessage(msg: String, title: String = "Question"): Boolean = {
-        __openYesNoMessage(defaultShell, msg, title);
-    }
-    
-    class NumberInputDialog(parent: Shell, name: String, low: Int, up: Int, cur: Int) extends Dialog(parent) {
-        private def createSpinner(shell: Shell) = {
-            val spinner = new Spinner(shell, SWT.BORDER)
-            spinner.setMinimum(low)
-            spinner.setMaximum(up)
-            spinner.setSelection(cur)
-            spinner
+
+    // A text asked in a small dialog modal to owner (e.g. the name of new properties). None if
+    // canceled or empty. validate: why the text cannot be used (an English text), checked as it is
+    // typed: shown under the box, and OK disabled (also while the box is empty). On the Swing thread.
+    def askText(owner: Window, title: String, prompt: String, validate: String => Option[String]): Option[String] = {
+        val dialog = new JDialog(owner, title, java.awt.Dialog.ModalityType.APPLICATION_MODAL)
+        val box = new JTextField(24)
+        val error = new JLabel(" ")
+        error.setForeground(Theme.color("Component.error.focusedBorderColor", java.awt.Color.RED))
+        val ok = new JButton(convLang("OK"))
+        val cancel = new JButton(convLang("Cancel"))
+        var res: Option[String] = None
+
+        val panel = new JPanel()
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS))
+        panel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12))
+        val promptLabel = new JLabel(prompt)
+        Seq[JComponent](promptLabel, box, error).foreach(c => {
+            c.setAlignmentX(Component.LEFT_ALIGNMENT)
+            panel.add(c)
+        })
+        panel.add(Box.createVerticalStrut(4))
+        val buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0))
+        buttons.add(ok)
+        buttons.add(cancel)
+        buttons.setAlignmentX(Component.LEFT_ALIGNMENT)
+        panel.add(buttons)
+        box.setMaximumSize(new Dimension(Int.MaxValue, box.getPreferredSize.height))
+
+        def check(): Unit = {
+            val text = box.getText
+            val why = if (text.isEmpty) None else validate(text)
+            error.setText(why.map(convLang).getOrElse(" "))
+            ok.setEnabled(text.nonEmpty && why.isEmpty)
         }
-        
-        private def createShell = {
-            val shell = new Shell(getParent, SWT.TITLE | SWT.BORDER | SWT.APPLICATION_MODAL | SWT.ON_TOP)
-            shell.setText(convLang("Set Number"))
-            shell.setLayout(new GridLayout(2, false))
-            shell
-        }
-        
-        private def createLabel(shell: Shell) = {
-            val label = new Label(shell, SWT.NULL)
-            label.setText(s"$name ($low - $up): ")
-            label
-        }
-        
-        private def createButton(shell: Shell, text: String, gridData: GridData) = {
-            val button = new Button(shell, SWT.PUSH)
-            button.setText(text)
-            button.setLayoutData(gridData)
-            button
-        }
-        
-        private def makeKeyAdapter(ok: Button, cancel: Button) = {
-            new KeyAdapter {
-                override def keyReleased(e: KeyEvent): Unit = {
-                    if (e.character == SWT.CR)
-                        ok.notifyListeners(SWT.Selection, null)
-                    else if (e.keyCode == SWT.ESC)
-                        cancel.notifyListeners(SWT.Selection, null)
+        box.getDocument.addDocumentListener(new DocumentListener {
+            def insertUpdate(e: DocumentEvent): Unit = check()
+            def removeUpdate(e: DocumentEvent): Unit = check()
+            def changedUpdate(e: DocumentEvent): Unit = check()
+        })
+        check()
+
+        ok.addActionListener(_ => {
+            res = Some(box.getText).filter(_.nonEmpty)
+            dialog.dispose()
+        })
+        cancel.addActionListener(_ => dialog.dispose())
+        dialog.getRootPane.setDefaultButton(ok)
+        dialog.getRootPane.registerKeyboardAction(_ => dialog.dispose(),
+            KeyStroke.getKeyStroke("ESCAPE"), JComponent.WHEN_IN_FOCUSED_WINDOW)
+
+        dialog.setContentPane(panel)
+        dialog.setResizable(false)
+        dialog.pack()
+        dialog.setLocationRelativeTo(owner)
+        dialog.setVisible(true)
+        res
+    }
+
+    // A link (e.g. in About): opened in the browser
+    private def link(text: String, url: String): JLabel = {
+        val l = new JLabel(s"<html><a href=''>$text</a></html>")
+        l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR))
+        l.addMouseListener(new MouseAdapter {
+            override def mouseClicked(e: AwtMouseEvent): Unit = {
+                try {
+                    Desktop.getDesktop.browse(new URI(url))
+                }
+                catch {
+                    case ex: Exception => logger.warn(s"browse: $ex")
                 }
             }
-        }
-        
-        private def messageLoop(shell: Shell) = {
-            val display = getParent.getDisplay
-            while (!shell.isDisposed) {
-                if (!display.readAndDispatch)
-                    display.sleep
-            }            
-        }
-        
-        private def setLocation(shell: Shell): Unit = {
-            val pt = Display.getDefault.getCursorLocation
-            shell.setLocation(pt.x - (shell.getBounds.width / 2), pt.y - (shell.getBounds.height / 2))                
-        }
-        
-        private def makeButtonGridData = {
-            val gridData = new GridData(GridData.HORIZONTAL_ALIGN_END)
-            gridData.widthHint = 70
-            gridData
-        }
-        
-        private def isValidNumber(res: Int) =
-            res >= low && res <= up
-            
-        private def errorMessage(input: Int): Unit = {
-            Dialog.__errorMessage(parent, s"${convLang("Invalid Number")}: $input")
-        }
-        
-        def open: Option[Int] = {
-            val shell = createShell
-            val label = createLabel(shell)
-            val spinner = createSpinner(shell)
-            
-            val gridData = makeButtonGridData
-            val okButton = createButton(shell, "OK", gridData)
-            val cancelButton = createButton(shell, "Cancel", gridData)
-            
-            spinner.addKeyListener(makeKeyAdapter(okButton, cancelButton))
-            
-            var res: Option[Int] = None
-            okButton.addListener(SWT.Selection, (e: Event) => {
-                val input = spinner.getSelection
-                
-                if (!isValidNumber(input))
-                    errorMessage(input)
-                else {
-                    res = Some(input)
-                    shell.dispose
-                }
-            })
-            
-            cancelButton.addListener(SWT.Selection, (e: Event) => shell.dispose)
-            shell.addListener(SWT.Traverse, (e: Event) => if (e.detail == SWT.TRAVERSE_ESCAPE) e.doit = false)
-
-            shell.pack
-            setLocation(shell)    
-            shell.open
-            
-            messageLoop(shell)
-            res
-        }
+        })
+        l
     }
-    
-    class TextInputDialog(parent: Shell, text: String, title: String = "Set Text") extends Dialog(parent) {
-        private def createText(shell: Shell) = {
-            val text = new Text(shell, SWT.SINGLE | SWT.BORDER)
-            text
-        }
-        
-        private def createShell = {
-            val shell = new Shell(getParent, SWT.TITLE | SWT.BORDER | SWT.APPLICATION_MODAL | SWT.ON_TOP)
-            shell.setText(convLang(title))
-            shell.setLayout(new GridLayout(2, false))
-            shell
-        }
-        
-        private def createLabel(shell: Shell) = {
-            val label = new Label(shell, SWT.NULL)
-            label.setText(s"$text: ")
-            label
-        }
-        
-        private def createButton(shell: Shell, text: String, gridData: GridData) = {
-            val button = new Button(shell, SWT.PUSH)
-            button.setText(text)
-            button.setLayoutData(gridData)
-            button
-        }
-        
-        private def makeKeyAdapter(ok: Button, cancel: Button) = {
-            new KeyAdapter {
-                override def keyReleased(e: KeyEvent): Unit = {
-                    if (e.character == SWT.CR)
-                        ok.notifyListeners(SWT.Selection, null)
-                    else if (e.keyCode == SWT.ESC)
-                        cancel.notifyListeners(SWT.Selection, null)
-                }
-            }
-        }
-        
-        private def messageLoop(shell: Shell) = {
-            val display = getParent.getDisplay
-            while (!shell.isDisposed) {
-                if (!display.readAndDispatch)
-                    display.sleep
-            }            
-        }
-        
-        private def setLocation(shell: Shell): Unit = {
-            val pt = Display.getDefault.getCursorLocation
-            shell.setLocation(pt.x - (shell.getBounds.width / 2), pt.y - (shell.getBounds.height / 2))                
-        }
-        
-        private def makeButtonGridData = {
-            val gridData = new GridData(GridData.HORIZONTAL_ALIGN_END)
-            gridData.widthHint = 70
-            gridData
-        }
-        
-        def open: Option[String] = {
-            val shell = createShell
-            val label = createLabel(shell)
-            val text = createText(shell)
-            
-            val gridData = makeButtonGridData
-            val okButton = createButton(shell, "OK", gridData)
-            val cancelButton = createButton(shell, "Cancel", gridData)
-            
-            text.addKeyListener(makeKeyAdapter(okButton, cancelButton))
-            
-            var res: Option[String] = None
-            okButton.addListener(SWT.Selection, (e: Event) => {
-                val input = text.getText
-                if (input != "") {
-                    res = Some(input)
-                    shell.dispose
-                }
-            })
-            
-            cancelButton.addListener(SWT.Selection, (e: Event) => shell.dispose)
-            shell.addListener(SWT.Traverse, (e: Event) => if (e.detail == SWT.TRAVERSE_ESCAPE) e.doit = false)
 
-            shell.pack
-            setLocation(shell)    
-            shell.open
-            
-            messageLoop(shell)
-            res
-        }
+    // The version of W10Wheel and of Java. On the Swing thread.
+    def showAbout(): Unit = {
+        val text = new JLabel(
+            s"<html><b>${Context.PROGRAM_NAME}</b><br><br>" +
+            s"${convLang("Version")}: ${Context.PROGRAM_VERSION}<br>" +
+            s"Java: ${System.getProperty("java.version")} (${System.getProperty("os.arch")})</html>")
+        val panel = new JPanel(new BorderLayout(0, 8))
+        panel.add(text, BorderLayout.CENTER)
+        panel.add(link("GitHub", Context.PROJECT_URL), BorderLayout.SOUTH)
+
+        val icon = new ImageIcon(Tray.appIcon(48))
+        val pane = new JOptionPane(panel, JOptionPane.PLAIN_MESSAGE, JOptionPane.DEFAULT_OPTION, icon)
+        pane.setOptions(Array[AnyRef](convLang("OK")))
+        show(None, pane, convLang("About"))
+    }
+
+    // Waits (at most timeoutMs) for f run on the Swing thread: at exit, the main thread. Not if the
+    // Swing thread does not answer (e.g. blocked): W10Wheel exits anyway.
+    def runOnUIAndWait(timeoutMs: Long)(f: () => Unit): Unit = {
+        val done = new CountDownLatch(1)
+        SwingUtilities.invokeLater(() => {
+            try f() finally done.countDown()
+        })
+        if (!done.await(timeoutMs, TimeUnit.MILLISECONDS))
+            logger.warn("The Swing thread did not answer")
     }
 }

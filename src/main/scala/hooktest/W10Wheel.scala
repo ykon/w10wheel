@@ -7,18 +7,11 @@ package hooktest
 
 import scala.collection.immutable.List
 
-// SWT
-import org.eclipse.swt.SWT
-import org.eclipse.swt.widgets.{Dialog as _, *}
-
 object W10Wheel {
     private val ctx = Context
     private val logger = Logger.getLogger()
-    private val display = Display.getDefault
-    
-    private lazy val convLang: String => String = ctx.convLang
 
-    val shell = new Shell(display)
+    private lazy val convLang: String => String = ctx.convLang
 
     private var exited = false
 
@@ -50,7 +43,7 @@ object W10Wheel {
 
         // Exiting while scrolling (e.g. --sendExit): restore the cursor and unregister RawInput.
         // This also waits for a scroll start in progress and refuses later ones. Maybe on the
-        // thread of the message window (session end), where an error dialog would throw.
+        // thread of the message window (session end): no dialog.
         try {
             ctx.closeScrollMode
         }
@@ -69,30 +62,6 @@ object W10Wheel {
     private def messageDoubleLaunch: Unit = {
         Dialog.errorMessage(convLang("Double Launch?"))
     }
-
-    private def swtMessageLoop: Unit = {
-        while (!shell.isDisposed) {
-            if (!display.readAndDispatch)
-                display.sleep
-        }
-    }
-
-    def exitMessageLoop: Unit = {
-        display.dispose()
-    }
-
-    /*
-    private val shutdown = new Thread {
-        override def run {
-            logger.debug("Shutdown Hook")
-
-            if (!display.isDisposed)
-                exitMessageLoop
-        }
-    }
-
-    Runtime.getRuntime.addShutdownHook(shutdown)
-    */
 
     private def getBool(sl: List[String]) = {
         try {
@@ -147,6 +116,28 @@ object W10Wheel {
         )
     }
 
+    // On the hook thread (the main thread), before its message loop: the hooks are installed on
+    // the thread that runs it (Windows calls them from it)
+    private def init(): Unit = {
+        // If the file cannot be read (an error is shown), the default settings are used, and not
+        // stored at exit (Context.storeProperties)
+        ctx.loadProperties
+
+        Hook.setMouseHook match {
+            case Some(err) =>
+                // The keyboard hook first: it would wait while the error is shown
+                Hook.unhook
+                Dialog.errorMessage(s"${convLang("Failed mouse hook install")}: $err")
+                System.exit(1)
+            case None => ()
+        }
+
+        logger.debug("Mouse hook installed")
+
+        // The UI runs on the Swing thread from now on
+        javax.swing.SwingUtilities.invokeLater(() => Tray.setup())
+    }
+
     def main(args: Array[String]): Unit = {
         procArgs(args)
 
@@ -155,24 +146,22 @@ object W10Wheel {
             System.exit(1)
         }
 
-        // If the file cannot be read (an error is shown), the default settings are used, and not
-        // stored at exit (Context.storeProperties)
-        ctx.loadProperties
-        ctx.setSystemTray()
+        // Before the first component (a dialog of the load, the tray icon)
+        Theme.setup()
 
-        Hook.setMouseHook match {
-            case Some(err) =>
-                // The icon would remain in the tray after System.exit
-                ctx.hideSystemTray()
-                Dialog.errorMessage(s"${convLang("Failed mouse hook install")}: $err")
-                System.exit(1)
-            case None => ()
-        }
-        
-        logger.debug("Mouse hook installed")
-
-        swtMessageLoop
+        HookThread.run(() => init())
         logger.debug("Exit message loop")
+
+        // A number being typed in the settings dialog is set, and the icon removed from the tray
+        // (it would remain after the exit). The model is changed on this thread from now on
+        // (HookThread.call runs at once after the loop).
+        Dialog.runOnUIAndWait(3000)(() => {
+            ctx.commitSettingsDialog()
+            Tray.remove()
+        })
+
         procExit
+        // The Swing thread is not a daemon
+        System.exit(0)
     }
 }
