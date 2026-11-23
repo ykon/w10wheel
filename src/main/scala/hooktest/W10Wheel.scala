@@ -60,7 +60,7 @@ object W10Wheel {
     }
 
     private def messageDoubleLaunch: Unit = {
-        Dialog.errorMessage(convLang("Double Launch?"))
+        Dialog.errorMessage(convLang("W10Wheel is already running. This instance will exit."))
     }
 
     private def getBool(sl: List[String]) = {
@@ -92,6 +92,11 @@ object W10Wheel {
         System.exit(1)
     }
 
+    // Started by a restart as administrator (Admin.RESTART_ADMIN_ARG): the old instance is exiting
+    private var waitForLock = false
+    // Restarted from the settings dialog (Admin.OPEN_SETTINGS_ARG): it is opened again once running
+    private var openSettings = false
+
     private def procArgs(args: Array[String]): Unit = {
         logger.debug("procArgs")
         
@@ -101,6 +106,17 @@ object W10Wheel {
             case "--sendPassMode" :: rest => Some(W10Message.sendPassMode(getBool(rest)))
             case "--sendReloadProp" :: _ => Some(W10Message.sendReloadProp)
             case "--sendInitState" :: _ => Some(W10Message.sendInitState)
+            // Not a command for the users: the old instance is exiting (see lockInstance)
+            case Admin.RESTART_ADMIN_ARG :: rest =>
+                waitForLock = true
+                val names = rest match {
+                    case Admin.OPEN_SETTINGS_ARG :: r =>
+                        openSettings = true
+                        r
+                    case r => r
+                }
+                names.headOption.foreach(setSelectedProperties)
+                None
             case name :: _ if name.startsWith("--") => unknownCommand(name); None
             case name :: _ => setSelectedProperties(name); None
             case _ => None
@@ -114,6 +130,36 @@ object W10Wheel {
             else
                 System.exit(1)
         )
+    }
+
+    // The lock of the old instance is waited for after a restart (30 s at most): it is released when
+    // the old one has exited (after storing the properties, which this one then loads)
+    private def lockInstance(): Unit = {
+        if (!PreventMultiInstance.tryLock(if (waitForLock) 30000 else 0)) {
+            messageDoubleLaunch
+            System.exit(1)
+        }
+    }
+
+    // Not as administrator: asked whether to restart as administrator (unless "Do not ask again"
+    // was chosen, adminCheck). Before the hooks and the tray icon: this instance exits at once if
+    // the new one has been started (it waits for the lock). Not without the launcher (sbt run).
+    private def checkAdmin(): Unit = {
+        if (!Admin.isAdmin && Admin.canRestart && ctx.isAdminCheckAtStartup) {
+            val (restart, dontAsk) = Dialog.askRestartAsAdmin()
+            if (dontAsk)
+                ctx.storeNoAdminCheck()
+            if (restart) {
+                Admin.startAsAdmin(ctx.getSelectedProperties, openSettings = false) match {
+                    case Admin.AdminStart.Started =>
+                        PreventMultiInstance.unlock
+                        System.exit(0)
+                    case Admin.AdminStart.Canceled => ()
+                    case Admin.AdminStart.Failed(e) =>
+                        Dialog.errorMessage(Option(e.getMessage).getOrElse(e.toString), "Error")
+                }
+            }
+        }
     }
 
     // On the hook thread (the main thread), before its message loop: the hooks are installed on
@@ -135,19 +181,23 @@ object W10Wheel {
         logger.debug("Mouse hook installed")
 
         // The UI runs on the Swing thread from now on
-        javax.swing.SwingUtilities.invokeLater(() => Tray.setup())
+        javax.swing.SwingUtilities.invokeLater(() => {
+            Tray.setup()
+            // Restarted from the settings dialog: opened again
+            if (openSettings) ctx.showSettingsDialog()
+        })
     }
 
     def main(args: Array[String]): Unit = {
         procArgs(args)
 
-        if (!PreventMultiInstance.tryLock) {
-            messageDoubleLaunch
-            System.exit(1)
-        }
-
-        // Before the first component (a dialog of the load, the tray icon)
+        // Before the first component (a dialog, the tray icon)
         Theme.setup()
+        // The language of the dialogs before the load, and whether to ask for administrator rights
+        ctx.readStartupProperties()
+
+        lockInstance()
+        checkAdmin()
 
         HookThread.run(() => init())
         logger.debug("Exit message loop")

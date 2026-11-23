@@ -108,7 +108,8 @@ import SettingsUI._
 final class SettingsPage private[hooktest] (conv: String => String, grid: JPanel, register: Binding => Unit,
                                             isRefreshing: () => Boolean, changed: () => Unit,
                                             changedLater: () => Unit, setTip: (JComponent, String, Option[String]) => Unit,
-                                            isReloading: () => Boolean, spinners: ArrayBuffer[JSpinner]) {
+                                            isReloading: () => Boolean, spinners: ArrayBuffer[JSpinner],
+                                            beforeAction: () => Unit) {
     private var row = 0
     private var gap = false
 
@@ -205,6 +206,36 @@ final class SettingsPage private[hooktest] (conv: String => String, grid: JPanel
         register(Binding(() => cb.setEnabled(check.isSelected), ignore))
         tipOn(Seq(check, cb), tip, key)
         addRow(Seq((check, 1), (cb, 2)))
+    }
+
+    // A button of an action (e.g. Restart as administrator), with the shield of UAC before its text
+    // if shield (as high as a line of its text, drawn by Windows at the scale of the display).
+    // enabled: as addCheck (e.g. not while the action is in progress).
+    def addButton(engText: String, onClick: () => Unit, shield: Boolean = false,
+                  enabled: Option[() => Boolean] = None, tip: Option[String] = None): Unit = {
+        val b = new JButton()
+        // A number waiting to be stored first, as the buttons of the dialog do
+        b.addActionListener(_ => {
+            beforeAction()
+            onClick()
+        })
+        register(Binding(
+            () => enabled.foreach(f => b.setEnabled(f())),
+            () => {
+                b.setText(conv(engText))
+                if (shield) shieldIcon(b.getFontMetrics(b.getFont).getHeight).foreach(b.setIcon)
+            }))
+        tipOn(Seq(b), tip, None)
+        addRow(Seq((b, 3)))
+    }
+
+    // The shield at size (in the units of the UI) for each scale of the displays: the one of the
+    // display is drawn (not a smaller one scaled up)
+    private def shieldIcon(size: Int): Option[Icon] = {
+        val scales = Seq(1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0)
+        val images = scales.flatMap(s => Admin.shieldImage(math.round(size * s).toInt))
+        if (images.isEmpty) None
+        else Some(new ImageIcon(new java.awt.image.BaseMultiResolutionImage(images*)))
     }
 
     // A short note (e.g. what a setting of the page depends on)
@@ -521,7 +552,7 @@ final class SettingsDialog(conv: String => String) {
         content.add(page, index.toString)
 
         new SettingsPage(conv, grid, register, () => refreshing, () => changed(), () => changedLater(),
-                         setTip, () => readLists, spinners)
+                         setTip, () => readLists, spinners, () => { commitNumbers(); flushChanged() })
     }
 
     def addPropertiesLabel(engText: String): Unit = {

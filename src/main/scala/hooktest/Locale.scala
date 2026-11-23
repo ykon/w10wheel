@@ -25,7 +25,19 @@ object Locale {
 // The texts in Japanese (as in W10Wheel.NET): the English texts of the UI are the keys
 private object LocaleData {
     private val JapaneseMessage = Map(
-        "Double Launch?" -> "二重起動していませんか？",
+        "W10Wheel is already running. This instance will exit." -> "二重起動を検出したため終了します。",
+        "W10Wheel is not running as administrator" -> "W10Wheel は管理者として実行されていません",
+        Dialog.AdminMessage -> "そのため、一部のプログラム (管理者として実行されているもの) のウィンドウでは機能しません。管理者として実行することを推奨します。",
+        "Restart as administrator" -> "管理者として再起動",
+        "Windows asks for permission (User Account Control)" -> "UAC の確認が表示されます",
+        "Continue without administrator rights" -> "このまま実行",
+        "Do not ask again" -> "次回から表示しない",
+        "Ask to restart as administrator at startup" -> "起動時に管理者として再起動するか確認する",
+        "Asked when W10Wheel is not running as administrator" -> "W10Wheel が管理者として実行されていない場合に確認します",
+        "Restarting loses the changes that could not be saved." -> "再起動すると、保存できなかった変更は失われます。",
+        "Running as administrator" -> "管理者として実行",
+        "Yes" -> "はい",
+        "No" -> "いいえ",
         "Failed mouse hook install" -> "マウスフックのインストールに失敗しました",
         "Failed keyboard hook install" -> "キーボードフックのインストールに失敗しました",
         "Properties does not exist" -> "設定ファイルが存在しません",

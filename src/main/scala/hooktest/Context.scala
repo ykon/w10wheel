@@ -32,6 +32,8 @@ object Context {
     @volatile private var keyboardHook = false // default
     @volatile private var targetVKCode = Keyboard.getVKCode(DataID.VK_NONCONVERT) // default
     @volatile private var uiLanguage = Locale.getLanguage() // default
+    // Asked at startup to restart as administrator when not running as administrator
+    @volatile private var adminCheck = true // default
 
     // Incremented whenever Pass Mode is turned on and the state is initialized. A wheel event queued
     // before is not sent (InputSender), and an LR trigger wait started before neither resends nor
@@ -823,6 +825,97 @@ object Context {
         }
     }
 
+    // At startup, before the lock and the load (W10Wheel.main): the file of the selected properties
+    // read for the language of the dialogs shown before the load and for adminCheck (None if it
+    // cannot be read: the load tells why)
+    private var startupProps: Option[Properties.SProperties] = None
+
+    def readStartupProperties(): Unit = {
+        // The settings are still the default values (see saveDefaultsOnce)
+        saveDefaultsOnce()
+        startupProps = readProperties(selectedProperties).toOption
+        startupProps.flatMap(_.getOption(DataID.uiLanguage)).foreach(lang =>
+            if (lang == DataID.English || lang == DataID.Japanese) uiLanguage = lang)
+    }
+
+    // Whether to ask at startup to restart as administrator: true if missing or invalid (the default)
+    def isAdminCheckAtStartup: Boolean =
+        startupProps.flatMap(_.getOption(DataID.adminCheck)).forall(s => !s.equalsIgnoreCase("false"))
+
+    // Do not ask again (at startup, before the load): adminCheck false written in the file of the
+    // selected properties at once, its other lines kept. A new file has all the settings, as at a
+    // first exit (their default values). Not if it cannot be written: asked again at the next
+    // startup.
+    def storeNoAdminCheck(): Unit = {
+        try {
+            val path = getSelectedPropertiesPath
+            if (java.nio.file.Files.exists(path)) {
+                val file = new Properties.SProperties
+                file.setBoolean(DataID.adminCheck, false)
+                file.update(path, List(DataID.adminCheck))
+            }
+            else {
+                val file = currentSettings
+                file.setBoolean(DataID.adminCheck, false)
+                file.store(path)
+            }
+        }
+        catch {
+            case e: Exception => logger.warn(s"storeNoAdminCheck: $e")
+        }
+    }
+
+    // Set while UAC is answered (on the Swing thread): the button is grayed (pressed again, it would
+    // start a second instance as administrator, which would wait for the lock and then fail)
+    private var restarting = false
+
+    // From the settings dialog (owner): W10Wheel started as administrator (with the dialog opened
+    // again), then this one exits as by Exit (the hooks removed, the properties stored, the lock
+    // released: the new one waits for it). UAC is waited for on another thread: the dialog is not
+    // frozen meanwhile.
+    private def restartAsAdmin(owner: java.awt.Window): Unit = {
+        if (!restarting) {
+            restarting = true
+            refreshSettingsLater()
+            // Stored first: the new instance may read them before this one stores them again at its
+            // exit. If some could not be (e.g. a read-only file), the new one would load the file
+            // without them: asked as when switching.
+            val unstored = onHook {
+                storeProperties
+                hasUnstoredChanges
+            }
+            val go = !unstored || {
+                val why = storeError.orElse(loadError).map(e => s"${e.getMessage}\n").getOrElse("")
+                Dialog.confirm(owner, convLang("The changes could not be saved"),
+                               why + convLang("Restarting loses the changes that could not be saved."),
+                               convLang("Restart as administrator"))
+            }
+
+            if (!go) {
+                restarting = false
+                refreshSettingsLater()
+            }
+            else {
+                val name = selectedProperties
+                val t = new Thread(() => {
+                    val res = Admin.startAsAdmin(name, openSettings = true)
+                    javax.swing.SwingUtilities.invokeLater(() => res match {
+                        case Admin.AdminStart.Started => exitAction()
+                        case Admin.AdminStart.Canceled =>
+                            restarting = false
+                            refreshSettingsLater()
+                        case Admin.AdminStart.Failed(e) =>
+                            restarting = false
+                            refreshSettingsLater()
+                            Dialog.showError(owner, convLang("Restart as administrator"), e)
+                    })
+                }, "W10Wheel restart as administrator")
+                t.setDaemon(true)
+                t.start()
+            }
+        }
+    }
+
     // From the settings dialog (owner). The settings of the selected properties are stored first: if
     // some could not be (e.g. a read-only file, or properties not loaded), switching loses them,
     // which is asked. The properties switched to are loaded only if they can be read: else nothing
@@ -974,6 +1067,17 @@ object Context {
         general.addComboBox("Priority", Seq(DataID.High -> "High", DataID.AboveNormal -> "Above Normal", DataID.Normal -> "Normal"),
                             id => Windows.getPriority(id) == processPriority, id => onHook(setPriority(id)),
                             tip = Some("The priority of the process of W10Wheel"), key = Some(DataID.processPriority))
+        general.addGap()
+        // Not as administrator: said, and the restart offered (as at startup). Not without the
+        // launcher (e.g. sbt run): grayed.
+        if (!Admin.isAdmin) {
+            general.addNote("W10Wheel is not running as administrator", NoteKind.Warning)
+            general.addButton("Restart as administrator", () => restartAsAdmin(owner), shield = true,
+                              enabled = Some(() => !restarting && Admin.canRestart),
+                              tip = Some("Windows asks for permission (User Account Control)"))
+        }
+        addBool(general, "Ask to restart as administrator at startup", DataID.adminCheck,
+                "Asked when W10Wheel is not running as administrator")
 
         val trigger = dialog.addPage("Trigger")
         // A key that starts scroll mode: the hook on and a key (not None, from old properties:
@@ -1444,7 +1548,8 @@ object Context {
               DataID.accelTable, DataID.customAccelTable,
               DataID.draggedLock, DataID.swapScroll,
               DataID.sendMiddleClick, DataID.keyboardHook,
-              DataID.vhAdjusterMode, DataID.firstPreferVertical
+              DataID.vhAdjusterMode, DataID.firstPreferVertical,
+              DataID.adminCheck
         )
     }
 
@@ -1497,6 +1602,7 @@ object Context {
             case DataID.keyboardHook => keyboardHook = b
             case DataID.vhAdjusterMode => VHAdjuster.mode = b
             case DataID.firstPreferVertical => VHAdjuster.firstPreferVertical = b
+            case DataID.adminCheck => adminCheck = b
             case DataID.passMode => Pass.mode = b
         }
     }
@@ -1516,6 +1622,7 @@ object Context {
         case DataID.keyboardHook => keyboardHook
         case DataID.vhAdjusterMode => VHAdjuster.mode
         case DataID.firstPreferVertical => VHAdjuster.firstPreferVertical
+        case DataID.adminCheck => adminCheck
         case DataID.passMode => Pass.mode
     }
 

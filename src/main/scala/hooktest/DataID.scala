@@ -28,6 +28,7 @@ object DataID {
     val vhAdjusterMode = "vhAdjusterMode"
     val firstPreferVertical = "firstPreferVertical"
     val passMode = "passMode"
+    val adminCheck = "adminCheck"
     
     // String
     val firstTrigger = "firstTrigger"

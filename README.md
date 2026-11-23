@@ -22,6 +22,7 @@ If you downloaded it from the Releases page above, click "More info" and then "R
 ## Usage
 Right-click the tray icon and choose Settings... to open the settings dialog: a change is applied and saved at once.  
 Double-click the tray icon (or choose Pause) to pause W10Wheel. The dialog and the menu follow the light or dark mode of Windows apps.  
+Not running as administrator, W10Wheel does not work in the windows of programs that run as administrator: it asks at startup to restart as administrator (also in the settings dialog, General).  
 Properties file is stored in the user directory.
 
 * LRTrigger: Press Left to Right, or vice versa. (simultaneously)

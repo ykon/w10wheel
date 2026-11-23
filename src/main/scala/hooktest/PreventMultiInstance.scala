@@ -20,22 +20,45 @@ object PreventMultiInstance {
     @volatile private var channel: Option[FileChannel] = None
     @volatile private var lock: Option[FileLock] = None
     
-    def tryLock: Boolean = {
+    private def lockOnce(): Boolean = {
+        var ch: FileChannel = null
+        try {
+            val file = new File(LOCK_FILE_DIR, LOCK_FILE_NAME)
+            ch = new RandomAccessFile(file, "rw").getChannel()
+            val l = ch.tryLock()
+            if (l != null) {
+                channel = Some(ch)
+                lock = Some(l)
+                true
+            }
+            else {
+                ch.close()
+                false
+            }
+        }
+        catch {
+            case e: Exception =>
+                logger.debug(s"tryLock: $e")
+                if (ch != null) ch.close()
+                false
+        }
+    }
+
+    // waitMs: how long to wait for the lock of another instance (after a restart as administrator:
+    // the old instance is exiting, it releases its lock after storing the properties)
+    def tryLock(waitMs: Long = 0): Boolean = {
         logger.debug("tryLock")
         
         if (lock.isDefined)
             throw new IllegalStateException()
-        
-        try {
-            val file = new File(LOCK_FILE_DIR, LOCK_FILE_NAME)
-            channel = Option(new RandomAccessFile(file, "rw").getChannel())    
-            lock = Option(channel.get.tryLock)
-            
-            lock.isDefined
+
+        val end = System.nanoTime + waitMs * 1000000
+        var res = lockOnce()
+        while (!res && System.nanoTime < end) {
+            Thread.sleep(100)
+            res = lockOnce()
         }
-        catch {
-            case e: Exception => logger.warn(s"tryLock: $e"); false
-        }
+        res
     }
     
     def unlock: Unit = {

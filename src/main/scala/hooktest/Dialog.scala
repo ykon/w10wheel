@@ -143,6 +143,47 @@ object Dialog {
         res
     }
 
+    // At startup when W10Wheel is not running as administrator (before the hooks): whether to restart
+    // as administrator, and whether not to ask again ("Do not ask again" checked with Continue).
+    // The restart has the shield of UAC. Closed (Esc): continue.
+    def askRestartAsAdmin(): (Boolean, Boolean) = {
+        var res = (false, false)
+        onUI(() => {
+            val heading = new JLabel(s"<html><b>${convLang("W10Wheel is not running as administrator")}</b></html>")
+            val text = new JLabel(s"<html><div style='width: 320px'>${convLang(AdminMessage)}</div></html>")
+            val dontAsk = new JCheckBox(convLang("Do not ask again"))
+            val panel = new JPanel()
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS))
+            Seq[JComponent](heading, text, dontAsk).foreach(c => {
+                c.setAlignmentX(Component.LEFT_ALIGNMENT)
+                panel.add(c)
+                panel.add(Box.createVerticalStrut(8))
+            })
+
+            val restart = new JButton(convLang("Restart as administrator"))
+            restart.setToolTipText(convLang("Windows asks for permission (User Account Control)"))
+            val lineHeight = restart.getFontMetrics(restart.getFont).getHeight
+            val shields = Seq(1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0).flatMap(s => Admin.shieldImage(math.round(lineHeight * s).toInt))
+            if (shields.nonEmpty)
+                restart.setIcon(new ImageIcon(new java.awt.image.BaseMultiResolutionImage(shields*)))
+            val continueWithout = new JButton(convLang("Continue without administrator rights"))
+
+            val pane = new JOptionPane(panel, JOptionPane.INFORMATION_MESSAGE, JOptionPane.DEFAULT_OPTION, null,
+                                       Array[AnyRef](restart, continueWithout), restart)
+            Seq(restart, continueWithout).foreach(b => b.addActionListener(_ => pane.setValue(b)))
+            show(None, pane, Context.PROGRAM_NAME)
+
+            val v = pane.getValue
+            // Only with Continue: the choice to run without the rights. Not if closed or restarted.
+            res = (v eq restart, (v eq continueWithout) && dontAsk.isSelected)
+        })
+        res
+    }
+
+    // Why W10Wheel should run as administrator (as in W10Wheel.NET)
+    val AdminMessage =
+        "So it won't work in the windows of some programs (those running as administrator). It's highly recommended to run it as administrator."
+
     // A link (e.g. in About): opened in the browser
     private def link(text: String, url: String): JLabel = {
         val l = new JLabel(s"<html><a href=''>$text</a></html>")
@@ -165,6 +206,7 @@ object Dialog {
         val text = new JLabel(
             s"<html><b>${Context.PROGRAM_NAME}</b><br><br>" +
             s"${convLang("Version")}: ${Context.PROGRAM_VERSION}<br>" +
+            s"${convLang("Running as administrator")}: ${convLang(if (Admin.isAdmin) "Yes" else "No")}<br>" +
             s"Java: ${System.getProperty("java.version")} (${System.getProperty("os.arch")})</html>")
         val panel = new JPanel(new BorderLayout(0, 8))
         panel.add(text, BorderLayout.CENTER)
