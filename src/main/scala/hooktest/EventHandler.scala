@@ -379,12 +379,27 @@ object EventHandler {
             None
     }
 
+    // Scroll mode could not start (RawInput could not be registered, see Context.Scroll.start, or
+    // W10Wheel is exiting): the down of the trigger passes, as if its button were not a trigger,
+    // and so does its up (not the started trigger: passNotStartedTrigger). Suppressed, the click
+    // would be lost (no scroll, and no click resent at the up).
+    private def passNotStartedScroll(me: MouseEvent): Option[LRESULT] = {
+        if (!ctx.isScrollMode) {
+            debug("pass (scroll mode not started)", me)
+            callNextHook
+        }
+        else
+            None
+    }
+
     private def checkTriggerScrollStart(me: MouseEvent): Option[LRESULT] = {
         if (ctx.isTriggerEvent(me)) {
             debug("start scroll mode", me);
             ctx.startScrollMode(me.info)
-            triggerStarted = me
-            suppress
+            passNotStartedScroll(me).orElse {
+                triggerStarted = me
+                suppress
+            }
         }
         else
             None
@@ -402,12 +417,14 @@ object EventHandler {
     private def startScrollDrag(me: MouseEvent): Option[LRESULT] = {
         debug("start scroll mode (Drag)", me);
         ctx.startScrollMode(me.info)
-        triggerStarted = me
+        passNotStartedScroll(me).orElse {
+            triggerStarted = me
 
-        drag = dragStart
-        dragged = false
+            drag = dragStart
+            dragged = false
 
-        suppress
+            suppress
+        }
     }
 
     private def passNotStartedTrigger(up: MouseEvent): Option[LRESULT] = {

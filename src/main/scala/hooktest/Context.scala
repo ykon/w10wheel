@@ -716,9 +716,33 @@ object Context {
     private def retextSettingsDialog(): Unit =
         Option(settingsDialog).foreach(_.retextLater())
 
-    // On the hook thread, from the Swing thread (waits for it)
+    // On the hook thread, from the Swing thread (waits for it). Not for reading or writing a file:
+    // the hook thread would wait for it (e.g. a slow network drive), and Windows removes the hooks
+    // that do not return in time. The settings dialog reads and writes the properties files on the
+    // Swing thread (storeProperties, readProperties: they take no setting being changed), then
+    // applies what it has read on the hook thread (loadRead).
     private def onHook[T](f: => T): T =
         HookThread.call(f)
+
+    // The properties of name, read in p, selected and applied on the hook thread
+    private def loadRead(name: String, p: Properties.SProperties): Unit =
+        onHook(selectProperties(name, p))
+
+    // Reload from the settings dialog (the file read on the Swing thread, see onHook): false if it
+    // could not be read (nothing changes, why is shown)
+    private def reloadFromDialog(): Boolean = {
+        val name = selectedProperties
+        readProperties(name) match {
+            case Right(p) =>
+                loadRead(name, p)
+                true
+            case Left(e) =>
+                loadError = Some(e)
+                refreshSettingsLater()
+                Dialog.errorMessage(s"${convLang("The properties file could not be read")}: $name\n\n${messageOf(e)}")
+                false
+        }
+    }
 
     // The name of properties as shown: only Default is translated
     private def shownPropertiesName(name: String) =
@@ -743,7 +767,7 @@ object Context {
             if (!isValidPropertiesName(name))
                 Dialog.errorMessage(s"${convLang("Invalid Name")}: $name", "Name Error")
             else {
-                val err: Option[Throwable] = onHook {
+                val err: Option[Throwable] = {
                     try {
                         storeProperties
                         val path = Properties.getPath(name)
@@ -759,7 +783,7 @@ object Context {
                         else current.store(path)
 
                         readProperties(name) match {
-                            case Right(p) => selectProperties(name, p); None
+                            case Right(p) => loadRead(name, p); None
                             case Left(e) => Some(e)
                         }
                     }
@@ -779,13 +803,13 @@ object Context {
         val name = selectedProperties
         if (Dialog.confirm(owner, convLang("Delete these properties?"), s"${convLang("Properties")}: $name",
                            convLang("Delete"))) {
-            val err: Option[(String, Throwable)] = onHook {
+            val err: Option[(String, Throwable)] = {
                 readProperties(DEFAULT_DEF) match {
                     case Left(e) => Some((convLang("The properties file could not be read"), e))
                     case Right(p) =>
                         try {
                             Properties.delete(name)
-                            selectProperties(DEFAULT_DEF, p)
+                            loadRead(DEFAULT_DEF, p)
                             None
                         }
                         catch {
@@ -821,8 +845,8 @@ object Context {
                 // All the settings written (not only those changed in W10Wheel: one edited in the
                 // file and not reloaded would stay), the other lines of the file kept
                 storedSettings = new Properties.SProperties
-                storeProperties
             }
+            storeProperties
             refreshSettingsDialog()
         }
     }
@@ -882,10 +906,8 @@ object Context {
             // Stored first: the new instance may read them before this one stores them again at its
             // exit. If some could not be (e.g. a read-only file), the new one would load the file
             // without them: asked as when switching.
-            val unstored = onHook {
-                storeProperties
-                hasUnstoredChanges
-            }
+            storeProperties
+            val unstored = hasUnstoredChanges
             val go = !unstored || {
                 val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
                 Dialog.confirm(owner, convLang("The changes could not be saved"),
@@ -923,10 +945,8 @@ object Context {
     // which is asked. The properties switched to are loaded only if they can be read: else nothing
     // changes, and why is shown.
     private def switchProperties(owner: java.awt.Window, name: String): Unit = {
-        val unstored = onHook {
-            storeProperties
-            hasUnstoredChanges
-        }
+        storeProperties
+        val unstored = hasUnstoredChanges
 
         val go = !unstored || {
             val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
@@ -938,11 +958,9 @@ object Context {
             // The current properties selected again in the list
             refreshSettingsDialog()
         else {
-            val err = onHook {
-                readProperties(name) match {
-                    case Right(p) => selectProperties(name, p); None
-                    case Left(e) => Some(e)
-                }
+            val err = readProperties(name) match {
+                case Right(p) => loadRead(name, p); None
+                case Left(e) => Some(e)
             }
             err.foreach(e => {
                 refreshSettingsDialog()
@@ -1007,7 +1025,7 @@ object Context {
         val dialog = new SettingsDialog(convLang)
         val owner = dialog.frame
         dialog.changed = () => {
-            onHook(storeProperties)
+            storeProperties
             // The settings depending on it (e.g. Dragged Lock is for a drag trigger only, the keyboard
             // hook is off again if it could not be installed)
             dialog.refreshValues()
@@ -1044,7 +1062,7 @@ object Context {
         dialog.addPropertiesButton("Open Dir", () => openPropertiesDir())
         // The change waiting to be stored is dropped, and waits again if nothing could be loaded: not
         // stored at once (the file may still be locked)
-        dialog.addPropertiesButton("Reload", () => if (!onHook(tryReloadProperties())) dialog.restorePending(),
+        dialog.addPropertiesButton("Reload", () => if (!reloadFromDialog()) dialog.restorePending(),
                                    dropPending = true)
         dialog.addBottomButton("Reset to defaults", () => resetSettings(owner))
         // Instead of the hint that the changes are stored: the properties could not be read (Reload
@@ -1401,9 +1419,10 @@ object Context {
     // which is asked
     @volatile private var storedSettings = new Properties.SProperties
 
-    // The properties files are written under it (storeProperties, storeNoAdminCheck): on the hook
-    // thread, but also on the Swing thread after the message loop (HookThread.call), while the
-    // main thread may store them at exit
+    // The properties files are written (storeProperties, storeNoAdminCheck) and the properties
+    // selected (selectProperties) under it: written on the Swing thread (the settings dialog) or the
+    // main thread (at exit), selected on the hook thread. The hook thread waits for a write only if
+    // a load comes during it (e.g. --sendReloadProp while a setting is stored).
     private val storeLock = new Object
 
     private def currentSettings: Properties.SProperties = {
@@ -1491,7 +1510,9 @@ object Context {
     }
 
     // Selects the properties name, read in p (readProperties), and applies them
-    private def selectProperties(name: String, p: Properties.SProperties): Unit = {
+    // Under the lock of the stores: a store on the Swing thread (the settings dialog) does not write
+    // the settings of other properties, or a half selected state
+    private def selectProperties(name: String, p: Properties.SProperties): Unit = storeLock.synchronized {
         // (the default values have been kept before p was read: see saveDefaultsOnce)
         selectedProperties = name
 
