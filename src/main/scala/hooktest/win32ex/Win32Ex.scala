@@ -80,10 +80,7 @@ object User32Ex {
     // https://msdn.microsoft.com/library/windows/desktop/ms724947.aspx
     val SPI_SETCURSORS = 0x0057
 
-    val MSGFLT_ALLOW = 1
-    val MSGFLT_DISALLOW = 2
-    val MSGFLT_RESET = 0
-    // ChangeWindowMessageFilter
+    // ChangeWindowMessageFilter (for the process)
     val MSGFLT_ADD = 1
 
     val WM_QUERYENDSESSION = 0x0011
@@ -113,7 +110,6 @@ trait User32ExTrait extends User32
     def SystemParametersInfoW(uiAction: Int, uiParam: Int, pvParam: Pointer, fWinIni: Int): Boolean
     def SetSystemCursor(hcur: Pointer, id: Int): Boolean
     def DestroyCursor(hCursor: Pointer): Boolean
-    def ChangeWindowMessageFilterEx(hWnd: HWND, msg: Int, action: Int, pcfs: Pointer): Boolean
     // For the process (all its windows, also those of AWT)
     def ChangeWindowMessageFilter(msg: Int, flag: Int): Boolean
 

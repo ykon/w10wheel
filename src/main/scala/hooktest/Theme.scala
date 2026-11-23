@@ -8,7 +8,7 @@ package hooktest
 import javax.swing.{ SwingUtilities, ToolTipManager, UIManager }
 
 import com.formdev.flatlaf.{ FlatDarkLaf, FlatLaf, FlatLightLaf }
-import com.sun.jna.platform.win32.{ Advapi32, Advapi32Util, WinError, WinNT, WinReg }
+import com.sun.jna.platform.win32.{ Advapi32, Advapi32Util, Kernel32, WinBase, WinError, WinNT, WinReg }
 
 // The look and feel of the UI (FlatLaf): light or dark as the apps of Windows are (Settings >
 // Personalization > Colors > "Choose your default app mode"), followed when it is changed: the
@@ -71,8 +71,14 @@ object Theme {
         }
     }
 
-    // Watches the key of the mode of the apps on a thread of its own (it waits for each change):
-    // started once, after setup. Not if the key cannot be opened (the mode is not followed then).
+    // Watches the key of the mode of the apps on a thread of its own: started once, after setup.
+    // Not if the key cannot be opened (the mode is not followed then).
+    //
+    // The watch is set again before the mode is read, and the change waited for after: a value
+    // written while the mode is read (e.g. AppsUseLightTheme written just after
+    // SystemUsesLightTheme, which ended the wait) signals the event, it is not missed. (A synchronous
+    // wait ends the watch when it returns: a value written before the next would be missed.) The
+    // mode is also read once at first: a change since setup is followed.
     def watch(): Unit = {
         val t = new Thread(() => {
             val ref = new WinReg.HKEYByReference()
@@ -81,14 +87,34 @@ object Theme {
             if (opened != WinError.ERROR_SUCCESS)
                 logger.warn(s"Theme.watch: RegOpenKeyEx: $opened")
             else {
+                // Auto-reset: reset when the wait returns
+                val event = Kernel32.INSTANCE.CreateEvent(null, false, false, null)
                 try {
-                    // Waits for a value of the key set (synchronous), then reads the mode
-                    while (Advapi32.INSTANCE.RegNotifyChangeKeyValue(ref.getValue, false,
-                               WinNT.REG_NOTIFY_CHANGE_LAST_SET, null, false) == WinError.ERROR_SUCCESS)
-                        windowsThemeChanged()
-                    logger.warn("Theme.watch: RegNotifyChangeKeyValue failed")
+                    if (event == null)
+                        logger.warn(s"Theme.watch: CreateEvent: ${Kernel32.INSTANCE.GetLastError}")
+                    else {
+                        var res = WinError.ERROR_SUCCESS
+                        var waiting = true
+                        while (waiting) {
+                            res = Advapi32.INSTANCE.RegNotifyChangeKeyValue(ref.getValue, false,
+                                      WinNT.REG_NOTIFY_CHANGE_LAST_SET, event, true)
+                            if (res != WinError.ERROR_SUCCESS) {
+                                logger.warn(s"Theme.watch: RegNotifyChangeKeyValue: $res")
+                                waiting = false
+                            }
+                            else {
+                                windowsThemeChanged()
+                                val w = Kernel32.INSTANCE.WaitForSingleObject(event, WinBase.INFINITE)
+                                if (w != WinBase.WAIT_OBJECT_0) {
+                                    logger.warn(s"Theme.watch: WaitForSingleObject: $w")
+                                    waiting = false
+                                }
+                            }
+                        }
+                    }
                 }
                 finally {
+                    if (event != null) Kernel32.INSTANCE.CloseHandle(event)
                     Advapi32.INSTANCE.RegCloseKey(ref.getValue)
                 }
             }
@@ -97,9 +123,9 @@ object Theme {
         t.start()
     }
 
-    // A value of the key of the mode of the apps has changed (from the watcher, watch): the look
+    // A value of the key of the mode of the apps may have changed (from the watcher, watch): the look
     // and feel changed if the mode has, and the windows updated
-    def windowsThemeChanged(): Unit = {
+    private def windowsThemeChanged(): Unit = {
         if (initialized) {
             val d = isWindowsDark
             SwingUtilities.invokeLater(() => {
