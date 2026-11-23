@@ -52,15 +52,22 @@ object Windows {
         // Not smaller than RAWINPUT (a mouse input, the only device registered): it is read whole
         // from the buffer, which would be read past otherwise
         if (getRawInputData(null) == 0 && pcbSize.getValue >= rawInputSize) {
+            // Freed after each WM_INPUT (as W10Wheel.NET does), not left to the GC (Cleaner):
+            // there is one for each mouse report while scrolling
             val buf = new Memory(pcbSize.getValue)
-            if (getRawInputData(buf) == pcbSize.getValue) {
-                val ri = new RAWINPUT(buf)
+            try {
+                if (getRawInputData(buf) == pcbSize.getValue) {
+                    val ri = new RAWINPUT(buf)
 
-                if (isMouseMoveRelative(ri)) {
-                    val rm = ri.mouse
-                    sendWheelRaw(rm.lLastX, rm.lLastY)
-                    return true
+                    if (isMouseMoveRelative(ri)) {
+                        val rm = ri.mouse
+                        sendWheelRaw(rm.lLastX, rm.lLastY)
+                        return true
+                    }
                 }
+            }
+            finally {
+                buf.close()
             }
         }
 
@@ -70,10 +77,10 @@ object Windows {
     private val windowProc = new WindowProc {
         override def callback(hwnd: HWND, uMsg: Int, wParam: WPARAM, lParam: LPARAM): LRESULT = {
             uMsg match {
-                case WM_INPUT => {
-                    if (procRawInput(lParam))
-                        return new LRESULT(0)
-                }
+                // Then DefWindowProc, also when handled: for RIM_INPUT (input in the foreground) the
+                // system needs it to clean up (see WM_INPUT)
+                case WM_INPUT =>
+                    procRawInput(lParam)
                 // Not at WM_QUERYENDSESSION (DefWindowProc allows the end): the shutdown or logoff
                 // can still be canceled there, and W10Wheel stayed in the tray without working.
                 // WM_ENDSESSION with wParam TRUE comes only when the session is actually ending.

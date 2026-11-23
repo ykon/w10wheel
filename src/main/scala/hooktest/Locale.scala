@@ -28,6 +28,7 @@ private object LocaleData {
         "Failed mouse hook install" -> "マウスフックのインストールに失敗しました",
         "Failed keyboard hook install" -> "キーボードフックのインストールに失敗しました",
         "Properties does not exist" -> "設定ファイルが存在しません",
+        "Cannot read properties" -> "設定ファイルを読み込めません",
         "Unknown Command" -> "不明なコマンド",
         "Command Error" -> "コマンドのエラー",
         

@@ -155,6 +155,8 @@ object W10Wheel {
             System.exit(1)
         }
 
+        // If the file cannot be read (an error is shown), the default settings are used, and not
+        // stored at exit (Context.storeProperties)
         ctx.loadProperties
         ctx.setSystemTray()
 

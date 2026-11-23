@@ -5,7 +5,7 @@ package hooktest
  * Licensed under the MIT License.
  */
 
-import java.util.concurrent.{ LinkedBlockingQueue, TimeUnit }
+import java.util.concurrent.{ CountDownLatch, LinkedBlockingQueue, TimeUnit }
 import java.util.concurrent.locks.ReentrantLock
 
 import com.sun.jna.platform.win32.User32
@@ -39,7 +39,12 @@ object InputSender {
     // An up whose down reached the application by itself (e.g. the other button's up)
     case object Up extends Kind
 
-    private case class Batch(generation: Int, kind: Kind, inputs: Array[INPUT])
+    // What the sender thread takes from the queue
+    private sealed trait Item
+    private case class Batch(generation: Int, kind: Kind, inputs: Array[INPUT]) extends Item
+    // Queued by close: every item before it has been handled (also the one taken already when
+    // close is called) when the sender thread gets it; done is counted down after the last retry
+    private case class CloseMark(done: CountDownLatch) extends Item
 
     // Interval between the inputs of one batch (the down and up of a click). If they are sent in
     // a single SendInput call, they arrive at the same moment, and tools that remap injected
@@ -50,9 +55,9 @@ object InputSender {
     // (e.g. SendInput fails while the secure desktop is shown)
     private val UNSENT_RETRY_INTERVAL_MS = 100L
 
-    private val queue = new LinkedBlockingQueue[Batch]()
+    private val queue = new LinkedBlockingQueue[Item]()
 
-    // Held while a batch is being sent, so that close can wait for it at exit
+    // Held while a batch is being sent (by the sender thread only, see close)
     private val sendLock = new ReentrantLock()
 
     // Set at exit (beginClose): nothing is sent any more but the ups, so that no button is left
@@ -219,10 +224,9 @@ object InputSender {
     private def send(b: Batch): Unit = {
         sendLock.lock()
         try {
-            if (closing) {
-                val ups = upsAtExit(b)
-                if (ups.nonEmpty) sendUps(ups)
-            }
+            if (closing)
+                // Sent after the unsent ones when the mark of close comes (closeOnSender)
+                unsent = unsent ++ upsAtExit(b)
             else
                 sendNow(b)
         }
@@ -247,36 +251,41 @@ object InputSender {
         closing = true
     }
 
-    // Called at exit after the hooks are removed: waits for a batch being sent (its up
-    // included), sends the ups still queued (for downs sent before) and tries again the ups that
-    // could not be sent. The other inputs queued are dropped.
+    // Called at exit after the hooks are removed: waits for the sender thread to handle what is
+    // queued, the batch it has taken already included (taken from the queue just before close, it
+    // would not be seen by draining the queue here): the ups queued (for downs sent before) are
+    // sent after the unsent ones, tried once with retries. The other inputs are dropped.
     def close(): Unit = {
         closing = true
-        if (sendLock.tryLock(1, TimeUnit.SECONDS)) {
-            try {
-                // All the ups queued after the unsent ones, then tried once (in order, with retries)
-                var b = queue.poll()
-                while (b != null) {
-                    unsent = unsent ++ upsAtExit(b)
-                    b = queue.poll()
-                }
-                retryUnsent(withRetry = true)
-            }
-            finally {
-                sendLock.unlock()
-            }
-        }
-        else
+        val done = new CountDownLatch(1)
+        queue.add(CloseMark(done))
+        if (!done.await(1, TimeUnit.SECONDS))
             logger.warn("InputSender.close: timeout")
+    }
+
+    // The sender thread gets the mark of close: everything queued before it has been handled
+    private def closeOnSender(mark: CloseMark): Unit = {
+        sendLock.lock()
+        try {
+            retryUnsent(withRetry = true)
+        }
+        finally {
+            sendLock.unlock()
+            mark.done.countDown()
+        }
     }
 
     private val senderThread = new Thread(() =>
         while (true) {
             try {
                 val retry = !closing && unsent.nonEmpty
-                val b = if (retry) queue.poll(UNSENT_RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS) else queue.take()
+                val item = if (retry) queue.poll(UNSENT_RETRY_INTERVAL_MS, TimeUnit.MILLISECONDS) else queue.take()
 
-                if (b != null) send(b) else retryUnsentIdle()
+                item match {
+                    case b: Batch => send(b)
+                    case mark: CloseMark => closeOnSender(mark)
+                    case null => retryUnsentIdle()
+                }
             }
             catch {
                 case e: Exception => logger.warn(s"InputSender: $e")

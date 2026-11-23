@@ -496,10 +496,6 @@ object Context {
         def getAndReset_LoneUpKey(vk: Int): Boolean =
             isKey(vk) && kdL(vk).getAndSet(false)
 
-        // The keyboard hook is installed again: a key whose up was missed while it was removed may
-        // have been pressed since, its down passing (no hook): do not suppress its up
-        def resetLoneUpKeys: Unit =
-            kdL.foreach(f => f.set(false))
 
         def setResent(down: MouseEvent): Unit = down match {
             case LeftDown(_) => ldR.set(true)
@@ -577,6 +573,10 @@ object Context {
         // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
         def takeSuppressedDowns: Array[Boolean] =
             Array(ldS, rdS, mdS, x1S, x2S).map(f => f.getAndSet(false))
+
+        // The downs resent alone whose up has not come yet (left, right); resets them
+        def takeResentDowns: Array[Boolean] =
+            Array(ldR, rdR).map(f => f.getAndSet(false))
 
         def getAndReset_SuppressedDown(up: MouseEvent): Boolean = up match {
             case LeftUp(_) => ldS.getAndSet(false)
@@ -1095,13 +1095,13 @@ object Context {
 
     private val DEFAULT_DEF = Properties.DEFAULT_DEF
 
+    // Selects the properties name if its file can be read (see loadPropertiesOf)
     private def setProperties(name: String): Unit = {
         if (selectedProperties != name) {
             logger.debug(s"setProperties: $name")
 
-            selectedProperties = name
-            loadProperties
-            resetAllMenuItems()
+            if (loadPropertiesOf(name))
+                resetAllMenuItems()
         }
     }
 
@@ -1133,8 +1133,16 @@ object Context {
         addListener(item, _ => openDir(dir))
     }
 
+    // The characters not allowed in a Windows file name (as .NET's Path.GetInvalidFileNameChars)
+    private val InvalidFileNameChars: Set[Char] = "\"<>|:*?\\/".toSet ++ (0 until 32).map(_.toChar)
+
+    // A part of a file name (see Properties.getPath), not Default whatever its case (a name only
+    // differing in case would be confused with it), nor a command (--)
     private def isValidPropertiesName(name: String) =
-        (name != DEFAULT_DEF) && !(name.startsWith("--"))
+        !name.isBlank && name.strip == name &&
+        !name.equalsIgnoreCase(DEFAULT_DEF) &&
+        !name.startsWith("--") &&
+        !name.exists(InvalidFileNameChars.contains)
 
     private def createAddPropertiesMenuItem(menu: Menu): Unit = {
         val item = createPushMenuItem(menu, MenuData("Add", None))
@@ -1167,8 +1175,12 @@ object Context {
         addListener(item, _ => {
             try {
                 if (Dialog.openYesNoMessage(s"${convLang("Delete properties")}: $name")) {
-                    Properties.delete(name)
-                    setProperties(DEFAULT_DEF)
+                    // Switched to Default first: deleted only if it can be read, or the properties
+                    // deleted would stay selected (and their file written again at exit)
+                    if (loadPropertiesOf(DEFAULT_DEF)) {
+                        Properties.delete(name)
+                        resetAllMenuItems()
+                    }
                 }
             }
             catch {
@@ -1206,8 +1218,8 @@ object Context {
     }
 
     def reloadProperties: Unit = {
-        loadProperties
-        resetAllMenuItems()
+        if (loadProperties)
+            resetAllMenuItems()
     }
 
     private def createReloadPropertiesMenu(menu: Menu): Unit = {
@@ -1530,69 +1542,99 @@ object Context {
 
     private var loaded = false
 
-    // The default values are kept (defaultProp) once, before the first load: not after a load that
-    // failed (loaded is false again), the settings are not the default values then
+    // The default values are kept (defaultProp) once, before the first load: the settings are the
+    // default values only then
     private var defaultSaved = false
 
-    def loadProperties: Unit = {
+    // Reads the file of the properties name: None if it cannot be read (e.g. locked by another
+    // process, malformed, or deleted since the menu was shown). Default may have no file yet (it
+    // is written at the first exit): its settings are the default values then.
+    private def readProperties(name: String): Option[Properties.SProperties] = {
+        val p = new Properties.SProperties
+        try {
+            p.load(Properties.getPath(name))
+            Some(p)
+        }
+        catch {
+            case _: NoSuchFileException if name == DEFAULT_DEF =>
+                logger.debug("Properties file not found (Default)")
+                Some(p)
+            case e: Exception =>
+                logger.warn(s"Cannot read the properties $name: $e")
+                None
+        }
+    }
+
+    // Loads the selected properties (Reload, and at startup)
+    def loadProperties: Boolean =
+        loadPropertiesOf(selectedProperties)
+
+    // Loads the properties name and selects them. If their file cannot be read, nothing changes
+    // (the settings, the properties selected, and whether they can be stored, see storeProperties)
+    // and an error is shown: false. Otherwise a failed Reload would keep the settings but stop
+    // storing them, and switching to properties deleted since would apply the default values and
+    // write the file again at exit.
+    private def loadPropertiesOf(name: String): Boolean = {
         if (!defaultSaved) {
             setSettings(defaultProp)
             defaultSaved = true
         }
 
-        try {
-            // Not loaded if the file could not be read (e.g. locked): the settings are not stored
-            // (storeProperties) until a load succeeds, or they would overwrite the file (with the
-            // default values, or those of another properties file switched from)
-            loaded = false
+        readProperties(name) match {
+            case None =>
+                Dialog.errorMessage(s"${convLang("Cannot read properties")}: $name")
+                false
+            case Some(p) =>
+                selectedProperties = name
 
-            // The keys of the previous file (Reload, switching properties) are not kept: they
-            // would be applied
-            prop.clear()
-            try {
-                prop.load(getSelectedPropertiesPath)
-            }
-            catch {
-                // All the settings get their default values (see setOrDefault)
-                case _: NoSuchFileException => logger.debug("Properties file not found")
-            }
-            loaded = true
+                // The keys of the previous file (Reload, switching properties) are not kept: they
+                // would be applied. A missing or invalid value gets its default (setOrDefault).
+                prop.clear()
+                prop.putAll(p)
+                loaded = true
 
-            setTriggerOfProperty
-            setAccelOfProperty
-            setCustomAccelOfProperty
-            setPriorityOfProperty
-            setVKCodeOfProperty
-            setVhAdjusterMethodOfProperty
-            setUILanguageOfProperty
-
-            BooleanNames.foreach(n => setBooleanOfProperty(n))
-            setKeyboardHookOf(keyboardHook)
-
-            val setNum = (n: String, l: Int, u: Int) => setNumberOfProperty(n, l, u)
-            setNum(DataID.pollTimeout, 50, 500)
-            setNum(DataID.scrollLocktime, 150, 500)
-            setNum(DataID.verticalThreshold , 0, 500)
-            setNum(DataID.horizontalThreshold, 0, 500)
-
-            setNum(DataID.wheelDelta, 10, 500)
-            setNum(DataID.vWheelMove, 10, 500)
-            setNum(DataID.hWheelMove, 10, 500)
-
-            setNum(DataID.firstMinThreshold, 1, 10)
-            setNum(DataID.switchingThreshold, 10, 500)
-
-            // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
-            // progress (Reload, switching properties) ends once they are set, so that the new ones
-            // apply from the next (also one started meanwhile, e.g. during the error dialog of the
-            // keyboard hook). Not if the file could not be read: the settings have not changed. The
-            // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
-            // trigger changed (changeTrigger). Their trigger's up is still suppressed.
-            exitScrollMode
+                try {
+                    applyProperties()
+                }
+                catch {
+                    case e: Exception => logger.warn(s"load: ${e.toString}")
+                }
+                true
         }
-        catch {
-            case e: Exception => logger.warn(s"load: ${e.toString}")
-        }
+    }
+
+    private def applyProperties(): Unit = {
+        setTriggerOfProperty
+        setAccelOfProperty
+        setCustomAccelOfProperty
+        setPriorityOfProperty
+        setVKCodeOfProperty
+        setVhAdjusterMethodOfProperty
+        setUILanguageOfProperty
+
+        BooleanNames.foreach(n => setBooleanOfProperty(n))
+        setKeyboardHookOf(keyboardHook)
+
+        val setNum = (n: String, l: Int, u: Int) => setNumberOfProperty(n, l, u)
+        setNum(DataID.pollTimeout, 50, 500)
+        setNum(DataID.scrollLocktime, 150, 500)
+        setNum(DataID.verticalThreshold , 0, 500)
+        setNum(DataID.horizontalThreshold, 0, 500)
+
+        setNum(DataID.wheelDelta, 10, 500)
+        setNum(DataID.vWheelMove, 10, 500)
+        setNum(DataID.hWheelMove, 10, 500)
+
+        setNum(DataID.firstMinThreshold, 1, 10)
+        setNum(DataID.switchingThreshold, 10, 500)
+
+        // The scroll settings are read when scroll mode starts (Windows.initScroll): a scroll in
+        // progress (Reload, switching properties) ends once they are set, so that the new ones
+        // apply from the next (also one started meanwhile, e.g. during the error dialog of the
+        // keyboard hook). Not if the file could not be read: the settings have not changed. The
+        // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
+        // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+        exitScrollMode
     }
 
     // Whether the settings differ from the properties of the file (p)

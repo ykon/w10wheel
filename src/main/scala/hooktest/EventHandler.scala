@@ -36,6 +36,13 @@ object EventHandler {
     // (e.g. the LR trigger's wait would resend it). Reset by the up or the next down of the button.
     private val canceledDowns = Array.fill(5)(false)
 
+    // The downs of the left and right buttons resent alone (LR trigger) whose up had not come when
+    // the trigger was changed (changeTrigger), by button: their up is resent (and the physical one
+    // suppressed) before the handlers of the current trigger, which do not resend it (e.g. the
+    // middle trigger's would pass it, and the hook drop the down resent after it: a lost click).
+    // Reset by the up or the next down of the button.
+    private val resentDowns = Array.fill(2)(false)
+
     private def buttonIndex(me: MouseEvent): Int = me match {
         case LeftEvent(_) => 0
         case RightEvent(_) => 1
@@ -51,6 +58,7 @@ object EventHandler {
         dragged = false
         triggerStarted = NonEvent(null)
         java.util.Arrays.fill(canceledDowns, false)
+        java.util.Arrays.fill(resentDowns, false)
     }
 
     private var __callNextHook: () => LRESULT = null
@@ -662,7 +670,9 @@ object EventHandler {
     private def procDown(proc: MouseEvent => LRESULT, d: MouseEvent): LRESULT = {
         earlierDownSuppressed = false
         if (!Windows.isInjectedEvent(d)) {
-            canceledDowns(buttonIndex(d)) = false
+            val i = buttonIndex(d)
+            canceledDowns(i) = false
+            if (i < resentDowns.length) resentDowns(i) = false
 
             // Before the reset (see checkSameLastEvent)
             earlierDownSuppressed = ctx.LastFlags.isSuppressedDown(d)
@@ -680,7 +690,8 @@ object EventHandler {
 
     private def procUpBody(proc: MouseEvent => LRESULT, u: MouseEvent): LRESULT = {
         val i = buttonIndex(u)
-        if (!Windows.isInjectedEvent(u) && canceledDowns(i)) {
+        val physical = !Windows.isInjectedEvent(u)
+        if (physical && canceledDowns(i)) {
             canceledDowns(i) = false
 
             // As the handlers do for an up: Esc initializes the state (and passes the up), and the
@@ -690,6 +701,19 @@ object EventHandler {
                 case None =>
                     debug("suppress (the down was canceled by changing the trigger)", u)
                     lastEvent = u
+                    suppress.get
+            }
+        }
+        else if (physical && i < resentDowns.length && resentDowns(i)) {
+            resentDowns(i) = false
+
+            // As checkResentDown does (after Esc, as lrUp)
+            checkEscape(u) match {
+                case Some(res) => res
+                case None =>
+                    debug("resendUp and suppress (the down was resent before changing the trigger)", u)
+                    lastEvent = u
+                    Windows.resendUp(u)
                     suppress.get
             }
         }
@@ -840,6 +864,12 @@ object EventHandler {
             // handlers could take their up first (e.g. a new LR trigger wait)
             ctx.LastFlags.takeSuppressedDowns.zipWithIndex.foreach { case (b, i) =>
                 if (b) canceledDowns(i) = true
+            }
+
+            // The downs resent alone (the wait timed out or was ended by a move): their up is resent
+            // before the new handlers, which would not resend it (see resentDowns)
+            ctx.LastFlags.takeResentDowns.zipWithIndex.foreach { case (b, i) =>
+                if (b) resentDowns(i) = true
             }
 
             triggerStarted = NonEvent(null)
