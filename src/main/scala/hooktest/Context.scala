@@ -743,13 +743,16 @@ object Context {
                     try {
                         storeProperties
                         val path = Properties.getPath(name)
+                        // A copy of the file (its comments, its other keys) with the settings
+                        // running, those shown: also those not stored (e.g. a read-only file,
+                        // properties not loaded), or edited in the file and not reloaded (the file's
+                        // would be copied)
                         if (java.nio.file.Files.exists(getSelectedPropertiesPath))
                             Properties.copy(selectedProperties, name)
 
-                        val file = new Properties.SProperties
-                        if (java.nio.file.Files.exists(path)) file.load(path)
-                        setSettings(file)
-                        file.store(path)
+                        val current = currentSettings
+                        if (java.nio.file.Files.exists(path)) current.update(path, current.keys)
+                        else current.store(path)
 
                         readProperties(name) match {
                             case Right(p) => selectProperties(name, p); None
@@ -811,6 +814,9 @@ object Context {
                 catch {
                     case e: Exception => logger.warn(s"reset: $e")
                 }
+                // All the settings written (not only those changed in W10Wheel: one edited in the
+                // file and not reloaded would stay), the other lines of the file kept
+                storedSettings = new Properties.SProperties
                 storeProperties
             }
             refreshSettingsDialog()
@@ -1276,8 +1282,9 @@ object Context {
     @volatile private var loadError: Option[Throwable] = None
     @volatile private var storeError: Option[Throwable] = None
 
-    // The settings as they were loaded, or last stored: those changed since may be lost (e.g. the
-    // file could not be written), which is asked before switching
+    // The settings as they were loaded, or last stored: only those changed since are stored
+    // (storeProperties); those not stored (e.g. the file could not be written) are lost by a switch,
+    // which is asked
     private var storedSettings = new Properties.SProperties
 
     private def currentSettings: Properties.SProperties = {
@@ -1286,8 +1293,12 @@ object Context {
         p
     }
 
+    // The settings changed since they were loaded or stored (current: as running)
+    private def changedSettings(current: Properties.SProperties): List[String] =
+        current.keys.filter(k => current.getOption(k) != storedSettings.getOption(k))
+
     private def hasUnstoredChanges: Boolean =
-        currentSettings != storedSettings
+        changedSettings(currentSettings).nonEmpty
 
     // The default values are kept (defaultProp) once, before the first read of a properties file is
     // tried (readPropertiesOrShowError, at startup): the settings are the default values only then.
@@ -1367,8 +1378,7 @@ object Context {
 
         // The keys of the previous file (Reload, switching properties) are not kept: they would be
         // applied. A missing or invalid value gets its default (setOrDefault).
-        prop.clear()
-        prop.putAll(p)
+        prop.copyFrom(p)
         loaded = true
         loadError = None
         storeError = None
@@ -1418,33 +1428,6 @@ object Context {
         // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
         // trigger changed (changeTrigger). Their trigger's up is still suppressed.
         exitScrollMode
-    }
-
-    // Whether the settings differ from the properties of the file (p)
-    private def isChangedProperties(p: Properties.SProperties): Boolean = {
-        logger.debug("isChangedProperties")
-
-        try {
-            def isChangedBoolean =
-                BooleanNames.map(n => p.getBoolean(n) != getBooleanOfName(n)).contains(true)
-
-            def isChangedNumber =
-                NumberNames.map(n => p.getInt(n) != getNumberOfName(n)).contains(true)
-
-            val check = (n: String, v: String) => p.getString(n) != v
-
-            check(DataID.firstTrigger, firstTrigger.name) ||
-            check(DataID.accelMultiplier, Accel.multiplier.name) ||
-            check(DataID.processPriority, processPriority.name) ||
-            check(DataID.targetVKCode, Keyboard.getName(targetVKCode)) ||
-            check(DataID.vhAdjusterMethod, VHAdjuster.method.name) ||
-            check(DataID.uiLanguage, this.uiLanguage) ||
-            isChangedBoolean || isChangedNumber
-        }
-        catch {
-            case e: NoSuchElementException => logger.warn(s"Not found: ${e.getMessage}"); true
-            case e: Exception => logger.warn(s"isChanged: ${e.toString}"); true
-        }
     }
 
     private val NumberNames: Array[String] = {
@@ -1539,41 +1522,39 @@ object Context {
     def storeProperties: Unit = {
         logger.debug("storeProperties")
 
-        // The settings are stored in the file as it is now (read anew): its keys that are not
-        // settings (e.g. customAccelThreshold) are kept as they are, and those removed from it since
-        // it was loaded are not stored again. Not stored if it cannot be read (it could not be
-        // written either). Other properties than Default not found have been renamed or deleted
-        // outside W10Wheel since they were loaded: not written again (they would come back under the
-        // old name); if settings have changed, they are not stored, which is told.
+        // Only the settings changed since they were loaded (or stored) are written, in the file as it
+        // is now: what was edited in it meanwhile (other settings too), its other keys (e.g.
+        // customAccelThreshold), its comments and the order of its lines are kept. A setting changed
+        // in both is written. The file of Default not found is written with all the settings (the
+        // first store). Other properties not found have been renamed or deleted outside W10Wheel
+        // since they were loaded: not written again (they would come back under the old name); if
+        // settings have changed, they are not stored, which is told. Not stored if the properties
+        // could not be loaded (the settings would be those of other properties, or defaults).
         try {
             if (!loaded)
                 logger.debug("Not loaded properties")
             else {
                 val name = selectedProperties
                 val path = getSelectedPropertiesPath
-                val file = new Properties.SProperties
-                val found =
-                    try {
-                        file.load(path)
-                        true
-                    }
-                    catch {
-                        case _: NoSuchFileException => false
-                    }
+                val current = currentSettings
+                val changed = changedSettings(current)
+                val exists = java.nio.file.Files.exists(path)
 
-                if (!found && name != DEFAULT_DEF) {
-                    if (hasUnstoredChanges)
+                if (!exists && name != DEFAULT_DEF) {
+                    if (changed.nonEmpty)
                         throw new NoSuchFileException(path.toString, null, s"${convLang("Properties does not exist")}: $name")
                     logger.debug("Properties file not found, not changed")
                 }
-                else if (found && !isChangedProperties(file))
-                    logger.debug("Not changed properties")
-                else {
-                    if (!found) logger.debug("First write properties")
-                    setSettings(file)
-                    file.store(path)
+                else if (!exists) {
+                    logger.debug("First write properties")
+                    current.store(path)
                 }
-                storedSettings = currentSettings
+                else if (changed.isEmpty)
+                    logger.debug("Not changed properties")
+                else
+                    current.update(path, changed)
+
+                storedSettings = current
                 storeError = None
             }
         }
