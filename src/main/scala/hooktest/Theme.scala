@@ -90,8 +90,10 @@ object Theme {
                 // Auto-reset: reset when the wait returns
                 val event = Kernel32.INSTANCE.CreateEvent(null, false, false, null)
                 try {
+                    // The error as JNA saved it right after the call (GetLastError called
+                    // through JNA could get that of another call)
                     if (event == null)
-                        logger.warn(s"Theme.watch: CreateEvent: ${Kernel32.INSTANCE.GetLastError}")
+                        logger.warn(s"Theme.watch: CreateEvent: ${com.sun.jna.Native.getLastError()}")
                     else {
                         var res = WinError.ERROR_SUCCESS
                         var waiting = true
