@@ -24,7 +24,9 @@ object Context {
 
     @volatile private var selectedProperties = Properties.DEFAULT_DEF // default
 
-    @volatile private var firstTrigger: Trigger = LRTrigger() // default
+    // The default mouse trigger: RightDrag (easy to tell, and the left button is left as it is), as
+    // in W10Wheel.NET. LR until 2.8.1: a trigger stored in the properties file is kept.
+    @volatile private var firstTrigger: Trigger = RightDragTrigger() // default
     @volatile private var pollTimeout = 200 // default
     @volatile private var processPriority: Windows.Priority = Windows.AboveNormal() //default
     @volatile private var sendMiddleClick = false // default

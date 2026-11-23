@@ -25,6 +25,8 @@ Double-click the tray icon (or choose Pause) to pause W10Wheel. The dialog and t
 Not running as administrator, W10Wheel does not work in the windows of programs that run as administrator: it asks at startup to restart as administrator (also in the settings dialog, General).  
 Properties file is stored in the user directory.
 
+The default trigger is RightDragTrigger: hold the right button and move to scroll, release it without moving for a right click. Change it in the settings dialog (Trigger).
+
 * LRTrigger: Press Left to Right, or vice versa. (simultaneously)
 * LeftTrigger: Press Left to Right. (simultaneously)
 * RightTrigger: Press Right to Left. (simultaneously)

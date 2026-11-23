@@ -661,10 +661,35 @@ object EventHandler {
         getResult(cs, me)
     }
 
-    @volatile private var procDownLR: MouseEvent => LRESULT = lrDown
-    @volatile private var procUpLR: MouseEvent => LRESULT = lrUp
-    @volatile private var procDownS: MouseEvent => LRESULT = noneDown
-    @volatile private var procUpS: MouseEvent => LRESULT = noneUp
+    private type Handler = MouseEvent => LRESULT
+
+    // The handlers of the trigger: of the left and right buttons, of the other buttons
+    private def handlersOfTrigger: (Handler, Handler, Handler, Handler) = {
+        if (ctx.isDoubleTrigger) {
+            logger.debug("set double down/up")
+            (lrDown, lrUp, noneDown, noneUp)
+        }
+        else if (ctx.isSingleTrigger) {
+            logger.debug("set single down/up")
+            (noneDown, noneUp, singleDown, singleUp)
+        }
+        else if (ctx.isDragTrigger) {
+            logger.debug("set drag down/up")
+            (dragDown, dragUp, dragDown, dragUp)
+        }
+        else {
+            logger.debug("set none down/up")
+            (noneDown, noneUp, noneDown, noneUp)
+        }
+    }
+
+    // Those of the default trigger at first: also used if the properties cannot be read at startup
+    // (nothing is applied then, see Context.loadProperties), then set by changeTrigger
+    private val (initDownLR, initUpLR, initDownS, initUpS) = handlersOfTrigger
+    @volatile private var procDownLR: Handler = initDownLR
+    @volatile private var procUpLR: Handler = initUpLR
+    @volatile private var procDownS: Handler = initDownS
+    @volatile private var procUpS: Handler = initUpS
 
     // Before the handlers of the trigger (see canceledDowns)
     private def procDown(proc: MouseEvent => LRESULT, d: MouseEvent): LRESULT = {
@@ -820,23 +845,7 @@ object EventHandler {
     def changeTrigger(changed: Boolean): Unit = {
         logger.debug("changeTrigger: EventHandler")
 
-        val handlers: (MouseEvent => LRESULT, MouseEvent => LRESULT, MouseEvent => LRESULT, MouseEvent => LRESULT) = if (ctx.isDoubleTrigger) {
-            logger.debug("set double down/up")
-            (lrDown, lrUp, noneDown, noneUp)
-        }
-        else if (ctx.isSingleTrigger) {
-            logger.debug("set single down/up")
-            (noneDown, noneUp, singleDown, singleUp)
-        }
-        else if (ctx.isDragTrigger) {
-            logger.debug("set drag down/up")
-            (dragDown, dragUp, dragDown, dragUp)
-        }
-        else {
-            logger.debug("set none down/up")
-            (noneDown, noneUp, noneDown, noneUp)
-        }
-        val (downLR, upLR, downS, upS) = handlers
+        val (downLR, upLR, downS, upS) = handlersOfTrigger
 
         procDownLR = downLR; procUpLR = upLR
         procDownS = downS; procUpS = upS
