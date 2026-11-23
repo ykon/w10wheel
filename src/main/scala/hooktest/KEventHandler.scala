@@ -306,7 +306,10 @@ object KEventHandler {
     //   before (the last event, the suppressed keys, those suppressed for their up alone) is
     //   forgotten. A key may have been released and pressed again meanwhile, its down reaching
     //   the application: its up must pass, or the key is left pressed there. (A key held all
-    //   along has its up passed alone: not as bad.)
+    //   along has its up passed alone: not as bad.) Only the old records are forgotten: the
+    //   events of the key after are handled as any, and a repeat cannot be told from a new press
+    //   (KBDLLHOOKSTRUCT has no flag for it). So the trigger key pressed again meanwhile and
+    //   still held starts scroll mode with its next repeat, and its up is suppressed then.
     // (They are all forgotten too when the hook is turned off: changeTrigger, LastFlags.resetKeys.)
     def hookInstalled(oldHookLost: Boolean): Unit = {
         if (oldHookLost)

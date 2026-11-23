@@ -493,8 +493,11 @@ object Context {
             if (isKey(vk)) kdL(vk).set(false)
 
         // The keyboard hook is installed again after Windows had removed the old one: a key whose
-        // up was missed meanwhile may have been pressed again, its down passing (no hook): neither
-        // its repeats nor its up are suppressed (the passed keys, kdP, are kept: they pass)
+        // up was missed meanwhile may have been pressed again, its down passing (no hook). The old
+        // records that would suppress its repeats or its up are forgotten (the passed keys, kdP,
+        // are kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a
+        // repeat, so a repeat of the trigger key is taken for a new press (see
+        // KEventHandler.hookInstalled).
         def forgetSuppressedKeys: Unit = {
             kdS.foreach(f => f.set(false))
             kdL.foreach(f => f.set(false))
