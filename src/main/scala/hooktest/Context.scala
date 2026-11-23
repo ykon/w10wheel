@@ -1419,10 +1419,12 @@ object Context {
     // which is asked
     @volatile private var storedSettings = new Properties.SProperties
 
-    // The properties files are written (storeProperties, storeNoAdminCheck) and the properties
-    // selected (selectProperties) under it: written on the Swing thread (the settings dialog) or the
-    // main thread (at exit), selected on the hook thread. The hook thread waits for a write only if
-    // a load comes during it (e.g. --sendReloadProp while a setting is stored).
+    // The properties files are written (storeProperties, storeNoAdminCheck), and read and selected
+    // by the hook thread (loadPropertiesOf, selectProperties), under it: written on the Swing thread
+    // (the settings dialog) or the main thread (at exit). The hook thread waits for a write only if
+    // a load comes during it (e.g. --sendReloadProp while a setting is stored). The settings dialog
+    // reads on the Swing thread, which is the one writing: nothing is written between its read and
+    // the selection.
     private val storeLock = new Object
 
     private def currentSettings: Properties.SProperties = {
@@ -1483,7 +1485,12 @@ object Context {
     // and an error is shown: false. Otherwise a failed Reload would keep the settings but stop
     // storing them, and switching to properties deleted since would apply the default values and
     // write the file again at exit.
-    private def loadPropertiesOf(name: String): Boolean = {
+    //
+    // On the hook thread (at startup, --sendReloadProp): the file is read and applied under the lock
+    // of the stores (see storeLock). Read before, it could be read before a store in progress on the
+    // Swing thread had written it, and its older settings applied after (the store's would run
+    // until the next load, and be written over by the next store).
+    private def loadPropertiesOf(name: String): Boolean = storeLock.synchronized {
         readPropertiesOrShowError(name) match {
             case None =>
                 // At startup: the settings running (the default values), those changed from now on
