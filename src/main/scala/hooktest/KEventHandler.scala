@@ -300,10 +300,13 @@ object KEventHandler {
     // passed keys are kept until their up. The suppressed keys are suppressed for their up alone,
     // as after initState: whether a key is still pressed cannot be told for sure, and the hook is
     // installed again (Reload) to recover, so the next press of a key whose up was missed works.
-    // The keys already suppressed for their up alone are kept: installed again at once (the old
-    // hook removed just before), the up of a key still pressed would pass alone after a second
-    // Reload. (They are forgotten when the hook is turned off: changeTrigger, LastFlags.resetKeys.)
-    def hookInstalled(): Unit = {
+    // The keys already suppressed for their up alone are kept if the old hook was still installed
+    // (removed just before, no key missed): forgotten, the up of a key still pressed would pass
+    // alone after a second Reload. If Windows had removed it (oldHookLost), they are forgotten: a
+    // key may have been released and pressed again meanwhile, its down reaching the application,
+    // and its up must pass. (They are forgotten too when the hook is turned off: changeTrigger,
+    // LastFlags.resetKeys.)
+    def hookInstalled(oldHookLost: Boolean): Unit = {
         // The trigger key pressed (its down suppressed, as the scroll it started): suppress its up
         // alone, or it would pass. Its next down is taken for a new press (a repeat cannot be told
         // from it), the repeats of a key still pressed start scroll mode again.
@@ -313,6 +316,8 @@ object KEventHandler {
         }
 
         lastEvent = KNonEvent(null)
+        if (oldHookLost)
+            ctx.LastFlags.resetLoneUpKeys
         ctx.LastFlags.suppressedKeysToLoneUp
 
         if (ctx.isKeyboardScrollMode) {

@@ -492,6 +492,12 @@ object Context {
         def resetLoneUpKey(vk: Int): Unit =
             if (isKey(vk)) kdL(vk).set(false)
 
+        // The keyboard hook is installed again after Windows had removed the old one: a key whose
+        // up was missed meanwhile may have been pressed again, its down passing (no hook): do not
+        // suppress its up
+        def resetLoneUpKeys: Unit =
+            kdL.foreach(f => f.set(false))
+
         // The up of a key whose down was suppressed before init (kdL), with no down since; resets it
         def getAndReset_LoneUpKey(vk: Int): Boolean =
             isKey(vk) && kdL(vk).getAndSet(false)
@@ -1046,8 +1052,8 @@ object Context {
             case None =>
                 if (b)
                     // Installed again on every load (e.g. Reload after Windows removed it): ups may
-                    // have been missed
-                    KEventHandler.hookInstalled()
+                    // have been missed if the old hook had been removed by Windows
+                    KEventHandler.hookInstalled(Hook.isOldKeyboardHookLost)
                 else
                     KEventHandler.changeTrigger(targetVKCode, false)
         }
@@ -1175,12 +1181,17 @@ object Context {
         addListener(item, _ => {
             try {
                 if (Dialog.openYesNoMessage(s"${convLang("Delete properties")}: $name")) {
-                    // Switched to Default first: deleted only if it can be read, or the properties
-                    // deleted would stay selected (and their file written again at exit)
-                    if (loadPropertiesOf(DEFAULT_DEF)) {
+                    // Default is read first, then the file is deleted, then Default is selected
+                    // (as W10Wheel.NET): if either fails, nothing changes (an error is shown) and
+                    // the settings of these properties are kept, those not stored too. Selected
+                    // before the delete, a failed delete would leave Default selected (the changes
+                    // lost); deleted before Default is read, the deleted properties could stay
+                    // selected (and their file written again at exit).
+                    readPropertiesOrShowError(DEFAULT_DEF).foreach(p => {
                         Properties.delete(name)
+                        selectProperties(DEFAULT_DEF, p)
                         resetAllMenuItems()
-                    }
+                    })
                 }
             }
             catch {
@@ -1575,31 +1586,42 @@ object Context {
     // storing them, and switching to properties deleted since would apply the default values and
     // write the file again at exit.
     private def loadPropertiesOf(name: String): Boolean = {
+        readPropertiesOrShowError(name) match {
+            case None => false
+            case Some(p) =>
+                selectProperties(name, p)
+                true
+        }
+    }
+
+    // readProperties, with an error shown if the file cannot be read
+    private def readPropertiesOrShowError(name: String): Option[Properties.SProperties] = {
+        val res = readProperties(name)
+        if (res.isEmpty)
+            Dialog.errorMessage(s"${convLang("Cannot read properties")}: $name")
+        res
+    }
+
+    // Selects the properties name, read in p (readProperties), and applies them
+    private def selectProperties(name: String, p: Properties.SProperties): Unit = {
         if (!defaultSaved) {
             setSettings(defaultProp)
             defaultSaved = true
         }
 
-        readProperties(name) match {
-            case None =>
-                Dialog.errorMessage(s"${convLang("Cannot read properties")}: $name")
-                false
-            case Some(p) =>
-                selectedProperties = name
+        selectedProperties = name
 
-                // The keys of the previous file (Reload, switching properties) are not kept: they
-                // would be applied. A missing or invalid value gets its default (setOrDefault).
-                prop.clear()
-                prop.putAll(p)
-                loaded = true
+        // The keys of the previous file (Reload, switching properties) are not kept: they would be
+        // applied. A missing or invalid value gets its default (setOrDefault).
+        prop.clear()
+        prop.putAll(p)
+        loaded = true
 
-                try {
-                    applyProperties()
-                }
-                catch {
-                    case e: Exception => logger.warn(s"load: ${e.toString}")
-                }
-                true
+        try {
+            applyProperties()
+        }
+        catch {
+            case e: Exception => logger.warn(s"load: ${e.toString}")
         }
     }
 

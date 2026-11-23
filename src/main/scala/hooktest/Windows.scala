@@ -128,9 +128,9 @@ object Windows {
     wmThread.setDaemon(true)
     wmThread.start
 
-    def unhook(hhk: HHOOK): Unit = {
+    // false if the hook was not installed any more (e.g. removed by Windows for a timeout)
+    def unhook(hhk: HHOOK): Boolean =
         u32.UnhookWindowsHookEx(hhk)
-    }
 
     def setHook(proc: LowLevelMouseProc) = {
         val hMod = k32.GetModuleHandle(null)

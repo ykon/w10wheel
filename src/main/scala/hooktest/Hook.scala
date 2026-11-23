@@ -218,13 +218,21 @@ object Hook {
         err
     }
 
+    // Whether the keyboard hook removed by the last install had been removed by Windows already
+    // (UnhookWindowsHookEx failed): the keys may have been pressed and released meanwhile, with no
+    // hook to see them (see KEventHandler.hookInstalled). Set by setKeyboardHook.
+    @volatile private var oldKeyboardHookLost = false
+    def isOldKeyboardHookLost: Boolean = oldKeyboardHookLost
+
     // None if installed, else the error message
     def setKeyboardHook: Option[String] = {
         // Called on every properties load (Reload, switching properties) when the keyboard hook is
         // on. Remove the previous hook first: installing again would leave it installed
         // (unhookKeyboard only removes the last one). Installing anew also recovers a hook that
         // Windows removed silently because of a timeout (UnhookWindowsHookEx then just fails).
-        unhookKeyboard
+        val old = keyboardHhk
+        oldKeyboardHookLost = old != null && !Windows.unhook(old)
+        keyboardHhk = null
         val hhk = Windows.setHook(keyboardProc)
         val err = getHookError(hhk)
         keyboardHhk = hhk
