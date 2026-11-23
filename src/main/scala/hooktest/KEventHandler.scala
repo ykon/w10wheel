@@ -294,31 +294,36 @@ object KEventHandler {
         }
     }
 
-    // The keyboard hook is installed (again, on every load): ups may have been missed while it was
-    // removed (e.g. by Windows for a timeout). The scroll mode the trigger key started would not
-    // end, and its next down would be taken for a repeat: end it and forget the last event. The
-    // passed keys are kept until their up. The suppressed keys are suppressed for their up alone,
-    // as after initState: whether a key is still pressed cannot be told for sure, and the hook is
-    // installed again (Reload) to recover, so the next press of a key whose up was missed works.
-    // The keys already suppressed for their up alone are kept if the old hook was still installed
-    // (removed just before, no key missed): forgotten, the up of a key still pressed would pass
-    // alone after a second Reload. If Windows had removed it (oldHookLost), they are forgotten: a
-    // key may have been released and pressed again meanwhile, its down reaching the application,
-    // and its up must pass. (They are forgotten too when the hook is turned off: changeTrigger,
-    // LastFlags.resetKeys.)
+    // The keyboard hook is installed (again, on every load). The scroll mode the trigger key started
+    // would not end (its up may have been missed), and its next down would be taken for a repeat:
+    // end it and forget the last event. The passed keys are kept until their up (passing it is
+    // safe).
+    // - The old hook was still installed (removed just before, no key missed): the keys whose down
+    //   was suppressed, the trigger key pressed included, are suppressed for their up alone (as
+    //   after initState), and those already are kept: the up of a key still pressed would pass
+    //   alone after a second Reload. The next press of a key whose up was missed works.
+    // - Windows had removed it (oldHookLost, e.g. for a timeout): what was recorded of the presses
+    //   before (the last event, the suppressed keys, those suppressed for their up alone) is
+    //   forgotten. A key may have been released and pressed again meanwhile, its down reaching
+    //   the application: its up must pass, or the key is left pressed there. (A key held all
+    //   along has its up passed alone: not as bad.)
+    // (They are all forgotten too when the hook is turned off: changeTrigger, LastFlags.resetKeys.)
     def hookInstalled(oldHookLost: Boolean): Unit = {
-        // The trigger key pressed (its down suppressed, as the scroll it started): suppress its up
-        // alone, or it would pass. Its next down is taken for a new press (a repeat cannot be told
-        // from it), the repeats of a key still pressed start scroll mode again.
-        lastEvent match {
-            case KeyDown(_) => ctx.LastFlags.setSuppressedKey(lastEvent.vkCode)
-            case _ => ()
+        if (oldHookLost)
+            ctx.LastFlags.forgetSuppressedKeys
+        else {
+            // The trigger key pressed (its down suppressed, as the scroll it started): suppress its
+            // up alone, or it would pass. Its next down is taken for a new press (a repeat cannot
+            // be told from it), the repeats of a key still pressed start scroll mode again.
+            lastEvent match {
+                case KeyDown(_) => ctx.LastFlags.setSuppressedKey(lastEvent.vkCode)
+                case _ => ()
+            }
+
+            ctx.LastFlags.suppressedKeysToLoneUp
         }
 
         lastEvent = KNonEvent(null)
-        if (oldHookLost)
-            ctx.LastFlags.resetLoneUpKeys
-        ctx.LastFlags.suppressedKeysToLoneUp
 
         if (ctx.isKeyboardScrollMode) {
             logger.debug("hookInstalled: exit keyboard scroll mode")

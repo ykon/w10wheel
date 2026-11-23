@@ -493,10 +493,12 @@ object Context {
             if (isKey(vk)) kdL(vk).set(false)
 
         // The keyboard hook is installed again after Windows had removed the old one: a key whose
-        // up was missed meanwhile may have been pressed again, its down passing (no hook): do not
-        // suppress its up
-        def resetLoneUpKeys: Unit =
+        // up was missed meanwhile may have been pressed again, its down passing (no hook): neither
+        // its repeats nor its up are suppressed (the passed keys, kdP, are kept: they pass)
+        def forgetSuppressedKeys: Unit = {
+            kdS.foreach(f => f.set(false))
             kdL.foreach(f => f.set(false))
+        }
 
         // The up of a key whose down was suppressed before init (kdL), with no down since; resets it
         def getAndReset_LoneUpKey(vk: Int): Boolean =
@@ -1553,9 +1555,18 @@ object Context {
 
     private var loaded = false
 
-    // The default values are kept (defaultProp) once, before the first load: the settings are the
-    // default values only then
+    // The default values are kept (defaultProp) once, before the first read of a properties file is
+    // tried (readPropertiesOrShowError, at startup): the settings are the default values only then.
+    // Not after the first read that succeeds: if the one at startup fails, the settings changed
+    // before the next would be taken for the default values.
     private var defaultSaved = false
+
+    private def saveDefaultsOnce(): Unit = {
+        if (!defaultSaved) {
+            setSettings(defaultProp)
+            defaultSaved = true
+        }
+    }
 
     // Reads the file of the properties name: None if it cannot be read (e.g. locked by another
     // process, malformed, or deleted since the menu was shown). Default may have no file yet (it
@@ -1596,6 +1607,7 @@ object Context {
 
     // readProperties, with an error shown if the file cannot be read
     private def readPropertiesOrShowError(name: String): Option[Properties.SProperties] = {
+        saveDefaultsOnce()
         val res = readProperties(name)
         if (res.isEmpty)
             Dialog.errorMessage(s"${convLang("Cannot read properties")}: $name")
@@ -1604,11 +1616,7 @@ object Context {
 
     // Selects the properties name, read in p (readProperties), and applies them
     private def selectProperties(name: String, p: Properties.SProperties): Unit = {
-        if (!defaultSaved) {
-            setSettings(defaultProp)
-            defaultSaved = true
-        }
-
+        // (the default values have been kept before p was read: see saveDefaultsOnce)
         selectedProperties = name
 
         // The keys of the previous file (Reload, switching properties) are not kept: they would be
