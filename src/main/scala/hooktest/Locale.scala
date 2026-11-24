@@ -187,6 +187,7 @@ private object LocaleData {
         "Scrolling is disabled in these programs" -> "登録したプログラムではスクロール機能が無効になります",
         "Select programs to exclude" -> "除外するプログラムの選択",
         "These files are not programs (.exe): they were not added" -> "次のファイルはプログラム (.exe) ではないため、追加しませんでした",
+        "... and {0} more" -> "... ほか {0} 件",
         "The exclusions file could not be read: changes are not saved" -> "除外リストのファイルを読み込めませんでした (変更は保存されません)",
         "The changes could not be saved to the exclusions file" -> "除外リストのファイルに保存できませんでした",
 

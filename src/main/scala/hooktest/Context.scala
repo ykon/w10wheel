@@ -1362,9 +1362,16 @@ object Context {
 
         val programs = chosen.map(f => f -> programOf(f))
         val others = programs.collect { case (f, None) => f.getAbsolutePath }
-        if (others.nonEmpty)
+        // The first ones only: the message box would be taller than the screen (e.g. all the
+        // files of a folder chosen, shown by a name typed as "*")
+        val shown = 10
+        if (others.nonEmpty) {
+            val more = others.size - shown
+            val lines = others.take(shown) ++
+                (if (more > 0) Seq(convLang("... and {0} more").replace("{0}", more.toString)) else Seq.empty)
             Dialog.showWarning(owner, convLang("These files are not programs (.exe): they were not added"),
-                               others.mkString("\n"))
+                               lines.mkString("\n"))
+        }
         programs.flatMap(_._2).distinct
     }
 
