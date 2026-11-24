@@ -103,6 +103,16 @@ object User32Ex {
     val INSTANCE = Native.load("user32", classOf[User32ExTrait])
 }
 
+object NtDllEx {
+    val INSTANCE = Native.load("ntdll", classOf[NtDllExTrait])
+}
+
+trait NtDllExTrait extends com.sun.jna.win32.StdCallLibrary {
+    // The upper case of a char as the file system of Windows compares the names of files (not as
+    // Java or .NET do: e.g. "ı" (U+0131) stays, not "I")
+    def RtlUpcaseUnicodeChar(c: Char): Char
+}
+
 trait User32ExTrait extends User32
 {
     // https://msdn.microsoft.com/library/windows/desktop/aa383751.aspx

@@ -152,18 +152,31 @@ object Properties {
     }
 
     // The lines of a text file, with what is kept when it is written again: its line break (the
-    // first one in it) and its BOM
-    private case class TextFile(lines: List[String], newline: String, bom: Boolean)
+    // first one in it), its BOM and the encoding it tells
+    private case class TextFile(lines: List[String], newline: String, bom: Boolean,
+                                charset: java.nio.charset.Charset = StandardCharsets.UTF_8)
 
     private object TextFile {
         // U+FEFF (not written as the character itself: invisible, it could be removed by mistake)
         private val BOM = 0xFEFF.toChar.toString
 
-        // UTF-8: an invalid byte (e.g. a comment in another encoding) is replaced, not an error
+        // The encodings a BOM tells, as W10Wheel.NET reads them (File.ReadAllLines): the longer
+        // BOMs first (that of UTF-32LE starts with that of UTF-16LE)
+        private val BOMS = List(
+            Array(0xEF, 0xBB, 0xBF) -> StandardCharsets.UTF_8,
+            Array(0xFF, 0xFE, 0x00, 0x00) -> java.nio.charset.Charset.forName("UTF-32LE"),
+            Array(0x00, 0x00, 0xFE, 0xFF) -> java.nio.charset.Charset.forName("UTF-32BE"),
+            Array(0xFF, 0xFE) -> StandardCharsets.UTF_16LE,
+            Array(0xFE, 0xFF) -> StandardCharsets.UTF_16BE)
+
+        // UTF-8 without a BOM: an invalid byte (e.g. a comment in another encoding) is replaced,
+        // not an error
         def read(path: Path): TextFile = {
-            val all = new String(Files.readAllBytes(path), StandardCharsets.UTF_8)
-            val bom = all.startsWith(BOM)
-            val text = if (bom) all.substring(1) else all
+            val bytes = Files.readAllBytes(path)
+            val found = BOMS.find { case (b, _) => bytes.length >= b.length && b.indices.forall(i => (bytes(i) & 0xFF) == b(i)) }
+            val bom = found.isDefined
+            val (skip, charset) = found.map { case (b, cs) => (b.length, cs) }.getOrElse((0, StandardCharsets.UTF_8))
+            val text = new String(bytes, skip, bytes.length - skip, charset)
             val newline =
                 if (text.contains("\r\n")) "\r\n"
                 else if (text.contains("\n")) "\n"
@@ -171,7 +184,7 @@ object Properties {
                 else System.lineSeparator
             // The line break at the end does not start another line
             val lines = text.split("\r\n|\n|\r", -1).toList
-            TextFile(if (lines.lastOption.contains("")) lines.init else lines, newline, bom)
+            TextFile(if (lines.lastOption.contains("")) lines.init else lines, newline, bom, charset)
         }
 
         // Written to a file next to it, then moved over it: the file is not left half written if
@@ -189,7 +202,7 @@ object Properties {
             val dir = Option(target.toAbsolutePath.getParent).getOrElse(Paths.get(USER_DIR))
             val tmp = Files.createTempFile(dir, target.getFileName.toString + "-", ".tmp")
             try {
-                Files.write(tmp, text.getBytes(StandardCharsets.UTF_8))
+                Files.write(tmp, text.getBytes(file.charset))
                 try {
                     Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
                 }

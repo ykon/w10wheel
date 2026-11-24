@@ -98,9 +98,29 @@ object Context {
         def programs = __programs
         def lookup = __lookup
 
-        // Without case, char by char (as Windows compares the names of files): not toUpperCase,
-        // which can change the length (e.g. "ß" to "SS")
-        def keyOf(path: String): String = path.map(Character.toUpperCase)
+        // The upper case of the chars as Windows gives it (RtlUpcaseUnicodeChar), asked once for
+        // each char not ASCII (0: not asked yet). Read and written by the hook thread and the
+        // Swing thread: a char is written whole, and always the same.
+        private val upcase = new Array[Char](0x10000)
+
+        private def upcaseOf(c: Char): Char = {
+            if (c < 0x80)
+                if (c >= 'a' && c <= 'z') (c - 0x20).toChar else c
+            else {
+                val u = upcase(c)
+                if (u != 0) u
+                else {
+                    val v = win32ex.NtDllEx.INSTANCE.RtlUpcaseUnicodeChar(c)
+                    upcase(c) = v
+                    v
+                }
+            }
+        }
+
+        // Without case, char by char as Windows compares the names of files (two files can be
+        // named "fıx.exe" and "fix.exe"): not Character.toUpperCase, which differs (e.g. "ı",
+        // "ſ", "µ"), nor toUpperCase, which can change the length (e.g. "ß" to "SS")
+        def keyOf(path: String): String = path.map(upcaseOf)
 
         // A full path is written as Windows gives the path of a process (e.g. "/" as "\", ".."):
         // a relative one (e.g. written in the file by hand) is kept as it is, it would be taken from
