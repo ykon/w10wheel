@@ -103,29 +103,6 @@ object User32Ex {
     val INSTANCE = Native.load("user32", classOf[User32ExTrait])
 }
 
-// The file dialog of Windows, not in jna-platform
-object Comdlg32Ex {
-    // https://learn.microsoft.com/windows/win32/api/commdlg/ns-commdlg-openfilenamew
-    val OFN_HIDEREADONLY = 0x00000004
-    val OFN_NOCHANGEDIR = 0x00000008
-    val OFN_ALLOWMULTISELECT = 0x00000200
-    val OFN_PATHMUSTEXIST = 0x00000800
-    val OFN_FILEMUSTEXIST = 0x00001000
-    val OFN_EXPLORER = 0x00080000
-    val OFN_NODEREFERENCELINKS = 0x00100000
-
-    // https://learn.microsoft.com/windows/win32/api/commdlg/nf-commdlg-commdlgextendederror
-    val FNERR_BUFFERTOOSMALL = 0x3003
-
-    val INSTANCE = Native.load("comdlg32", classOf[Comdlg32ExTrait])
-}
-
-trait Comdlg32ExTrait extends com.sun.jna.Library {
-    // False if canceled or failed (CommDlgExtendedError: 0 if canceled)
-    def GetOpenFileNameW(ofn: OPENFILENAME): Boolean
-    def CommDlgExtendedError(): Int
-}
-
 trait User32ExTrait extends User32
 {
     // https://msdn.microsoft.com/library/windows/desktop/aa383751.aspx

@@ -1317,12 +1317,56 @@ object Context {
         dialog
     }
 
+    // The program (.exe) of a file chosen: its full path (normalized, as the list keeps it), a
+    // shortcut taken for its target (through a shortcut to a shortcut). None if it is not one
+    // (e.g. a shortcut to a document or to nothing, as a Store app).
+    private def programOf(file: java.io.File): Option[String] = {
+        val fsv = javax.swing.filechooser.FileSystemView.getFileSystemView
+        def isShortcut(f: java.io.File) = f.getName.toLowerCase(java.util.Locale.ROOT).endsWith(".lnk")
+        def target(f: java.io.File, depth: Int): Option[java.io.File] = {
+            if (!isShortcut(f))
+                Some(f)
+            else if (depth == 0)
+                None
+            else {
+                // The shell only for a shortcut (not every program)
+                try Option(fsv.getLinkLocation(f)).flatMap(target(_, depth - 1))
+                catch {
+                    case e: Exception =>
+                        logger.warn(s"programOf: $f: $e")
+                        None
+                }
+            }
+        }
+        target(file, 8)
+            .filter(f => f.isFile && f.getName.toLowerCase(java.util.Locale.ROOT).endsWith(".exe"))
+            .map(_.toPath.toAbsolutePath.normalize.toString)
+    }
+
     // The programs to exclude chosen in a file dialog modal to owner (the settings dialog): their
-    // full paths (normalized, as the list keeps them), none if canceled. The dialog of Windows
-    // with the filter of programs (*.exe), as W10Wheel.NET shows it: a shortcut is taken for its
-    // target.
-    private def askExcludedPrograms(owner: java.awt.Frame): Seq[String] =
-        OpenFileDialog.show(owner, convLang("Select programs to exclude"), convLang("Programs"), "*.exe")
+    // full paths, none if canceled. The dialog of Windows (FileDialog): it has no filter of its own
+    // ("*.exe" is that of the first folder only), so the files chosen that are not programs are
+    // told and not added. A shortcut is taken for its target: the dialog does not when more than
+    // one is chosen.
+    private def askExcludedPrograms(owner: java.awt.Frame): Seq[String] = {
+        val d = new java.awt.FileDialog(owner, convLang("Select programs to exclude"), java.awt.FileDialog.LOAD)
+        val chosen = try {
+            d.setMultipleMode(true)
+            d.setFile("*.exe")
+            d.setVisible(true)
+            d.getFiles.toSeq
+        }
+        finally {
+            d.dispose()
+        }
+
+        val programs = chosen.map(f => f -> programOf(f))
+        val others = programs.collect { case (f, None) => f.getAbsolutePath }
+        if (others.nonEmpty)
+            Dialog.showWarning(owner, convLang("These files are not programs (.exe): they were not added"),
+                               others.mkString("\n"))
+        programs.flatMap(_._2).distinct
+    }
 
     // From the tray menu, on the Swing thread
     def showSettingsDialog(): Unit = {

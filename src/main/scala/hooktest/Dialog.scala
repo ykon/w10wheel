@@ -73,6 +73,11 @@ object Dialog {
         show(Some(owner), messagePane(s"$heading\n\n$msg", JOptionPane.ERROR_MESSAGE), Context.PROGRAM_NAME)
     }
 
+    // A warning of an action of the settings dialog (owner): what happened (heading) and what it
+    // happened to (text). On the Swing thread.
+    def showWarning(owner: Window, heading: String, text: String): Unit =
+        show(Some(owner), messagePane(s"$heading\n\n$text", JOptionPane.WARNING_MESSAGE), Context.PROGRAM_NAME)
+
     // The confirmation of an action that cannot be undone, modal to owner (the settings dialog): its
     // button says what it does, and Cancel is the default (Enter does not do it by mistake). On the
     // Swing thread.
