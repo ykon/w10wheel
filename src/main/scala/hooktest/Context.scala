@@ -1318,21 +1318,11 @@ object Context {
     }
 
     // The programs to exclude chosen in a file dialog modal to owner (the settings dialog): their
-    // paths, none if canceled. The dialog of Windows (FileDialog): a shortcut is taken for its
-    // target, as it dereferences the links.
-    private def askExcludedPrograms(owner: java.awt.Frame): Seq[String] = {
-        val d = new java.awt.FileDialog(owner, convLang("Select programs to exclude"), java.awt.FileDialog.LOAD)
-        try {
-            d.setMultipleMode(true)
-            // The filter of the dialog of Windows (it has no other)
-            d.setFile("*.exe")
-            d.setVisible(true)
-            d.getFiles.toSeq.filter(_.isFile).map(_.getAbsolutePath)
-        }
-        finally {
-            d.dispose()
-        }
-    }
+    // full paths (normalized, as the list keeps them), none if canceled. The dialog of Windows
+    // with the filter of programs (*.exe), as W10Wheel.NET shows it: a shortcut is taken for its
+    // target.
+    private def askExcludedPrograms(owner: java.awt.Frame): Seq[String] =
+        OpenFileDialog.show(owner, convLang("Select programs to exclude"), convLang("Programs"), "*.exe")
 
     // From the tray menu, on the Swing thread
     def showSettingsDialog(): Unit = {

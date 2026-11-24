@@ -186,6 +186,7 @@ private object LocaleData {
             "スクロール機能を無効にするプログラム (.exe) を登録します\nトリガー操作時にカーソル下にあるウィンドウで判定されます\n(UWP/ストアアプリは非対応)",
         "Scrolling is disabled in these programs" -> "登録したプログラムではスクロール機能が無効になります",
         "Select programs to exclude" -> "除外するプログラムの選択",
+        "Programs" -> "プログラム",
         "The exclusions file could not be read: changes are not saved" -> "除外リストのファイルを読み込めませんでした (変更は保存されません)",
         "The changes could not be saved to the exclusions file" -> "除外リストのファイルに保存できませんでした",
 

@@ -181,7 +181,7 @@ object Properties {
         // not replaced (an error). Where a file cannot be moved atomically (e.g. some network
         // drives), it is moved over the file as it can be.
         def write(path: Path, file: TextFile): Unit = {
-            val target = if (Files.exists(path)) path.toRealPath() else path
+            val target = if (Files.exists(path)) path.toRealPath() else linkTarget(path)
             if (Files.exists(target) && !Files.isWritable(target))
                 throw new AccessDeniedException(target.toString, null, "The file is read-only")
 
@@ -203,6 +203,22 @@ object Properties {
                 try Files.deleteIfExists(tmp)
                 catch { case e: IOException => () }
             }
+        }
+
+        // The file a symbolic link to no file points to (made there, as W10Wheel.NET writes it:
+        // the link is not replaced by the file), through the links it points to; path if it is
+        // not a link
+        private def linkTarget(path: Path): Path = {
+            var p = path
+            var n = 0
+            while (Files.isSymbolicLink(p)) {
+                n += 1
+                if (n > 40)
+                    throw new FileSystemException(path.toString, null, "Too many levels of symbolic links")
+                val to = Files.readSymbolicLink(p)
+                p = Option(p.getParent).map(_.resolve(to)).getOrElse(to)
+            }
+            p
         }
     }
 
