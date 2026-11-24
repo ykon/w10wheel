@@ -1344,10 +1344,10 @@ object Context {
     }
 
     // The programs to exclude chosen in a file dialog modal to owner (the settings dialog): their
-    // full paths, none if canceled. The dialog of Windows (FileDialog): it has no filter of its own
-    // ("*.exe" is that of the first folder only), so the files chosen that are not programs are
-    // told and not added. A shortcut is taken for its target: the dialog does not when more than
-    // one is chosen.
+    // full paths, none if canceled. The dialog of Windows (FileDialog): "*.exe" in the name shows
+    // only the programs (also in the other folders), but another name typed (e.g. "*") shows all
+    // the files, so the files chosen that are not programs are told and not added. A shortcut is
+    // taken for its target: the dialog does not when more than one is chosen.
     private def askExcludedPrograms(owner: java.awt.Frame): Seq[String] = {
         val d = new java.awt.FileDialog(owner, convLang("Select programs to exclude"), java.awt.FileDialog.LOAD)
         val chosen = try {
