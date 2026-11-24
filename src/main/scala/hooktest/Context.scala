@@ -157,6 +157,9 @@ object Context {
 
     def isExcludedProgram(path: String): Boolean = Exclusion.lookup.contains(Exclusion.keyOf(path))
 
+    // Two paths of the same program, as the list compares them (the settings dialog)
+    private def isSameProgram(a: String, b: String): Boolean = Exclusion.keyOf(a) == Exclusion.keyOf(b)
+
     def setSelectedProperties(name: String) =
         selectedProperties = name
 
@@ -1330,7 +1333,7 @@ object Context {
 
         val excluded = dialog.addPage("Excluded Programs")
         excluded.addList(() => getExcludedPrograms, items => onHook(setExcludedPrograms(items)),
-                         () => askExcludedPrograms(owner), "Add...", "Remove",
+                         () => askExcludedPrograms(owner), "Add...", "Remove", isSameProgram,
                          tip = Some("The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed\n(UWP / Store apps are not supported)"))
         excluded.addNote("Scrolling is disabled in these programs")
 

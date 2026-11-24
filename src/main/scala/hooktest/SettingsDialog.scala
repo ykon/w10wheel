@@ -307,12 +307,13 @@ final class SettingsPage private[hooktest] (conv: String => String, grid: JPanel
 
     // A list of items (e.g. the paths of the excluded programs) with Add and Remove under it. get:
     // the items; set: the items as they are to be (a change by the user). ask: the items to add
-    // (e.g. chosen in a file dialog), none if canceled; they are selected once added. Remove (or
-    // the Delete key) removes the selected items. A long item scrolls horizontally: the list keeps
-    // its width.
+    // (e.g. chosen in a file dialog), none if canceled; they are selected once added. sameItem:
+    // whether two items are the same, as set compares them (an item added that is already in is
+    // selected where it is). Remove (or the Delete key) removes the selected items. A long item
+    // scrolls horizontally: the list keeps its width.
     def addList(get: () => Seq[String], set: Seq[String] => Unit, ask: () => Seq[String],
-                addText: String, removeText: String, tip: Option[String] = None,
-                key: Option[String] = None): Unit = {
+                addText: String, removeText: String, sameItem: (String, String) => Boolean,
+                tip: Option[String] = None, key: Option[String] = None): Unit = {
         val model = new DefaultListModel[String]()
         val list = new JList[String](model)
         list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION)
@@ -365,7 +366,7 @@ final class SettingsPage private[hooktest] (conv: String => String, grid: JPanel
                 setItems(shown ++ added)
                 // The items chosen selected: the new ones, and those already in the list (where they
                 // were), which shows them
-                val indices = shown.indices.filter(i => added.exists(_.equalsIgnoreCase(shown(i)))).toArray
+                val indices = shown.indices.filter(i => added.exists(sameItem(_, shown(i)))).toArray
                 list.setSelectedIndices(indices)
                 indices.headOption.foreach(list.ensureIndexIsVisible)
                 list.requestFocusInWindow()
