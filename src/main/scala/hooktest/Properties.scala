@@ -280,7 +280,41 @@ object Properties {
         }
     }
     
-    def delete(name: String) = {        
+    def delete(name: String) = {
         Files.delete(getPath(name))
+    }
+
+    // The excluded programs of the properties of name are in a file of their own, beside theirs (as
+    // W10Wheel.NET keeps them): .W10Wheel.exclusions (Default), .W10Wheel.<name>.exclusions. Not a
+    // key of the properties: a path can have "#", which starts a comment there. Not a .txt file,
+    // which could be edited by mistake.
+    private val EXCLUSIONS_EXT = "exclusions"
+
+    def getExclusionsPath(name: String): Path = {
+        if (name == DEFAULT_DEF)
+            Paths.get(USER_DIR, s"$PROP_NAME.$EXCLUSIONS_EXT")
+        else
+            Paths.get(USER_DIR, s"$PROP_NAME.$name.$EXCLUSIONS_EXT")
+    }
+
+    // A path on each line (no comments), the spaces at the ends and the empty lines ignored (UTF-8,
+    // a BOM skipped). Not found: none. Another error (e.g. locked) is thrown.
+    def readExclusions(path: Path): Array[String] = {
+        try {
+            TextFile.read(path).lines.map(_.strip).filter(_.nonEmpty).toArray
+        }
+        catch {
+            case _: NoSuchFileException => Array.empty[String]
+        }
+    }
+
+    // Written whole (as the properties: a write that fails leaves the file as it was), or deleted
+    // when there is none (not found: the default, none). A symbolic link is emptied instead: it
+    // stays a link, as the write keeps it (the file it points to is written).
+    def writeExclusions(path: Path, paths: Array[String]): Unit = {
+        if (paths.isEmpty && !Files.isSymbolicLink(path))
+            Files.deleteIfExists(path)
+        else
+            TextFile.write(path, TextFile(paths.toList, System.lineSeparator, false))
     }
 }

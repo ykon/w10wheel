@@ -214,6 +214,35 @@ object EventHandler {
             None
     }
 
+    // The trigger pressed on the window of an excluded program (under the cursor, see
+    // Windows.isExcludedWindowAt): its down passes, and its up (checkPassedDown), as when it is not
+    // the trigger. Only where a wait would start: a scroll mode (and a wait) in progress gets the
+    // down as before (e.g. the locked scroll mode ends). Not looked up for the other button of the
+    // Left and Right triggers, which passes anyway (endNotTrigger). Nor while the keyboard trigger
+    // holds scroll mode: its wait ends it (passPressedScrollMode), as the other triggers end it on
+    // an excluded window (checkExitOtherScroll before passExcludedWindow).
+    private def passExcludedWindowLR(down: MouseEvent): Option[LRESULT] = {
+        if ((ctx.isLRTrigger || ctx.isTriggerEvent(down)) && !ctx.isPressedKeyboardScrollMode &&
+            Windows.isExcludedWindowAt(down.info.pt)) {
+            debug("pass (excluded program)", down)
+            ctx.LastFlags.setPassed(down)
+            callNextHook
+        }
+        else
+            None
+    }
+
+    // As passExcludedWindowLR for the single and drag triggers, where scroll mode would start: their
+    // up passes as the up of a down that did not start it (passNotStartedTrigger)
+    private def passExcludedWindow(down: MouseEvent): Option[LRESULT] = {
+        if (Windows.isExcludedWindowAt(down.info.pt)) {
+            debug("pass (excluded program)", down)
+            callNextHook
+        }
+        else
+            None
+    }
+
     private def passSingleEvent(me: MouseEvent): Option[LRESULT] = {
         if (me.isSingle) {
             debug("pass single event", me)
@@ -554,6 +583,9 @@ object EventHandler {
             checkExitScrollDown,
             passPressedScrollMode,
             //passSingleEvent,
+            // Only to start a wait: scroll mode is left, and a wait in progress gets the down,
+            // also on the excluded window (or the wait would resend its down after this one)
+            passExcludedWindowLR,
             checkTriggerWaitStart,
             endNotTrigger
         )
@@ -594,6 +626,8 @@ object EventHandler {
             checkExitScrollDown,
             passNotTrigger,
             checkExitOtherScroll,
+            // Also before the middle click it would send (Send MiddleClick): the button as it is
+            passExcludedWindow,
             checkKeySendMiddle,
             checkTriggerScrollStart,
             endIllegalState
@@ -628,6 +662,7 @@ object EventHandler {
             checkExitScrollDown,
             passNotDragTrigger,
             checkExitOtherScroll,
+            passExcludedWindow,
             startScrollDrag
         )
 

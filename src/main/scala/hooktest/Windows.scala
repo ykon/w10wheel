@@ -868,4 +868,73 @@ object Windows {
             logger.warn("Failed unregister RawInput: " + getLastErrorMessage)
         res
     }
+
+    // 0 if the window is gone
+    private def processIdOfWindow(hWnd: HWND): Int = {
+        val pid = new IntByReference
+        u32.GetWindowThreadProcessId(hWnd, pid)
+        pid.getValue
+    }
+
+    // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName (also a process
+    // running as administrator, or of another user, when W10Wheel is not)
+    private def getFullPathOfProcess(processId: Int): Option[String] = {
+        val hProcess = k32.OpenProcess(WinNT.PROCESS_QUERY_LIMITED_INFORMATION, false, processId)
+        if (hProcess == null)
+            None
+        else {
+            try {
+                val buffer = new Array[Char](1024)
+                val size = new IntByReference(buffer.length)
+                if (k32.QueryFullProcessImageName(hProcess, 0, buffer, size))
+                    Some(new String(buffer, 0, size.getValue))
+                else
+                    None
+            }
+            finally {
+                k32.CloseHandle(hProcess)
+            }
+        }
+    }
+
+    private def isExcludedProcess(processId: Int): Boolean =
+        getFullPathOfProcess(processId).exists(ctx.isExcludedProgram)
+
+    // Whether the window at pt (of the hook: physical coordinates, as WindowFromPoint takes them,
+    // the JVM being per-monitor DPI aware) is of an excluded program (Context.isExcludedProgram),
+    // the one the input goes to. The program of its top-level window too, if it is another: a child
+    // window can be of another process, e.g. the content of WebView2 (msedgewebview2.exe) in the
+    // window of an app. Not the UWP (Store) apps: the window found is often of
+    // ApplicationFrameHost.exe, not of the app (said as not supported; their .exe cannot be kept
+    // either: its path changes at each update). It runs in the hook, at a down of a trigger only:
+    // with no program excluded (the default), nothing is looked up.
+    def isExcludedWindowAt(pt: POINT): Boolean = {
+        if (!ctx.hasExcludedPrograms)
+            false
+        else {
+            val hWnd = u32ex.WindowFromPoint(new POINT.ByValue(pt.x, pt.y))
+            if (hWnd == null)
+                false
+            else {
+                val pid = processIdOfWindow(hWnd)
+                if (pid != 0 && isExcludedProcess(pid))
+                    true
+                else {
+                    val root = u32.GetAncestor(hWnd, WinUser.GA_ROOT)
+                    val rootPid = if (root == null || root == hWnd) pid else processIdOfWindow(root)
+                    rootPid != pid && rootPid != 0 && isExcludedProcess(rootPid)
+                }
+            }
+        }
+    }
+
+    // For the keyboard trigger: the window under the cursor, where it scrolls
+    def isExcludedWindowAtCursor: Boolean = {
+        if (!ctx.hasExcludedPrograms)
+            false
+        else {
+            val pt = new POINT
+            u32.GetCursorPos(pt) && isExcludedWindowAt(pt)
+        }
+    }
 }

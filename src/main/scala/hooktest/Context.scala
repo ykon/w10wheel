@@ -86,6 +86,57 @@ object Context {
     def isPassMode = Pass.mode
     def setPassMode(b: Boolean) = Pass.mode = b
 
+    // The programs in whose windows the triggers do nothing (in a file of their own, see
+    // applyExclusions): the full paths of their .exe in the order they were added (as the settings
+    // dialog shows them), and the same paths looked up without case (as the file system compares
+    // them). Both replaced as a whole, never changed: the hooks read the lookup as it is when they
+    // read it.
+    private object Exclusion {
+        @volatile private var __programs = Vector.empty[String]
+        @volatile private var __lookup = Set.empty[String]
+
+        def programs = __programs
+        def lookup = __lookup
+
+        // Without case, char by char (as Windows compares the names of files): not toUpperCase,
+        // which can change the length (e.g. "ß" to "SS")
+        def keyOf(path: String): String = path.map(Character.toUpperCase)
+
+        // A full path is written as Windows gives the path of a process (e.g. "/" as "\", ".."):
+        // a relative one (e.g. written in the file by hand) is kept as it is, it would be taken from
+        // the current folder. The quotes around a path are dropped (e.g. pasted from Copy as path
+        // of Explorer): no path can have one. The empty ones and those already in are dropped.
+        private def normalize(path: String): String = {
+            val p = path.strip.dropWhile(_ == '"').reverse.dropWhile(_ == '"').reverse.strip
+            try {
+                val fp = java.nio.file.Paths.get(p)
+                if (fp.isAbsolute) fp.normalize.toString else p
+            }
+            catch {
+                case _: java.nio.file.InvalidPathException => p
+            }
+        }
+
+        def setPrograms(paths: Seq[String]): Unit = {
+            val keys = scala.collection.mutable.LinkedHashMap.empty[String, String]
+            paths.map(normalize).filter(_.nonEmpty).foreach(p => keys.getOrElseUpdate(keyOf(p), p))
+            __programs = keys.values.toVector
+            __lookup = keys.keySet.toSet
+        }
+    }
+
+    def getExcludedPrograms: Vector[String] = Exclusion.programs
+
+    private def setExcludedPrograms(paths: Seq[String]): Unit = {
+        logger.debug(s"setExcludedPrograms: $paths")
+        Exclusion.setPrograms(paths)
+    }
+
+    // No program excluded (the default): nothing is looked up, the triggers work as before
+    def hasExcludedPrograms: Boolean = Exclusion.lookup.nonEmpty
+
+    def isExcludedProgram(path: String): Boolean = Exclusion.lookup.contains(Exclusion.keyOf(path))
+
     def setSelectedProperties(name: String) =
         selectedProperties = name
 
@@ -724,9 +775,12 @@ object Context {
     private def onHook[T](f: => T): T =
         HookThread.call(f)
 
-    // The properties of name, read in p, selected and applied on the hook thread
-    private def loadRead(name: String, p: Properties.SProperties): Unit =
-        onHook(selectProperties(name, p))
+    // The properties of name, read in p, selected and applied on the hook thread (their excluded
+    // programs read here first, as p)
+    private def loadRead(name: String, p: Properties.SProperties): Unit = {
+        val exclusions = readExclusions(name)
+        onHook(selectProperties(name, p, exclusions))
+    }
 
     // Reload from the settings dialog (the file read on the Swing thread, see onHook): false if it
     // could not be read (nothing changes, why is shown)
@@ -771,16 +825,42 @@ object Context {
                     try {
                         storeProperties
                         val path = Properties.getPath(name)
-                        // A copy of the file (its comments, its other keys) with the settings
-                        // running, those shown: also those not stored (e.g. a read-only file,
-                        // properties not loaded), or edited in the file and not reloaded (the file's
-                        // would be copied)
-                        if (java.nio.file.Files.exists(getSelectedPropertiesPath))
-                            Properties.copy(selectedProperties, name)
+                        // Set once this Add has made the properties file (the copy, or the first
+                        // store): not one made by another program meanwhile (the copy fails then,
+                        // it is not replaced)
+                        var made = false
+                        try {
+                            // A copy of the file (its comments, its other keys) with the settings
+                            // running, those shown: also those not stored (e.g. a read-only file,
+                            // properties not loaded), or edited in the file and not reloaded (the
+                            // file's would be copied)
+                            if (java.nio.file.Files.exists(getSelectedPropertiesPath)) {
+                                Properties.copy(selectedProperties, name)
+                                made = true
+                            }
 
-                        val current = currentSettings
-                        if (java.nio.file.Files.exists(path)) current.update(path, current.keys)
-                        else current.store(path)
+                            val current = currentSettings
+                            if (made || java.nio.file.Files.exists(path))
+                                current.update(path, current.keys)
+                            else {
+                                current.store(path)
+                                made = true
+                            }
+                            // The excluded programs running too (none: the file of earlier
+                            // properties of this name, deleted outside W10Wheel, is deleted)
+                            Properties.writeExclusions(Properties.getExclusionsPath(name), getExcludedPrograms.toArray)
+                        }
+                        catch {
+                            case e: Exception =>
+                                // Not left half made (e.g. their excluded programs could not be
+                                // written): the properties file made by this Add is deleted, they can
+                                // be added again
+                                if (made) {
+                                    try java.nio.file.Files.deleteIfExists(path)
+                                    catch { case e2: Exception => logger.warn(s"addProperties: $e2") }
+                                }
+                                throw e
+                        }
 
                         readProperties(name) match {
                             case Right(p) => loadRead(name, p); None
@@ -809,6 +889,10 @@ object Context {
                     case Right(p) =>
                         try {
                             Properties.delete(name)
+                            // Not an error if it cannot be: a list left without its properties is
+                            // replaced if properties of this name are added again (addProperties)
+                            try java.nio.file.Files.deleteIfExists(Properties.getExclusionsPath(name))
+                            catch { case e: Exception => logger.warn(s"delete exclusions: $e") }
                             loadRead(DEFAULT_DEF, p)
                             None
                         }
@@ -823,7 +907,7 @@ object Context {
 
     // The settings of the selected properties back to their default values (defaultProp), except the
     // language: written into prop (the keys that are not settings stay, e.g. the custom accel table),
-    // applied as a load does, and stored
+    // applied as a load does, and stored. No program is excluded any more.
     private def resetSettings(owner: java.awt.Window): Unit = {
         val text = s"${convLang("The language is kept.")}\n${convLang("Properties")}: ${shownPropertiesName(selectedProperties)}"
         if (Dialog.confirm(owner, convLang("Reset all the settings to their defaults?"), text,
@@ -845,6 +929,10 @@ object Context {
                 // All the settings written (not only those changed in W10Wheel: one edited in the
                 // file and not reloaded would stay), the other lines of the file kept
                 storedSettings = new Properties.SProperties
+                // No program excluded, the default: their file deleted, also if the list was empty
+                // (the file may have been made since it was read)
+                setExcludedPrograms(Seq.empty)
+                exclusionsRewrite = true
             }
             storeProperties
             refreshSettingsDialog()
@@ -908,9 +996,8 @@ object Context {
             // without them: asked as when switching.
             val unstored = storeAndCheckUnstored()
             val go = !unstored || {
-                val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
                 Dialog.confirm(owner, convLang("The changes could not be saved"),
-                               why + convLang("Restarting loses the changes that could not be saved."),
+                               whyUnstored + convLang("Restarting loses the changes that could not be saved."),
                                convLang("Restart as administrator"))
             }
 
@@ -947,9 +1034,8 @@ object Context {
         val unstored = storeAndCheckUnstored()
 
         val go = !unstored || {
-            val why = storeError.orElse(loadError).map(e => s"${messageOf(e)}\n").getOrElse("")
             Dialog.confirm(owner, convLang("The changes could not be saved"),
-                           why + convLang("Switching loses the changes that could not be saved."), convLang("Switch"))
+                           whyUnstored + convLang("Switching loses the changes that could not be saved."), convLang("Switch"))
         }
 
         if (!go)
@@ -1071,6 +1157,12 @@ object Context {
             // Before a Reload that failed: the changes made after it are not stored
             else if (storeError.isDefined)
                 Some((NoteKind.Warning, convLang("The changes could not be saved to the properties file")))
+            // The file of the excluded programs: also seen from the other pages (e.g. Reset to
+            // defaults). Before a Reload that failed too: their changes are not stored.
+            else if (!exclusionsLoaded)
+                Some((NoteKind.Warning, convLang("The exclusions file could not be read: changes are not saved")))
+            else if (exclusionsStoreError.isDefined)
+                Some((NoteKind.Warning, convLang("The changes could not be saved to the exclusions file")))
             else if (loadError.isDefined)
                 // Reload: the settings are those before, still stored
                 Some((NoteKind.Warning, convLang("The properties file could not be read")))
@@ -1216,7 +1308,30 @@ object Context {
                     "A move above this switches the direction (Switching)")
         vhAdjuster.addNote("Used when Horizontal Scroll is enabled")
 
+        val excluded = dialog.addPage("Excluded Programs")
+        excluded.addList(() => getExcludedPrograms, items => onHook(setExcludedPrograms(items)),
+                         () => askExcludedPrograms(owner), "Add...", "Remove",
+                         tip = Some("The programs (.exe) whose windows have scrolling disabled\nJudged by the window under the cursor when a trigger is pressed\n(UWP / Store apps are not supported)"))
+        excluded.addNote("Scrolling is disabled in these programs")
+
         dialog
+    }
+
+    // The programs to exclude chosen in a file dialog modal to owner (the settings dialog): their
+    // paths, none if canceled. The dialog of Windows (FileDialog): a shortcut is taken for its
+    // target, as it dereferences the links.
+    private def askExcludedPrograms(owner: java.awt.Frame): Seq[String] = {
+        val d = new java.awt.FileDialog(owner, convLang("Select programs to exclude"), java.awt.FileDialog.LOAD)
+        try {
+            d.setMultipleMode(true)
+            // The filter of the dialog of Windows (it has no other)
+            d.setFile("*.exe")
+            d.setVisible(true)
+            d.getFiles.toSeq.filter(_.isFile).map(_.getAbsolutePath)
+        }
+        finally {
+            d.dispose()
+        }
     }
 
     // From the tray menu, on the Swing thread
@@ -1435,8 +1550,108 @@ object Context {
     private def changedSettings(current: Properties.SProperties): List[String] =
         current.keys.filter(k => current.getOption(k) != storedSettings.getOption(k))
 
-    private def hasUnstoredChanges: Boolean =
+    private def hasUnstoredSettings: Boolean =
         changedSettings(currentSettings).nonEmpty
+
+    // The settings, or the excluded programs
+    private def hasUnstoredChanges: Boolean =
+        hasUnstoredSettings || exclusionsUnstored
+
+    // Why the changes left are not stored (a line, empty if not known): of the settings first if
+    // some are left, else of the excluded programs (an error of the properties file may be older,
+    // e.g. a Reload that failed)
+    private def whyUnstored: String = {
+        val ofSettings = storeError.orElse(loadError)
+        val ofExclusions = exclusionsStoreError.orElse(exclusionsLoadError)
+        val why = if (hasUnstoredSettings) ofSettings.orElse(ofExclusions) else ofExclusions.orElse(ofSettings)
+        why.map(e => s"${messageOf(e)}\n").getOrElse("")
+    }
+
+    // The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
+    // from it, or last stored: written when they differ (storeExclusions). If the file could not be
+    // read (exclusionsLoaded false, e.g. locked by another program): none (kept at a Reload, see
+    // applyExclusions), and their changes are not stored (they would replace the file), which the
+    // settings dialog tells. Under the lock of the stores (storeLock), as the settings.
+    @volatile private var exclusionsLoaded = false
+    @volatile private var storedExclusions = Vector.empty[String]
+    @volatile private var exclusionsLoadError: Option[Throwable] = None
+    @volatile private var exclusionsStoreError: Option[Throwable] = None
+    // Set by Reset to defaults: the file is written (deleted) even if the list is as it was read, as
+    // the properties file is: it may have been edited or made outside W10Wheel since. Reset when it
+    // has been, or when other properties are loaded.
+    @volatile private var exclusionsRewrite = false
+
+    // The properties whose excluded programs run (applyExclusions), None before the first load
+    @volatile private var exclusionsName: Option[String] = None
+
+    // The excluded programs of the properties name read (on the thread that reads their properties
+    // file, see onHook): why if they cannot be
+    private def readExclusions(name: String): Either[Throwable, Array[String]] = {
+        try {
+            Right(Properties.readExclusions(Properties.getExclusionsPath(name)))
+        }
+        catch {
+            case e: Exception =>
+                logger.warn(s"Cannot read the exclusions of $name: $e")
+                Left(e)
+        }
+    }
+
+    // With the properties of name (selectProperties: they are loaded), read (readExclusions). If the
+    // file could not be read (e.g. being written by an editor, or scanned), at a Reload (the same
+    // properties): the list running is kept, as Reload keeps the settings when the properties file
+    // cannot be read (they were excluded until then), and its changes are not stored until the file
+    // is read again (as stored: the same). Else none (startup, a switch: those running are of other
+    // properties).
+    private def applyExclusions(name: String, read: Either[Throwable, Array[String]]): Unit = {
+        read match {
+            case Right(paths) =>
+                exclusionsStoreError = None
+                exclusionsRewrite = false
+                setExcludedPrograms(paths.toSeq)
+                exclusionsLoaded = true
+                exclusionsLoadError = None
+                // As they run (setExcludedPrograms drops the duplicates): not written again until
+                // changed
+                storedExclusions = getExcludedPrograms
+            case Left(e) =>
+                exclusionsLoaded = false
+                exclusionsLoadError = Some(e)
+                if (!exclusionsName.contains(name)) {
+                    exclusionsStoreError = None
+                    exclusionsRewrite = false
+                    setExcludedPrograms(Seq.empty)
+                    storedExclusions = Vector.empty
+                }
+        }
+        exclusionsName = Some(name)
+    }
+
+    // The changes of the excluded programs are not stored yet (or could not be)
+    private def exclusionsUnstored: Boolean =
+        exclusionsRewrite || getExcludedPrograms != storedExclusions
+
+    // With the settings (storeProperties), for the properties of name: only if they have been loaded
+    // and have changed. The whole file written, or deleted if there is none.
+    private def storeExclusions(name: String): Unit = {
+        val current = getExcludedPrograms
+        if (exclusionsLoaded && exclusionsUnstored) {
+            try {
+                Properties.writeExclusions(Properties.getExclusionsPath(name), current.toArray)
+                storedExclusions = current
+                exclusionsRewrite = false
+                exclusionsStoreError = None
+            }
+            catch {
+                case e: Exception =>
+                    exclusionsStoreError = Some(e)
+                    logger.warn(s"storeExclusions: $e")
+            }
+        }
+        else if (exclusionsLoaded)
+            // As stored (e.g. a change that could not be stored, undone): nothing is left not stored
+            exclusionsStoreError = None
+    }
 
     // Before leaving the selected properties (a switch, the restart as administrator), from the
     // settings dialog: stores the settings, then tells whether some are left not stored. Under one
@@ -1506,7 +1721,7 @@ object Context {
                 refreshSettingsLater()
                 false
             case Some(p) =>
-                selectProperties(name, p)
+                selectProperties(name, p, readExclusions(name))
                 true
         }
     }
@@ -1523,10 +1738,12 @@ object Context {
         }
     }
 
-    // Selects the properties name, read in p (readProperties), and applies them
+    // Selects the properties name, read in p (readProperties), and applies them, with their excluded
+    // programs read (readExclusions, see applyExclusions)
     // Under the lock of the stores: a store on the Swing thread (the settings dialog) does not write
     // the settings of other properties, or a half selected state
-    private def selectProperties(name: String, p: Properties.SProperties): Unit = storeLock.synchronized {
+    private def selectProperties(name: String, p: Properties.SProperties,
+                                 exclusions: Either[Throwable, Array[String]]): Unit = storeLock.synchronized {
         // (the default values have been kept before p was read: see saveDefaultsOnce)
         selectedProperties = name
 
@@ -1544,6 +1761,7 @@ object Context {
             case e: Exception => logger.warn(s"load: ${e.toString}")
         }
         storedSettings = currentSettings
+        applyExclusions(name, exclusions)
 
         refreshSettingsDialog()
         // The tip of the tray icon has the name of the properties
@@ -1682,7 +1900,10 @@ object Context {
         // first store). Other properties not found have been renamed or deleted outside W10Wheel
         // since they were loaded: not written again (they would come back under the old name); if
         // settings have changed, they are not stored, which is told. Not stored if the properties
-        // could not be loaded (the settings would be those of other properties, or defaults).
+        // could not be loaded (the settings would be those of other properties, or defaults). The
+        // excluded programs are stored too, in their file (storeExclusions), whether the settings
+        // could be written or not; not for other properties whose file is not found (their list
+        // would remain without them).
         try {
             if (!loaded)
                 logger.debug("Not loaded properties")
@@ -1693,9 +1914,18 @@ object Context {
                 val changed = changedSettings(current)
                 val exists = java.nio.file.Files.exists(path)
 
+                if (exists || name == DEFAULT_DEF)
+                    storeExclusions(name)
+
                 if (!exists && name != DEFAULT_DEF) {
+                    def notFound() =
+                        new NoSuchFileException(path.toString, null, s"${convLang("Properties does not exist")}: $name")
+                    // The excluded programs changed are not stored either (not for these
+                    // properties): told as their error, also if only they have changed (none if
+                    // they are as stored)
+                    exclusionsStoreError = if (exclusionsUnstored) Some(notFound()) else None
                     if (changed.nonEmpty)
-                        throw new NoSuchFileException(path.toString, null, s"${convLang("Properties does not exist")}: $name")
+                        throw notFound()
                     logger.debug("Properties file not found, not changed")
                 }
                 else if (!exists) {

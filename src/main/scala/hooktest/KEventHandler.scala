@@ -177,11 +177,26 @@ object KEventHandler {
             None
     }
 
+    // The trigger key pressed with the cursor on the window of an excluded program
+    // (Windows.isExcludedWindowAtCursor): its down passes, and its repeats and its up (keyDown,
+    // keyUp), as a key that is not the trigger. Not the last event: its next down would be taken for
+    // a repeat (checkSameLastEvent), and suppressed.
+    private def passExcludedWindow(ke: KeyboardEvent): Option[LRESULT] = {
+        if (Windows.isExcludedWindowAtCursor) {
+            debug("pass (excluded program)", ke)
+            lastEvent = KNonEvent(null)
+            endPassDown(ke)
+        }
+        else
+            None
+    }
+
     private def singleDown(ke: KeyboardEvent): LRESULT = {
         val cs: Checkers = List(
                 checkSameLastEvent,
                 checkExitScrollDown,
                 checkExitOtherScroll,
+                passExcludedWindow,
                 checkTriggerScrollStart,
                 endIllegalState
         )

@@ -113,6 +113,9 @@ trait User32ExTrait extends User32
     // For the process (all its windows, also those of AWT)
     def ChangeWindowMessageFilter(msg: Int, flag: Int): Boolean
 
+    // Not in User32 of jna-platform. The point by value, as the API takes it.
+    def WindowFromPoint(pt: POINT.ByValue): HWND
+
     def RegisterRawInputDevices(pRawInputDevices: Array[RAWINPUTDEVICE], uiNumDevices: Int, cbSize: Int): Boolean
     def GetRawInputData(hRawInput: Pointer, uiCommand: Int, pData: Pointer, pcbSize: ByReference, cbSizeHeader: Int): Int
 }

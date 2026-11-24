@@ -23,7 +23,8 @@ If you downloaded it from the Releases page above, click "More info" and then "R
 Right-click the tray icon and choose Settings... to open the settings dialog: a change is applied and saved at once.  
 Double-click the tray icon (or choose Pause) to pause W10Wheel. The dialog and the menu follow the light or dark mode of Windows apps.  
 Not running as administrator, W10Wheel does not work in the windows of programs that run as administrator: it asks at startup to restart as administrator (also in the settings dialog, General).  
-Properties file is stored in the user directory.
+Properties file is stored in the user directory.  
+Scrolling can be disabled in the windows of chosen programs (.exe) in the settings dialog (Excluded Programs), as in W10Wheel.NET: the window under the cursor is checked when a trigger is pressed, and the buttons and keys work as usual there. The list is kept per properties in `.W10Wheel.exclusions` (Default) or `.W10Wheel.<name>.exclusions`, one full path per line. UWP / Store apps are not supported.
 
 The default trigger is RightDragTrigger: hold the right button and move to scroll, release it without moving for a right click. Change it in the settings dialog (Trigger).
 

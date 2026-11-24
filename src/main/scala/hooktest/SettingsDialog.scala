@@ -305,6 +305,98 @@ final class SettingsPage private[hooktest] (conv: String => String, grid: JPanel
         addRow(Seq((l, 1), (cb, 2)))
     }
 
+    // A list of items (e.g. the paths of the excluded programs) with Add and Remove under it. get:
+    // the items; set: the items as they are to be (a change by the user). ask: the items to add
+    // (e.g. chosen in a file dialog), none if canceled; they are selected once added. Remove (or
+    // the Delete key) removes the selected items. A long item scrolls horizontally: the list keeps
+    // its width.
+    def addList(get: () => Seq[String], set: Seq[String] => Unit, ask: () => Seq[String],
+                addText: String, removeText: String, tip: Option[String] = None,
+                key: Option[String] = None): Unit = {
+        val model = new DefaultListModel[String]()
+        val list = new JList[String](model)
+        list.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION)
+        val scroll = new JScrollPane(list, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED,
+                                     ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED)
+        scroll.setPreferredSize(new Dimension(UIScale.scale(380), UIScale.scale(150)))
+        // The items shown (set by refresh)
+        var shown = Seq.empty[String]
+
+        val add = new JButton()
+        // Nothing selected: also when there is no item
+        val remove = new JButton()
+        remove.setEnabled(false)
+        val buttons = new JPanel()
+        buttons.setLayout(new BoxLayout(buttons, BoxLayout.X_AXIS))
+        buttons.add(add)
+        buttons.add(Box.createHorizontalStrut(UIScale.scale(6)))
+        buttons.add(remove)
+
+        def updateRemove(): Unit = remove.setEnabled(!list.isSelectionEmpty)
+        def show(items: Seq[String]): Unit = {
+            model.clear()
+            items.foreach(model.addElement)
+            shown = items
+            updateRemove()
+        }
+
+        list.addListSelectionListener(_ => updateRemove())
+        // The change shows the items again (changed refreshes the dialog)
+        def setItems(items: Seq[String]): Unit = onChange(() => set(items))
+        def removeSelected(): Unit = {
+            val selected = list.getSelectedIndices.toSet
+            if (selected.nonEmpty) {
+                val index = selected.min
+                setItems(shown.zipWithIndex.collect { case (item, i) if !selected.contains(i) => item })
+                // The item after the removed ones selected, as Explorer does: Delete again goes on
+                if (model.size > 0) {
+                    val i = math.min(index, model.size - 1)
+                    list.setSelectedIndex(i)
+                    list.ensureIndexIsVisible(i)
+                }
+            }
+        }
+
+        add.addActionListener(_ => {
+            // A number waiting to be stored first, as the buttons of the dialog do
+            beforeAction()
+            val added = ask()
+            if (added.nonEmpty) {
+                setItems(shown ++ added)
+                // The items chosen selected: the new ones, and those already in the list (where they
+                // were), which shows them
+                val indices = shown.indices.filter(i => added.exists(_.equalsIgnoreCase(shown(i)))).toArray
+                list.setSelectedIndices(indices)
+                indices.headOption.foreach(list.ensureIndexIsVisible)
+                list.requestFocusInWindow()
+            }
+        })
+        remove.addActionListener(_ => {
+            beforeAction()
+            removeSelected()
+            list.requestFocusInWindow()
+        })
+        list.addKeyListener(new java.awt.event.KeyAdapter {
+            override def keyPressed(e: java.awt.event.KeyEvent): Unit = {
+                if (e.getKeyCode == java.awt.event.KeyEvent.VK_DELETE) {
+                    beforeAction()
+                    removeSelected()
+                    e.consume()
+                }
+            }
+        })
+        register(Binding(
+            // Only if they have changed: the selection is kept
+            () => { val items = get(); if (items != shown) show(items) },
+            () => {
+                add.setText(conv(addText))
+                remove.setText(conv(removeText))
+            }))
+        tipOn(Seq(list), tip, key)
+        addRow(Seq((scroll, 3)))
+        addRow(Seq((buttons, 3)))
+    }
+
     // A group of its own: the other radio buttons of the page are not unchecked. enabled: as addCheck.
     def addRadioButtons(items: Seq[(String, String)], isCurrent: String => Boolean, set: String => Unit,
                         enabled: Option[() => Boolean] = None, tip: Option[String] = None,
