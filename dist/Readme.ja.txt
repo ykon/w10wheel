@@ -338,8 +338,8 @@ URL:
         horizontalScroll: bool (default: true)
                 水平スクロール
                 使わない人は無効にしてください。
-        horizontalThreshold: 0-500 (default: 50)
-                水辺スクロールの閾値
+        horizontalThreshold: 0-500 (default: 75)
+                水平スクロールの閾値
                 この値をあまり小さくすると垂直(通常)スクロールが、使いづらくなります。
         reverseScroll: bool (default: false)
                 スクロールの方向を逆にする (反転する)
@@ -381,7 +381,7 @@ URL:
                 折り返しの反応を速くするか
                 移動量に関係なくホイールを送ります。
                 
-        accelTable: bool (default: false) # AccelTable
+        accelTable: bool (default: true) # AccelTable
                 AccelTableを有効にするか
         customAccelTable: bool (default: false) # AccelTable
                 CustomTableを有効にするか
