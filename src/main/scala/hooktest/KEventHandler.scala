@@ -320,43 +320,46 @@ object KEventHandler {
         }
     }
 
-    // The keyboard hook is installed (again, on every load). The scroll mode the trigger key started
-    // would not end (its up may have been missed), and its next down would be taken for a repeat:
-    // end it and forget the last event. The passed keys are kept until their up (passing it is
-    // safe).
-    // - The old hook was still installed (removed just before, no key missed): the keys whose down
-    //   was suppressed, the trigger key pressed included, are suppressed for their up alone (as
-    //   after initState), and those already are kept: the up of a key still pressed would pass
-    //   alone after a second Reload. The next press of a key whose up was missed works.
-    // - Windows had removed it (oldHookLost, e.g. for a timeout): what was recorded of the presses
-    //   before (the last event, the suppressed keys, those suppressed for their up alone) is
-    //   forgotten. A key may have been released and pressed again meanwhile, its down reaching
-    //   the application: its up must pass, or the key is left pressed there. (A key held all
-    //   along has its up passed alone: not as bad.) Only the old records are forgotten: the
-    //   events of the key after are handled as any, and a repeat cannot be told from a new press
-    //   (KBDLLHOOKSTRUCT has no flag for it). So the trigger key pressed again meanwhile and
-    //   still held starts scroll mode with its next repeat, and its up is suppressed then.
-    // (They are all forgotten too when the hook is turned off: changeTrigger, LastFlags.resetKeys.)
-    def hookInstalled(oldHookLost: Boolean): Unit = {
-        if (oldHookLost)
-            ctx.LastFlags.forgetSuppressedKeys
-        else {
-            // The trigger key pressed (its down suppressed, as the scroll it started): suppress its
-            // up alone, or it would pass. Its next down is taken for a new press (a repeat cannot
-            // be told from it), the repeats of a key still pressed start scroll mode again.
-            lastEvent match {
-                case KeyDown(_) => ctx.LastFlags.setSuppressedKey(lastEvent.vkCode)
-                case _ => ()
-            }
-
-            ctx.LastFlags.suppressedKeysToLoneUp
-        }
-
-        lastEvent = KNonEvent(null)
-
-        if (ctx.isKeyboardScrollMode) {
-            logger.debug("hookInstalled: exit keyboard scroll mode")
-            ctx.exitScrollMode
+    // The trigger key, if it is down now (GetAsyncKeyState), is taken as passed: its down reached
+    // the application with no hook to see it, so its repeats and its up pass (they would start
+    // scroll mode, and the up of a down that reached the application be suppressed, the key left
+    // pressed there), and its next press is the trigger. Not down also when the state cannot be
+    // read: a key taken as up is a new press. Not the key that does not repeat (Pause): its down is
+    // always a new press (LastFlags.newKeyDown). The other keys pass anyway.
+    private def passHeldTriggerKey(caller: String): Unit = {
+        val vk = ctx.getTargetVKCode
+        if (vk != 0 && !Keyboard.isNoRepeatKey(vk) && Windows.isKeyDown(vk)) {
+            logger.debug(s"$caller: the trigger key down, taken as passed: $vk")
+            ctx.LastFlags.setPassedKey(vk)
         }
     }
+
+    // The keyboard hook has been replaced (on every load, after a resume or an unlock), and Windows
+    // had removed the old one (e.g. for a timeout): keys may have been released, and pressed again,
+    // with no hook to see it (the new down reached the application). So nothing of before is kept:
+    // the scroll mode of the trigger key (which would not end) is ended, and all the keys' records
+    // are forgotten, also those of the passed keys (one passed over an excluded program and released
+    // meanwhile would pass its next press). (A key held all along whose down was suppressed has its
+    // up passed alone: not as bad as a key left pressed in the application.) The trigger key down
+    // now passes until its up (passHeldTriggerKey).
+    // A hook replaced while the old one was still installed missed nothing: this is not called then
+    // (Context.setKeyboardHookOf).
+    def hookLost(): Unit = {
+        if (ctx.isKeyboardScrollMode) {
+            logger.debug("hookLost: exit keyboard scroll mode")
+            ctx.exitScrollMode
+        }
+
+        ctx.LastFlags.resetKeys
+        lastEvent = KNonEvent(null)
+        passHeldTriggerKey("hookLost")
+    }
+
+    // The keyboard hook has been installed where there was none (at startup, at the end of a pause,
+    // or turned on): the records of the keys were reset when it was removed (changeTrigger), and the
+    // keys pressed meanwhile reached the application. The trigger key held now passes until its up
+    // (passHeldTriggerKey): its repeats would start scroll mode, and its up be suppressed, the key
+    // left pressed in the application.
+    def hookInstalled(): Unit =
+        passHeldTriggerKey("hookInstalled")
 }

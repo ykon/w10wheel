@@ -72,7 +72,8 @@ object Windows {
         false
     }
 
-    // The window that receives RawInput (WM_INPUT while scrolling) and the end of the session. On
+    // The window that receives RawInput (WM_INPUT while scrolling), the end of the session, and the
+    // suspend and resume, the lock and unlock (SessionEvents). On
     // the hook thread (as in the SWT version and W10Wheel.NET): WM_INPUT is handled between the hook
     // procedures, never while one changes the state of scroll mode (e.g. the scroll ended: no wheel
     // sent nor cursor changed after it). (The mode of the apps is watched in the registry: Theme.)
@@ -90,6 +91,9 @@ object Windows {
                     if (wParam.intValue != 0)
                         W10Wheel.procExit
                     return new LRESULT(0)
+                // The suspend and resume, the lock and unlock (see SessionEvents.procMessage)
+                case WM_POWERBROADCAST | WM_WTSSESSION_CHANGE =>
+                    SessionEvents.procMessage(uMsg, wParam.intValue)
                 case _ => {}
             }
 
@@ -103,8 +107,11 @@ object Windows {
     private val TaskbarCreated = u32.RegisterWindowMessage("TaskbarCreated")
 
     @volatile private var messageHwnd: HWND = null
+    // null if it could not be made
+    def getMessageWindow: HWND = messageHwnd
 
-    // A top-level window (not message-only): WM_ENDSESSION is sent to the top-level windows only.
+    // A top-level window (not message-only): WM_ENDSESSION, WM_POWERBROADCAST and
+    // WM_WTSSESSION_CHANGE are sent to the top-level windows only.
     // Made on the hook thread before the hooks (W10Wheel.init): its messages are dispatched by the
     // loop of that thread (HookThread).
     //
@@ -303,6 +310,23 @@ object Windows {
         }
         else
             false
+    }
+
+    // The buttons' ups may have been missed (no hook saw them; the physical up reached the
+    // application then): the session was locked or the system suspended (Context.inputLost), or
+    // Windows had removed the mouse hook. The suppressed downs are forgotten, so that the up of a
+    // press made meanwhile (which reached the application too) is not taken for an up without its
+    // down (dropLoneUp). A down resent alone still queued for a press whose up has not been resent
+    // (releaseQueuedId) is dropped when it comes (as after a passed up, dropResent), or it would
+    // reach the application alone and the button stay pressed (e.g. the LR trigger's wait timed
+    // out, then the up missed); one whose up is queued passes with it (the click is whole). The
+    // press IDs are kept (resent events in flight are still told). On the hook thread.
+    def forgetPresses(): Unit = {
+        for (i <- downSuppressed.indices) {
+            downSuppressed(i) = false
+            if (releaseQueuedId(i) != pressId(i))
+                upPassed(i) = true
+        }
     }
 
     // dropLoneUp for a left or right up (on the hook thread)
@@ -798,6 +822,8 @@ object Windows {
     def getLeftState = getAsyncKeyState(VK_LBUTTON)
     def getRightState = getAsyncKeyState(VK_RBUTTON)
     def getEscState = getAsyncKeyState(VK_ESCAPE)
+    // Whether the key is down now (the state of the keyboard, not of the messages taken so far)
+    def isKeyDown(vk: Int) = getAsyncKeyState(vk)
 
     sealed trait Priority {
         def name = this.getClass.getSimpleName

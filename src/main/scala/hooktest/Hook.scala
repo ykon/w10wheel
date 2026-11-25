@@ -149,28 +149,10 @@ object Hook {
         // ending it). They do not change the flags of the physical keys either.
         else if (isInjectedKey(info))
             callNextHook()
-        else if (ctx.isPassMode) {
-            // The keys pressed in Pass Mode pass: so do their repeats and up after it is turned
-            // off, even if they have become the trigger (see KEventHandler.keyDown). The up alone
-            // of a key whose down was suppressed before Pass Mode is suppressed (LastFlags.init),
-            // as the hook does for the buttons (Windows.dropLoneUp).
-            val vk = info.vkCode
-            wParam.intValue match {
-                case WM_KEYDOWN | WM_SYSKEYDOWN =>
-                    ctx.LastFlags.newKeyDown(vk)
-                    ctx.LastFlags.resetLoneUpKey(vk)
-                    ctx.LastFlags.setPassedKey(vk)
-                    callNextHook()
-                case WM_KEYUP | WM_SYSKEYUP if ctx.LastFlags.getAndReset_LoneUpKey(vk) =>
-                    logger.debug(s"Pass Mode: suppress the up alone of a suppressed down: $vk")
-                    new LRESULT(1)
-                case WM_KEYUP | WM_SYSKEYUP =>
-                    ctx.LastFlags.getAndReset_PassedKey(vk)
-                    callNextHook()
-                case _ =>
-                    callNextHook()
-            }
-        }
+        // The keyboard hook is removed in Pass Mode (Context.setKeyboardHookOf), on this thread at
+        // once: no key comes here then. Passed, in case one does.
+        else if (ctx.isPassMode)
+            callNextHook()
         else {
             wParam.intValue match {
                 case WM_KEYDOWN | WM_SYSKEYDOWN  => keh.keyDown(info)
@@ -210,33 +192,65 @@ object Hook {
     private def getHookError(hhk: HHOOK): Option[String] =
         if (hhk == null) Some(Windows.getLastErrorMessage) else None
 
-    // None if installed, else the error message
+    // The hooks have been removed for the exit (unhook): not installed again after it (e.g. after a
+    // resume, by SessionEvents, or at the end of a pause, if the session ended meanwhile: the loop
+    // goes on after WM_ENDSESSION). The hooks are installed and removed on the hook thread only.
+    @volatile private var closed = false
+    def isClosed: Boolean = closed
+
+    // None if installed, else the error message. At startup (W10Wheel.init).
     def setMouseHook: Option[String] = {
-        val hhk = Windows.setHook(mouseProc)
-        val err = getHookError(hhk)
-        mouseHhk = hhk
-        err
+        if (closed)
+            None
+        else {
+            val hhk = Windows.setHook(mouseProc)
+            val err = getHookError(hhk)
+            mouseHhk = hhk
+            err
+        }
     }
 
-    // Whether the keyboard hook removed by the last install had been removed by Windows already
-    // (UnhookWindowsHookEx failed): the keys may have been pressed and released meanwhile, with no
-    // hook to see them (see KEventHandler.hookInstalled). Set by setKeyboardHook.
-    @volatile private var oldKeyboardHookLost = false
-    def isOldKeyboardHookLost: Boolean = oldKeyboardHookLost
+    // Installs the mouse hook again, to be first in the chain again (the newest hook is called
+    // first): before the hooks installed after it (e.g. mouse software that installs its hook again
+    // after a resume, then sees the buttons first and passes on only those it injects, which W10Wheel
+    // ignores). The new hook is installed before the old one is removed (kept if that fails, None):
+    // no event is handled in between, as the hooks are called on this thread only when it takes its
+    // messages. Some(true): Windows had removed the old one already (e.g. for a timeout;
+    // UnhookWindowsHookEx failed), so events may have been missed before.
+    def reinstallMouseHook: Option[Boolean] = {
+        val old = mouseHhk
+        if (closed || old == null)
+            None
+        else {
+            val hhk = Windows.setHook(mouseProc)
+            if (hhk == null) {
+                logger.warn(s"reinstallMouseHook: ${Windows.getLastErrorMessage}")
+                None
+            }
+            else {
+                mouseHhk = hhk
+                Some(!Windows.unhook(old))
+            }
+        }
+    }
 
-    // None if installed, else the error message
-    def setKeyboardHook: Option[String] = {
-        // Called on every properties load (Reload, switching properties) when the keyboard hook is
-        // on. Remove the previous hook first: installing again would leave it installed
-        // (unhookKeyboard only removes the last one). Installing anew also recovers a hook that
-        // Windows removed silently because of a timeout (UnhookWindowsHookEx then just fails).
-        val old = keyboardHhk
-        oldKeyboardHookLost = old != null && !Windows.unhook(old)
-        keyboardHhk = null
-        val hhk = Windows.setHook(keyboardProc)
-        val err = getHookError(hhk)
-        keyboardHhk = hhk
-        err
+    // What setOrUnsetKeyboardHook did
+    sealed trait KeyboardHookResult
+    object KeyboardHookResult {
+        // Nothing changed, also when a replacement could not be installed (the old hook stays)
+        case object Unchanged extends KeyboardHookResult
+        // Installed where there was none
+        case object Installed extends KeyboardHookResult
+        // Replaced by a new one, installed before the old one was removed: no event was missed.
+        // oldHookLost: Windows had removed the old one already (e.g. for a timeout; its
+        // UnhookWindowsHookEx failed), so keys may have been pressed and released before with no
+        // hook to see them (see KEventHandler.hookLost).
+        case class Replaced(oldHookLost: Boolean) extends KeyboardHookResult
+        // Removed: no keyboard events are seen any more
+        case object Removed extends KeyboardHookResult
+        // Could not be installed where there was none (the error message, shown by Context,
+        // translated)
+        case class Failed(err: String) extends KeyboardHookResult
     }
 
     def unhookMouse: Unit = {
@@ -253,17 +267,40 @@ object Hook {
         }
     }
 
-    // None if done, else the error message of the install (shown by Context, translated)
-    def setOrUnsetKeyboardHook(b: Boolean): Option[String] = {
-        if (b)
-            setKeyboardHook
-        else {
-            unhookKeyboard
-            None
+    // Installs (b) or removes the keyboard hook. Installed, it is replaced by a new one, first in
+    // the chain: on every properties load (Reload, switching properties), after a resume or an
+    // unlock (Context.reinstallHooks). This also recovers a hook that Windows removed silently
+    // because of a timeout. As the mouse hook (reinstallMouseHook): the new one is installed before
+    // the old one is removed, with no event handled in between, and the old one stays if that fails.
+    def setOrUnsetKeyboardHook(b: Boolean): KeyboardHookResult = {
+        import KeyboardHookResult._
+        logger.debug(s"setOrUnsetKeyboardHook: $b")
+        val old = keyboardHhk
+        // Not installed again after the hooks have been removed for the exit (as reinstallMouseHook)
+        if (b && closed)
+            Unchanged
+        else if (b) {
+            val hhk = Windows.setHook(keyboardProc)
+            getHookError(hhk) match {
+                case Some(err) if old != null =>
+                    logger.warn(s"setOrUnsetKeyboardHook: not replaced: $err")
+                    Unchanged
+                case Some(err) => Failed(err)
+                case None =>
+                    keyboardHhk = hhk
+                    if (old == null) Installed else Replaced(!Windows.unhook(old))
+            }
         }
+        else if (old != null) {
+            unhookKeyboard
+            Removed
+        }
+        else
+            Unchanged
     }
 
     def unhook: Unit = {
+        closed = true
         unhookMouse
         unhookKeyboard
     }

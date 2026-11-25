@@ -13,7 +13,8 @@ import com.sun.jna.platform.win32.WinUser.MSG
 
 // The thread of the low-level hooks: the main thread (as in W10Wheel 0.6 and before, with AWT and
 // Swing). It installs the hooks and runs the Win32 message loop in which Windows calls them, and
-// that of the message window (Windows.createMessageWindow: RawInput, the end of the session).
+// that of the message window (Windows.createMessageWindow: RawInput, the end of the session, the
+// resume and the unlock: SessionEvents).
 //
 // The settings and the state of the event handlers are changed on this thread only (post, call):
 // the hook procedures read and change them without locks, as they did when the menu ran on the

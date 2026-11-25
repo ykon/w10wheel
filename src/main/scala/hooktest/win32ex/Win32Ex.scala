@@ -85,6 +85,9 @@ object User32Ex {
 
     val WM_QUERYENDSESSION = 0x0011
     val WM_ENDSESSION = 0x0016
+    // https://learn.microsoft.com/windows/win32/termserv/wm-wtssession-change (WTS_SESSION_LOCK,
+    // WTS_SESSION_UNLOCK: Wtsapi32)
+    val WM_WTSSESSION_CHANGE = 0x02B1
     val WM_INPUT = 0x00ff
     val RIM_INPUT = 0
     val RIM_INPUTSINK = 1
@@ -128,4 +131,9 @@ trait User32ExTrait extends User32
 
     def RegisterRawInputDevices(pRawInputDevices: Array[RAWINPUTDEVICE], uiNumDevices: Int, cbSize: Int): Boolean
     def GetRawInputData(hRawInput: Pointer, uiCommand: Int, pData: Pointer, pcbSize: ByReference, cbSizeHeader: Int): Int
+
+    // https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-registersuspendresumenotification
+    // (HPOWERNOTIFY: null if it failed). Not in User32 of jna-platform.
+    def RegisterSuspendResumeNotification(hRecipient: HWND, flags: Int): Pointer
+    def UnregisterSuspendResumeNotification(handle: Pointer): Boolean
 }

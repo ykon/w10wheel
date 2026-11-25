@@ -188,6 +188,8 @@ object W10Wheel {
         }
 
         logger.debug("Mouse hook installed")
+        // The hooks are installed again after a resume or an unlock (see Context.reinstallHooks)
+        SessionEvents.start()
 
         // The UI runs on the Swing thread from now on
         javax.swing.SwingUtilities.invokeLater(() => {
@@ -212,6 +214,7 @@ object W10Wheel {
 
         HookThread.run(() => init())
         logger.debug("Exit message loop")
+        SessionEvents.stop()
 
         // A number being typed in the settings dialog is set, and the icon removed from the tray
         // (it would remain after the exit). The model is changed on this thread from now on

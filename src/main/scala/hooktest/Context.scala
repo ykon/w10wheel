@@ -76,6 +76,8 @@ object Context {
 
             // The icon and the menu of the tray
             Tray.update()
+            // The hooks follow it
+            passModeSet(b)
         }
 
         def toggleMode: Unit = {
@@ -497,21 +499,25 @@ object Context {
 
         private def isKey(vk: Int) = vk >= 0 && vk < kdS.length
 
-        // Not the keys passed (kdP), whose ups pass (also in Pass Mode, see Hook) and reset them;
-        // reset, a key still pressed would lose it (e.g. pressed in Pass Mode: its repeats would
-        // start scroll mode if it is the trigger, and its up would be suppressed). Whether a key
+        // Not the keys passed (kdP), whose ups pass and reset them; reset, a key still pressed
+        // would lose it (e.g. pressed over an excluded program: its repeats would start scroll mode
+        // if it is the trigger, and its up would be suppressed). Whether a key
         // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
         // suppressed is not pressed for it. A key whose up was missed passes its next down once.
         // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
         // suppressed again: only their up alone is (kdL), as the hook does for the buttons
         // (Windows.dropLoneUp).
         def init: Unit = {
-            Array(ldR, rdR, ldP, rdP, ldS, rdS, mdS, x1S, x2S).foreach(f => f.set(false))
+            initButtons
             suppressedKeysToLoneUp
         }
 
+        // The flags of the buttons (resent, passed, suppressed): see init, and mouseHookLost
+        def initButtons: Unit =
+            Array(ldR, rdR, ldP, rdP, ldS, rdS, mdS, x1S, x2S).foreach(f => f.set(false))
+
         // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
-        // missed is not suppressed again (see init, and KEventHandler.hookInstalled)
+        // missed is not suppressed again (see init)
         def suppressedKeysToLoneUp: Unit = {
             for (vk <- kdS.indices) {
                 if (kdS(vk).getAndSet(false))
@@ -522,17 +528,6 @@ object Context {
         // A down of a key (kdL): its up is not alone any more
         def resetLoneUpKey(vk: Int): Unit =
             if (isKey(vk)) kdL(vk).set(false)
-
-        // The keyboard hook is installed again after Windows had removed the old one: a key whose
-        // up was missed meanwhile may have been pressed again, its down passing (no hook). The old
-        // records that would suppress its repeats or its up are forgotten (the passed keys, kdP,
-        // are kept: they pass). Its next event is handled as any: KBDLLHOOKSTRUCT does not tell a
-        // repeat, so a repeat of the trigger key is taken for a new press (see
-        // KEventHandler.hookInstalled).
-        def forgetSuppressedKeys: Unit = {
-            kdS.foreach(f => f.set(false))
-            kdL.foreach(f => f.set(false))
-        }
 
         // The up of a key whose down was suppressed before init (kdL), with no down since; resets it
         def getAndReset_LoneUpKey(vk: Int): Boolean =
@@ -605,7 +600,8 @@ object Context {
             }
         }
 
-        // The keyboard hook is removed: the ups will not be seen
+        // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
+        // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
         def resetKeys: Unit = {
             kdS.foreach(f => f.set(false))
             kdP.foreach(f => f.set(false))
@@ -717,22 +713,103 @@ object Context {
             KEventHandler.changeTrigger(old, true)
     }
 
-    private def setKeyboardHookOf(b: Boolean): Unit = {
+    // The keyboard hook installed (again) if the keyboard trigger is on (on), else removed. Also
+    // removed while paused (Pass Mode): nothing of the keyboard is seen then (the up of a key held
+    // when the pause starts passes alone; the trigger key held when it ends passes until its up,
+    // KEventHandler.hookInstalled, the other keys pass anyway). Installed again when the pause ends
+    // (reinstallHooks). The mouse hook stays: it receives the commands (W10Message), and passes all.
+    private def setKeyboardHookOf(on: Boolean): Unit = {
+        import Hook.KeyboardHookResult._
+        val b = on && !Pass.mode
         Hook.setOrUnsetKeyboardHook(b) match {
-            case Some(err) =>
-                // Not installed (the previous hook removed): off, and the settings dialog shows it
-                keyboardHook = false
+            case Failed(err) =>
+                // Not installed (there was none): off, and the settings dialog shows it. Not stored
+                // (as stored too: the file keeps it, it is tried again at the next start or load),
+                // as at a load, under the lock of the stores: a store on another thread (the
+                // settings dialog) sees both or neither, and does not write it off.
+                storeLock.synchronized {
+                    keyboardHook = false
+                    val stored = new Properties.SProperties
+                    stored.copyFrom(storedSettings)
+                    stored.setBoolean(DataID.keyboardHook, false)
+                    storedSettings = stored
+                }
                 refreshSettingsLater()
 
                 KEventHandler.changeTrigger(targetVKCode, false)
                 Dialog.errorMessage(s"${convLang("Failed keyboard hook install")}: $err", "Error")
-            case None =>
-                if (b)
-                    // Installed again on every load (e.g. Reload after Windows removed it): ups may
-                    // have been missed if the old hook had been removed by Windows
-                    KEventHandler.hookInstalled(Hook.isOldKeyboardHookLost)
-                else
-                    KEventHandler.changeTrigger(targetVKCode, false)
+            // Replaced on every load (e.g. Reload after Windows removed it): keys may have been
+            // missed only if Windows had removed the old one
+            case Replaced(true) => KEventHandler.hookLost()
+            // Installed where there was none (at startup, at the end of a pause, turned on): the
+            // records of the keys were reset when it was removed or could not be installed; a
+            // trigger key held now passes
+            case Installed => KEventHandler.hookInstalled()
+            // Replaced seamlessly, the old one still installed: nothing was missed, nothing is
+            // changed (a keyboard scroll goes on, unless a load ends it: applyProperties). Not
+            // replaced (it could not be): the old one stays.
+            case _ if b => ()
+            case _ => KEventHandler.changeTrigger(targetVKCode, false)
+        }
+    }
+
+    // Installs the hooks again, to be first in the chain again (the newest hook is called first):
+    // after a resume or an unlock (SessionEvents), when mouse software can install its hook again
+    // (e.g. X-Mouse Button Control). It is then called first, blocks the buttons it remaps and
+    // injects others, and W10Wheel ignores injected input: no mouse trigger works any more. Also
+    // when Pass Mode is turned off: the way to do it by hand (e.g. after that software was turned
+    // off and on). If the mouse hook cannot be installed now, the old one stays. Not after the hooks
+    // have been removed for the exit. On the hook thread.
+    def reinstallHooks(): Unit = {
+        logger.debug("reinstallHooks")
+        if (!Hook.isClosed) {
+            if (Hook.reinstallMouseHook.contains(true))
+                mouseHookLost()
+            // Not installed where there was none (at the end of a pause): turned off as at a load,
+            // not stored, and shown by the settings dialog (setKeyboardHookOf)
+            if (keyboardHook)
+                setKeyboardHookOf(true)
+        }
+    }
+
+    // Pass Mode has been turned on (b) or off: the keyboard hook removed, or the hooks installed
+    // again
+    private def passModeSet(b: Boolean): Unit =
+        if (b) setKeyboardHookOf(false) else reinstallHooks()
+
+    // The mouse hook has been replaced (reinstallHooks), and Windows had removed the old one (e.g.
+    // for a timeout): buttons may have been released, and pressed again, with no hook to see it, and
+    // a scroll mode they started would not end (the moves suppressed). The mouse triggers' records
+    // are reset (also those of the hook: Windows.forgetPresses) and that scroll mode is ended, or a
+    // pending LR trigger start canceled. A keyboard scroll goes on, and the keys' records are kept
+    // (the keyboard hook was not lost). A hook replaced while the old one was still installed missed
+    // nothing: this is not called then.
+    private def mouseHookLost(): Unit = {
+        logger.debug("mouseHookLost")
+        // As initState: a wait timing out meanwhile does not resend its down, nor start scroll mode
+        newPassModeGeneration()
+        EventWaiter.offer(Cancel(null))
+        EventHandler.initState
+        LastFlags.initButtons
+        Windows.forgetPresses()
+        if ((Scroll.isMode && !Scroll.isByKeyboard) || Scroll.isStarting)
+            exitScrollMode
+    }
+
+    // The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the
+    // hooks saw none of the input meanwhile (it went to the secure desktop, or was lost), so a
+    // trigger released then would keep its scroll mode (the moves suppressed), and a key or a button
+    // released then would keep its records. As initState, and the records of all keys and buttons
+    // are forgotten (Windows.forgetPresses): none is still held from before (e.g. a key passed over
+    // an excluded program and released while locked would pass its next press). Done at the event,
+    // not when the hooks are installed again later (a scroll started after it goes on). Not after
+    // the hooks have been removed for the exit. On the hook thread.
+    def inputLost(): Unit = {
+        logger.debug("inputLost")
+        if (!Hook.isClosed) {
+            initState
+            Windows.forgetPresses()
+            LastFlags.resetKeys
         }
     }
 
@@ -1860,8 +1937,10 @@ object Context {
         // progress (Reload, switching properties) ends once they are set, so that the new ones
         // apply from the next (also one started meanwhile, e.g. during the error dialog of the
         // keyboard hook). Not if the file could not be read: the settings have not changed. The
-        // keyboard trigger's has ended (setKeyboardHookOf), and the mouse triggers' if the
-        // trigger changed (changeTrigger). Their trigger's up is still suppressed.
+        // mouse triggers' has ended already if the trigger changed (changeTrigger), and the
+        // keyboard trigger's if its key changed or its hook was turned off or lost
+        // (setKeyboardHookOf). Their trigger's up (and the trigger key's repeats) are still
+        // suppressed.
         exitScrollMode
     }
 
