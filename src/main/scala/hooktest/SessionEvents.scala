@@ -59,13 +59,15 @@ object SessionEvents {
             if (generation == reinstallGeneration) Context.reinstallHooks()))
     }
 
-    // A resume is notified once or twice: PBT_APMRESUMEAUTOMATIC always, and PBT_APMRESUMESUSPEND
-    // too when the user wakes the system, maybe much later: at the first input after an automatic
-    // resume. The state is reset at the first of them only: the hooks have seen the input since,
-    // and a reset would forget what they saw (a trigger key passed meanwhile would be taken as a new
-    // press: its repeats would start scroll mode, and its up be suppressed, the key left pressed in
-    // the application). The hooks are installed again after both (scheduleReinstall: from the
-    // last). Set at the resume, cleared at the suspend.
+    // A resume is notified once or twice: PBT_APMRESUMEAUTOMATIC first, always, and
+    // PBT_APMRESUMESUSPEND after it when the user wakes the system, maybe much later: at the first
+    // input after an automatic resume. The state is reset at PBT_APMRESUMEAUTOMATIC, always (also
+    // if the suspend was not notified), and at PBT_APMRESUMESUSPEND only if it came alone (none
+    // since the suspend): the hooks have seen the input since, and a reset would forget what they
+    // saw (a trigger key passed meanwhile would be taken as a new press: its repeats would start
+    // scroll mode, and its up be suppressed, the key left pressed in the application). The hooks
+    // are installed again after both (scheduleReinstall: from the last).
+    // Set at a resume, cleared at the suspend.
     private var resumeSeen = false
 
     private def suspended(): Unit = {
@@ -73,9 +75,9 @@ object SessionEvents {
         Context.inputLost()
     }
 
-    private def resumed(): Unit = {
-        if (resumeSeen)
-            logger.debug("SessionEvents: resumed again, the state kept")
+    private def resumed(automatic: Boolean): Unit = {
+        if (!automatic && resumeSeen)
+            logger.debug("SessionEvents: resumed by the user, the state kept")
         else {
             resumeSeen = true
             Context.inputLost()
@@ -101,7 +103,8 @@ object SessionEvents {
             }
             else if (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND) {
                 logger.debug(s"SessionEvents: resumed ($wParam)")
-                HookThread.post(() => resumed())
+                val automatic = wParam == PBT_APMRESUMEAUTOMATIC
+                HookThread.post(() => resumed(automatic))
             }
         }
         else if (msg == User32Ex.WM_WTSSESSION_CHANGE) {
