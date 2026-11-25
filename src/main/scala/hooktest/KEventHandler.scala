@@ -270,6 +270,18 @@ object KEventHandler {
             debug("pass (repeat of a passed down)", kd)
             __callNextHook()
         }
+        // Already down in the system: in the hook, GetAsyncKeyState still tells the state from
+        // before this event, so this is a repeat of a press whose down reached the application with
+        // no record of it here. E.g. passed just before a reset posted earlier (at an unlock or a
+        // resume, SessionEvents) was run: the hook's events are handled before the tasks posted,
+        // and the reset forgot it. It passes as that press did, its up too: taken as a new press,
+        // it would start a scroll (or end one) and be suppressed, its up too, the key left pressed
+        // in the application. Not the key that does not repeat (Pause): its down is always a new
+        // press.
+        else if (!Keyboard.isNoRepeatKey(kd.vkCode) && Windows.isKeyDown(kd.vkCode)) {
+            debug("pass (repeat of a down with no record)", kd)
+            endPassDown(kd).get
+        }
         else if (ctx.isTriggerKey(kd)) singleDown(kd) else noneDown(kd)
     }
 
