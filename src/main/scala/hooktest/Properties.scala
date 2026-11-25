@@ -345,14 +345,23 @@ object Properties {
 
         // The Add failed: this file (not whatever is at its path) is deleted when the handle closes,
         // which it is now. An error is not thrown (over the error of the Add): there is none to
-        // expect, nothing else can have the file open.
+        // expect, nothing else can have the file open. The handle is closed whatever happens here:
+        // the file is not left held.
         def discard(): Unit = {
             if (open) {
                 val delete = new Memory(1)
-                delete.setByte(0, 1.toByte)
-                if (!NewFile.k32.SetFileInformationByHandle(handle, NewFile.FileDispositionInfo, delete, new DWORD(1)))
-                    logger.warn(s"NewFile.discard: ${NewFile.lastError}")
-                close()
+                try {
+                    delete.setByte(0, 1.toByte)
+                    if (!NewFile.k32.SetFileInformationByHandle(handle, NewFile.FileDispositionInfo, delete, new DWORD(1)))
+                        logger.warn(s"NewFile.discard: ${NewFile.lastError}")
+                }
+                catch {
+                    case e: Exception => logger.warn(s"NewFile.discard: $e")
+                }
+                finally {
+                    delete.close()
+                    close()
+                }
             }
         }
 
@@ -360,8 +369,13 @@ object Properties {
         def close(): Unit = {
             if (open) {
                 open = false
-                if (!NewFile.k32.CloseHandle(handle))
-                    logger.warn(s"NewFile.close: ${NewFile.lastError}")
+                try {
+                    if (!NewFile.k32.CloseHandle(handle))
+                        logger.warn(s"NewFile.close: ${NewFile.lastError}")
+                }
+                catch {
+                    case e: Exception => logger.warn(s"NewFile.close: $e")
+                }
             }
         }
     }
