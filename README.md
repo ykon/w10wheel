@@ -1,6 +1,7 @@
 # W10Wheel
 W10Wheel is the Mouse Wheel Simulator for Windows.  
-Written in Scala and running on Java. [W10Wheel.NET](https://github.com/ykon/w10wheel.net) is its .NET (F#) port.
+Written in Scala and running on Java. [W10Wheel.NET](https://github.com/ykon/w10wheel.net) is its .NET (F#) port.  
+It has also been ported to Rust: [W10Wheel.rs](https://github.com/ykon/w10wheel.rs).
 ## Supported
 Windows 10 / 11 (x64).  
 Bundled with a Java 25 runtime (separate Java installation is not required).
