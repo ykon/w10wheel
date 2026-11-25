@@ -17,8 +17,9 @@ import win32ex.User32Ex
 // message-only one). What they do is posted (HookThread.post), and done from the message loop, not
 // in the middle of an event being handled.
 // The hooks see none of the input while the session is locked (it goes to the secure desktop) or
-// the system asleep: the state is reset at each of them (Context.inputLost). After an unlock or a
-// resume, the hooks are installed again (scheduleReinstall). All on the hook thread.
+// the system asleep: the state is reset at each of them (Context.inputLost), and once for a
+// resume (resumed). After an unlock or a resume, the hooks are installed again (scheduleReinstall).
+// All on the hook thread.
 object SessionEvents {
     private val logger = Logger.getLogger()
     private val u32ex = User32Ex.INSTANCE
@@ -58,10 +59,34 @@ object SessionEvents {
             if (generation == reinstallGeneration) Context.reinstallHooks()))
     }
 
+    // A resume is notified once or twice: PBT_APMRESUMEAUTOMATIC always, and PBT_APMRESUMESUSPEND
+    // too when the user wakes the system, maybe much later: at the first input after an automatic
+    // resume. The state is reset at the first of them only: the hooks have seen the input since,
+    // and a reset would forget what they saw (a trigger key passed meanwhile would be taken as a new
+    // press: its repeats would start scroll mode, and its up be suppressed, the key left pressed in
+    // the application). The hooks are installed again after both (scheduleReinstall: from the
+    // last). Set at the resume, cleared at the suspend.
+    private var resumeSeen = false
+
+    private def suspended(): Unit = {
+        resumeSeen = false
+        Context.inputLost()
+    }
+
+    private def resumed(): Unit = {
+        if (resumeSeen)
+            logger.debug("SessionEvents: resumed again, the state kept")
+        else {
+            resumeSeen = true
+            Context.inputLost()
+        }
+        scheduleReinstall()
+    }
+
     private def locked(): Unit =
         Context.inputLost()
 
-    private def resumed(): Unit = {
+    private def unlocked(): Unit = {
         Context.inputLost()
         scheduleReinstall()
     }
@@ -69,16 +94,25 @@ object SessionEvents {
     // From the window procedure of the message window (Windows), on the hook thread: maybe while
     // the hook thread is in a call that takes the messages sent to it
     def procMessage(msg: Int, wParam: Int): Unit = {
-        if ((msg == WinUser.WM_POWERBROADCAST && wParam == PBT_APMSUSPEND) ||
-            (msg == User32Ex.WM_WTSSESSION_CHANGE && wParam == Wtsapi32.WTS_SESSION_LOCK)) {
-            logger.debug(f"SessionEvents: locked (0x$msg%X, $wParam)")
-            HookThread.post(() => locked())
+        if (msg == WinUser.WM_POWERBROADCAST) {
+            if (wParam == PBT_APMSUSPEND) {
+                logger.debug(s"SessionEvents: suspended ($wParam)")
+                HookThread.post(() => suspended())
+            }
+            else if (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND) {
+                logger.debug(s"SessionEvents: resumed ($wParam)")
+                HookThread.post(() => resumed())
+            }
         }
-        else if ((msg == WinUser.WM_POWERBROADCAST &&
-                  (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND)) ||
-                 (msg == User32Ex.WM_WTSSESSION_CHANGE && wParam == Wtsapi32.WTS_SESSION_UNLOCK)) {
-            logger.debug(f"SessionEvents: resumed (0x$msg%X, $wParam)")
-            HookThread.post(() => resumed())
+        else if (msg == User32Ex.WM_WTSSESSION_CHANGE) {
+            if (wParam == Wtsapi32.WTS_SESSION_LOCK) {
+                logger.debug(s"SessionEvents: locked ($wParam)")
+                HookThread.post(() => locked())
+            }
+            else if (wParam == Wtsapi32.WTS_SESSION_UNLOCK) {
+                logger.debug(s"SessionEvents: unlocked ($wParam)")
+                HookThread.post(() => unlocked())
+            }
         }
     }
 
