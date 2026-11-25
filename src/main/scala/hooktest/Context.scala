@@ -836,7 +836,8 @@ object Context {
 
     // The new properties: a copy of the file of the selected ones (their other keys, e.g. the custom
     // table) with the settings running (also those not stored), then selected and loaded as by a
-    // switch. From the settings dialog (owner).
+    // switch. From the settings dialog (owner), on the Swing thread (the files written there, see
+    // onHook).
     private def addProperties(owner: java.awt.Window): Unit = {
         val res = Dialog.askText(owner, convLang("Add Properties"), convLang("Properties Name"), whyInvalidPropertiesName)
 
@@ -847,48 +848,46 @@ object Context {
                 val err: Option[Throwable] = {
                     try {
                         storeProperties
-                        val path = Properties.getPath(name)
-                        // Set once this Add has made the properties file (the copy, or the first
-                        // store): not one made by another program meanwhile (the copy fails then,
-                        // it is not replaced)
-                        var made = false
+                        // A copy of the file (its comments, its other keys) with the settings
+                        // running, those shown: also those not stored (e.g. a read-only file,
+                        // properties not loaded), or edited in the file and not reloaded (the file's
+                        // would be copied); all the settings if the selected properties have no file
+                        // (e.g. Default not stored yet). Complete before the new file is made, which
+                        // is held until the Add is done (see Properties.NewFile): made by another
+                        // program since the name was checked, it is not replaced, and the Add fails
+                        // as for a name that exists.
+                        val text = Properties.newText(getSelectedPropertiesPath, currentSettings)
+                        val newFile =
+                            try Properties.NewFile.create(Properties.getPath(name), text)
+                            catch {
+                                case _: java.nio.file.FileAlreadyExistsException =>
+                                    throw new java.io.IOException(s"${convLang("Properties of this name already exist")}: $name")
+                            }
+                        val exclusions = getExcludedPrograms.toArray
                         try {
-                            // A copy of the file (its comments, its other keys) with the settings
-                            // running, those shown: also those not stored (e.g. a read-only file,
-                            // properties not loaded), or edited in the file and not reloaded (the
-                            // file's would be copied)
-                            if (java.nio.file.Files.exists(getSelectedPropertiesPath)) {
-                                Properties.copy(selectedProperties, name)
-                                made = true
-                            }
-
-                            val current = currentSettings
-                            if (made || java.nio.file.Files.exists(path))
-                                current.update(path, current.keys)
-                            else {
-                                current.store(path)
-                                made = true
-                            }
                             // The excluded programs running too (none: the file of earlier
                             // properties of this name, deleted outside W10Wheel, is deleted)
-                            Properties.writeExclusions(Properties.getExclusionsPath(name), getExcludedPrograms.toArray)
+                            Properties.writeExclusions(Properties.getExclusionsPath(name), exclusions)
                         }
                         catch {
                             case e: Exception =>
                                 // Not left half made (e.g. their excluded programs could not be
-                                // written): the properties file made by this Add is deleted, they can
-                                // be added again
-                                if (made) {
-                                    try java.nio.file.Files.deleteIfExists(path)
-                                    catch { case e2: Exception => logger.warn(s"addProperties: $e2") }
-                                }
+                                // written): the properties file made by this Add is deleted (that
+                                // file, held since: nothing else can be at its path), they can be
+                                // added again
+                                newFile.discard()
                                 throw e
                         }
+                        newFile.close()
 
-                        readProperties(name) match {
-                            case Right(p) => loadRead(name, p); None
-                            case Left(e) => Some(e)
-                        }
+                        // Loaded from what was written, not read again from the files (released
+                        // now: another program could have them open meanwhile, e.g. scanning the
+                        // exclusions file), as by a switch: the same settings, and the other keys of
+                        // the file (e.g. the custom table) applied
+                        val p = new Properties.SProperties
+                        p.loadLines(text.lines)
+                        onHook(selectProperties(name, p, Right(exclusions)))
+                        None
                     }
                     catch {
                         case e: Exception => Some(e)
