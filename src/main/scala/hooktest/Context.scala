@@ -491,8 +491,8 @@ object Context {
     // (EventHandler.procDown, procUp): the press is new, or over.
     // - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the LR trigger's pair):
     //   its up is suppressed too.
-    // - Resent: its down was resent alone (the LR trigger's wait timed out or was ended by a move or
-    //   the other button's up; left and right only): its up is resent.
+    // - Resent: its down was resent alone (the LR trigger's wait timed out or was ended by a move,
+    //   another button, or the other button's up; left and right only): its up is resent.
     // - Passed: its down passed (in the LR trigger's pressed scroll mode, or over an excluded window;
     //   left and right only): its up passes.
     private enum ButtonState {
