@@ -85,7 +85,7 @@ jobs:
               throw "gh release upload failed with exit code $LASTEXITCODE"
             }
           } else {
-            $ghArgs = @("release", "create", $tag, $zip, $sha, "--title", "W10Wheel - $ver") + $notesArgs
+            $ghArgs = @("release", "create", $tag, $zip, $sha, "--title", $ver) + $notesArgs
             if ("${{ github.event_name }}" -eq "workflow_dispatch") {
               $ghArgs += @("--target", $env:GITHUB_SHA)
             }
