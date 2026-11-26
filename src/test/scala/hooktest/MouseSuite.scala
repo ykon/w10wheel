@@ -525,6 +525,25 @@ class MouseSuite extends munit.FunSuite {
         }
     }
 
+    test("the LR waits ended by another button while the sender is slow keep each click") {
+        // Twice: Left waits, X1 ends the wait (Left's down resent alone), Left's up resent for
+        // it, X1 released; all queued while the sender is held. Each resent down passes with its
+        // up when they come: the second press's up queued does not drop the first one's down.
+        reset(DataID.LR, DataID.None)
+        Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+        holdSender()
+        for (t <- List(100, 300)) {
+            assertEquals(down(Left, 10, 10, t), Suppress)
+            assertEquals(down(X1, 10, 10, t + 20), Pass)
+            assertEquals(up(Left, 10, 10, t + 40), Suppress)
+            assertEquals(up(X1, 10, 10, t + 60), Pass)
+        }
+        releaseSender()
+        val inputs = sentInputs(4)
+        assertEquals(buttonsOf(inputs), List((Left, true), (Left, false), (Left, true), (Left, false)))
+        assertEquals(inputs.map(receive), List(Pass, Pass, Pass, Pass))
+    }
+
     test("another button ending a released scroll ends the LR wait too") {
         // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the
         // middle button ends the scroll (suppressed), and the wait (its down resent at once)

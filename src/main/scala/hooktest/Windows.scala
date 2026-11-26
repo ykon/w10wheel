@@ -247,11 +247,25 @@ object Windows {
         var downPassedId = NO_PRESS
         // The physical down of that press did not pass (W10Wheel suppressed it)
         var downSuppressed = false
-        // The last press whose up has been resent (queued, see resendUp) for its down resent alone:
-        // that down is not dropped if a later press has started before it is sent (e.g. the sender
-        // busy with a click), it is released by that up
-        var releaseQueuedId = NO_PRESS
+        // The presses whose up has been resent (queued, see resendUp) for their down resent alone,
+        // until that up reaches the hook: their down is not dropped if a later press has started
+        // before it is sent (e.g. the sender busy with a click), it is released by that up.
+        // Several, in their order: a press can follow before the sender has sent the earlier one's
+        // (e.g. slow, while each LR trigger's wait is ended by another button). The oldest are
+        // forgotten past MAX_RELEASES_QUEUED (an up that never comes: its down was not sent either,
+        // InputSender).
+        val releasesQueued = scala.collection.mutable.LinkedHashSet.empty[Int]
+
+        def queueRelease(id: Int): Unit = {
+            releasesQueued -= id
+            releasesQueued += id
+            while (releasesQueued.size > MAX_RELEASES_QUEUED)
+                releasesQueued -= releasesQueued.head
+        }
     }
+
+    // More presses than a sender held back that long could have queued
+    private val MAX_RELEASES_QUEUED = 16
 
     // By button (0: left, 1: right, 2: middle, 3: X1, 4: X2; only left and right are resent alone).
     // Used on the hook thread only.
@@ -261,20 +275,26 @@ object Windows {
     // Called by the mouse hook for a button down or up before it is handled, also in Pass Mode:
     // true to drop it.
     // - A down resent alone for a press whose physical up has passed (or for an earlier press)
-    //   would leave the button pressed. Not if its up has been resent (releaseQueuedId): it comes
+    //   would leave the button pressed. Not if its up has been resent (releasesQueued): it comes
     //   after, and the press would be lost.
     // - The up resent for a down resent alone that did not reach the application (dropped above,
     //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
+    // The up resent ends its press's wait for its down (releasesQueued), dropped or passed.
     def dropResent(button: Int, isDown: Boolean, info: HookInfo): Boolean = {
         val p = presses(button)
         resendKind(info) match {
             case Some((ResendKind.Down, id))
-                    if isDown && (id != p.id || p.upPassed) && id != p.releaseQueuedId =>
+                    if isDown && (id != p.id || p.upPassed) && !p.releasesQueued.contains(id) =>
                 logger.debug("dropResent: a down after its physical up")
                 true
-            case Some((ResendKind.Release, id)) if !isDown && id != p.downPassedId =>
-                logger.debug("dropResent: an up for a down not passed")
-                true
+            case Some((ResendKind.Release, id)) if !isDown =>
+                p.releasesQueued -= id
+                if (id != p.downPassedId) {
+                    logger.debug("dropResent: an up for a down not passed")
+                    true
+                }
+                else
+                    false
             case _ =>
                 false
         }
@@ -341,14 +361,14 @@ object Windows {
     // Windows had removed the mouse hook. The suppressed downs are forgotten, so that the up of a
     // press made meanwhile (which reached the application too) is not taken for an up without its
     // down (dropLoneUp). A down resent alone still queued for a press whose up has not been resent
-    // (releaseQueuedId) is dropped when it comes (as after a passed up, dropResent), or it would
+    // (releasesQueued) is dropped when it comes (as after a passed up, dropResent), or it would
     // reach the application alone and the button stay pressed (e.g. the LR trigger's wait timed
     // out, then the up missed); one whose up is queued passes with it (the click is whole). The
     // press IDs are kept (resent events in flight are still told). On the hook thread.
     def forgetPresses(): Unit = {
         for (p <- presses) {
             p.downSuppressed = false
-            if (p.releaseQueuedId != p.id)
+            if (!p.releasesQueued.contains(p.id))
                 p.upPassed = true
         }
     }
@@ -775,7 +795,7 @@ object Windows {
     // only if it reached the application (dropResent).
     def resendUp(me: MouseEvent): Unit = {
         val press = pressIdOf(me)
-        presses(getButton(me)).releaseQueuedId = press
+        presses(getButton(me)).queueRelease(press)
         val input = createResendUp(me, resendExtra(ResendKind.Release, press))
         InputSender.enqueue(InputSender.Release(getButton(me), press), Array(input))
     }
