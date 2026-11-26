@@ -6,7 +6,7 @@ val stageJpackageInput = taskKey[File]("Stage application JAR and runtime depend
 lazy val root = (project in file("."))
   .settings(
     name := "W10Wheel",
-    version := "2.10.1",
+    version := "2.10.2",
     scalaVersion := "3.9.0",
     Compile / compileOrder := CompileOrder.JavaThenScala,
     scalacOptions ++= Seq("-java-output-version", "25", "-deprecation", "-feature", "-unchecked"),
