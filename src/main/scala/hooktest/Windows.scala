@@ -182,15 +182,25 @@ object Windows {
     // The kind of a resent input and the ID of the physical press it is for, in the upper half of
     // dwExtraInfo (resendTag in the lower half): see dropResent. W10Wheel runs as a 64-bit
     // process only (x64), so dwExtraInfo has 64 bits.
-    private val KIND_PLAIN = 0L   // passed as is (e.g. a down and up pair)
-    private val KIND_DOWN = 1L    // a down resent alone (its up comes later)
-    private val KIND_RELEASE = 2L // the up resent for a down resent alone
+    private enum ResendKind(val bits: Long) {
+        case Plain extends ResendKind(0)   // passed as is (e.g. a down and up pair)
+        case Down extends ResendKind(1)    // a down resent alone (its up comes later)
+        case Release extends ResendKind(2) // the up resent for a down resent alone
+    }
 
     private val PRESS_ID_MASK = 0xFFFFFF
 
-    private def resendExtra(kind: Long, press: Int): Long = {
-        val upper = (kind << 24) | (press & PRESS_ID_MASK).toLong
+    private def resendExtra(kind: ResendKind, press: Int): Long = {
+        val upper = (kind.bits << 24) | (press & PRESS_ID_MASK).toLong
         (upper << 32) | resendTag.toLong
+    }
+
+    // The kind and press in the upper half of dwExtraInfo (see resendExtra): None for kind bits of
+    // none (not W10Wheel's: passed as the others)
+    private def decodeKind(extra: Long): Option[(ResendKind, Int)] = {
+        val upper = extra >>> 32
+        val press = (upper & PRESS_ID_MASK).toInt
+        ResendKind.values.find(_.bits == upper >>> 24).map(k => (k, press))
     }
 
     // dwExtraInfo is pointer-sized: compare all of it (the tag in the lower half for resends)
@@ -204,11 +214,9 @@ object Windows {
         me.info.dwExtraInfo.longValue() == resendClickTag.toLong
 
     // (kind, press) of a resent input
-    private def resendKind(info: HookInfo): Option[(Long, Int)] = {
-        if (isInjected(info) && isResendInfo(info)) {
-            val upper = info.dwExtraInfo.longValue() >>> 32
-            Some((upper >>> 24, (upper & PRESS_ID_MASK).toInt))
-        }
+    private def resendKind(info: HookInfo): Option[(ResendKind, Int)] = {
+        if (isInjected(info) && isResendInfo(info))
+            decodeKind(info.dwExtraInfo.longValue())
         else
             None
     }
@@ -243,11 +251,11 @@ object Windows {
     // - The up resent for a down resent alone that did not reach the application (dropped above,
     //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
     def dropResent(button: Int, isDown: Boolean, info: HookInfo): Boolean = resendKind(info) match {
-        case Some((KIND_DOWN, id)) if isDown && (id != pressId(button) || upPassed(button)) &&
-                                      id != releaseQueuedId(button) =>
+        case Some((ResendKind.Down, id)) if isDown && (id != pressId(button) || upPassed(button)) &&
+                                             id != releaseQueuedId(button) =>
             logger.debug("dropResent: a down after its physical up")
             true
-        case Some((KIND_RELEASE, id)) if !isDown && id != downPassedId(button) =>
+        case Some((ResendKind.Release, id)) if !isDown && id != downPassedId(button) =>
             logger.debug("dropResent: an up for a down not passed")
             true
         case _ =>
@@ -273,7 +281,7 @@ object Windows {
         if (passed) {
             if (isDown) {
                 resendKind(info) match {
-                    case Some((KIND_DOWN, id)) => downPassedId(button) = id
+                    case Some((ResendKind.Down, id)) => downPassedId(button) = id
                     case _ => ()
                 }
             }
@@ -722,7 +730,7 @@ object Windows {
 
     // A down resent alone: its up is resent later by resendUp
     def resendDown(generation: Int, press: Int, me: MouseEvent): Unit = {
-        val input = createResendDown(me, resendExtra(KIND_DOWN, press))
+        val input = createResendDown(me, resendExtra(ResendKind.Down, press))
         InputSender.enqueue(generation, InputSender.Down(getButton(me), press), Array(input))
     }
 
@@ -732,14 +740,14 @@ object Windows {
     def resendUp(me: MouseEvent): Unit = {
         val press = pressIdOf(me)
         releaseQueuedId(getButton(me)) = press
-        val input = createResendUp(me, resendExtra(KIND_RELEASE, press))
+        val input = createResendUp(me, resendExtra(ResendKind.Release, press))
         InputSender.enqueue(InputSender.Release(getButton(me), press), Array(input))
     }
 
     // Resends a down and an up (at different points). The same button's down and up are sent as
     // one batch, like resendClick: 10 ms apart, the up with retries.
     def resendDownUp(generation: Int, press: Int, down: MouseEvent, up: MouseEvent): Unit = {
-        val plain = resendExtra(KIND_PLAIN, NO_PRESS)
+        val plain = resendExtra(ResendKind.Plain, NO_PRESS)
         (down, up) match {
             case (LeftDown(_), LeftUp(_)) | (RightDown(_), RightUp(_)) =>
                 InputSender.enqueue(generation, InputSender.Click,
