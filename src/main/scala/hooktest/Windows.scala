@@ -151,11 +151,6 @@ object Windows {
         u32.SetWindowsHookEx(WH_KEYBOARD_LL, proc, hMod, 0)
     }
 
-    def callNextHook(hhk: HHOOK, nCode: Int, wParam: WPARAM, ptr: Pointer): LRESULT = {
-        val peer = Pointer.nativeValue(ptr)
-        u32.CallNextHookEx(hhk, nCode, wParam, new LPARAM(peer))
-    }
-
     def createInputArray(size: Int) =
         new INPUT().toArray(size).asInstanceOf[Array[INPUT]]
 
@@ -767,29 +762,17 @@ object Windows {
     private val CURSOR_V = loadCursor(IDC_SIZENS)
     private val CURSOR_H = loadCursor(IDC_SIZEWE)
 
-    private def copyCursor(icon: HICON): Pointer = {
-        val copy = u32.CopyIcon(icon)
-        if (copy == null) null else copy.getPointer
-    }
-
     // Whether the system cursors have been changed since they were restored: restoring reloads
     // them all (SPI_SETCURSORS), so only when they have been changed (e.g. not for a click of the
     // drag trigger), and whatever the setting is now (it may have been changed while scrolling)
     @volatile private var cursorChanged = false
 
-    // SetSystemCursor destroys the copy only if it succeeds: destroyed here otherwise
-    private def setSystemCursor(icon: HICON, id: Int): Unit = {
-        val h = copyCursor(icon)
-        if (h != null && !u32ex.SetSystemCursor(h, id))
-            u32ex.DestroyCursor(h)
-    }
-
     def changeCursor(hCur: Pointer) = {
         cursorChanged = true
         val icon = new HICON(hCur)
-        setSystemCursor(icon, OCR_NORMAL)
-        setSystemCursor(icon, OCR_IBEAM)
-        setSystemCursor(icon, OCR_HAND)
+        Host.setSystemCursor(icon, OCR_NORMAL)
+        Host.setSystemCursor(icon, OCR_IBEAM)
+        Host.setSystemCursor(icon, OCR_HAND)
     }
 
     def changeCursorV: Unit =
@@ -805,7 +788,7 @@ object Windows {
     def restoreCursor: Boolean = {
         //val fWinIni = if (!sendChange) 0 else (SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE)
         if (cursorChanged) {
-            val res = u32ex.SystemParametersInfoW(SPI_SETCURSORS, 0, null, 0)
+            val res = Host.restoreSystemCursors()
             if (res) cursorChanged = false
             res
         }
@@ -814,7 +797,7 @@ object Windows {
     }
 
     private def getAsyncKeyState(vKey: Int) =
-        (u32.GetAsyncKeyState(vKey) & 0x8000) != 0  // most significant bit: the key is down
+        (Host.getAsyncKeyState(vKey) & 0x8000) != 0  // most significant bit: the key is down
 
     def getShiftState = getAsyncKeyState(VK_SHIFT)
     def getCtrlState = getAsyncKeyState(VK_CONTROL)
@@ -851,7 +834,7 @@ object Windows {
 
     def getCursorPos = {
         val pos = new POINT
-        u32.GetCursorPos(pos)
+        Host.getCursorPos(pos)
         pos
     }
 
@@ -866,7 +849,7 @@ object Windows {
         rid(0).dwFlags = dwFlags
         rid(0).hwndTarget = hwnd
 
-        u32ex.RegisterRawInputDevices(rid, 1, rid(0).size)
+        Host.registerRawInputDevices(rid)
     }
     
     // The error of the last native call on this thread, as JNA saved it right after the call
@@ -895,36 +878,8 @@ object Windows {
         res
     }
 
-    // 0 if the window is gone
-    private def processIdOfWindow(hWnd: HWND): Int = {
-        val pid = new IntByReference
-        u32.GetWindowThreadProcessId(hWnd, pid)
-        pid.getValue
-    }
-
-    // PROCESS_QUERY_LIMITED_INFORMATION is enough for QueryFullProcessImageName (also a process
-    // running as administrator, or of another user, when W10Wheel is not)
-    private def getFullPathOfProcess(processId: Int): Option[String] = {
-        val hProcess = k32.OpenProcess(WinNT.PROCESS_QUERY_LIMITED_INFORMATION, false, processId)
-        if (hProcess == null)
-            None
-        else {
-            try {
-                val buffer = new Array[Char](1024)
-                val size = new IntByReference(buffer.length)
-                if (k32.QueryFullProcessImageName(hProcess, 0, buffer, size))
-                    Some(new String(buffer, 0, size.getValue))
-                else
-                    None
-            }
-            finally {
-                k32.CloseHandle(hProcess)
-            }
-        }
-    }
-
     private def isExcludedProcess(processId: Int): Boolean =
-        getFullPathOfProcess(processId).exists(ctx.isExcludedProgram)
+        Host.fullPathOfProcess(processId).exists(ctx.isExcludedProgram)
 
     // Whether the window at pt (of the hook: physical coordinates, as WindowFromPoint takes them,
     // the JVM being per-monitor DPI aware) is of an excluded program (Context.isExcludedProgram),
@@ -938,16 +893,16 @@ object Windows {
         if (!ctx.hasExcludedPrograms)
             false
         else {
-            val hWnd = u32ex.WindowFromPoint(new POINT.ByValue(pt.x, pt.y))
+            val hWnd = Host.windowFromPoint(pt)
             if (hWnd == null)
                 false
             else {
-                val pid = processIdOfWindow(hWnd)
+                val pid = Host.processIdOfWindow(hWnd)
                 if (pid != 0 && isExcludedProcess(pid))
                     true
                 else {
-                    val root = u32.GetAncestor(hWnd, WinUser.GA_ROOT)
-                    val rootPid = if (root == null || root == hWnd) pid else processIdOfWindow(root)
+                    val root = Host.rootWindow(hWnd)
+                    val rootPid = if (root == null || root == hWnd) pid else Host.processIdOfWindow(root)
                     rootPid != pid && rootPid != 0 && isExcludedProcess(rootPid)
                 }
             }
@@ -960,7 +915,7 @@ object Windows {
             false
         else {
             val pt = new POINT
-            u32.GetCursorPos(pt) && isExcludedWindowAt(pt)
+            Host.getCursorPos(pt) && isExcludedWindowAt(pt)
         }
     }
 }

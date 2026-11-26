@@ -52,6 +52,10 @@ Requires JDK 25 and sbt 2.1.
 ```
 sbt run
 ```
+The tests (`src/test`) call the hook procedures with the calls to Windows replaced: no input is sent, no cursor changed. CI runs them before the build.
+```
+sbt test
+```
 To build the distribution zip (`target/jpackage/W10Wheel-<version>-x64.zip` and its `.sha256`), with `JAVA_HOME` set to a JDK 25:
 ```
 pwsh dist/build-portable-zip.ps1

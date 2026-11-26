@@ -2105,4 +2105,20 @@ object Context {
         LastFlags.init
         exitScrollMode
     }
+
+    // For the tests (src/test): the settings set and the events of the hooks called as the program
+    // does, without the dialogs and the files of a load
+    private[hooktest] object ForTests {
+        def setTrigger(name: String): Unit = Context.setTrigger(name)
+        def setTargetVKCode(name: String): Unit = Context.setTargetVKCode(name)
+        def setNumber(name: String, n: Int): Unit = setNumberOfName(name, n)
+        def setSendMiddleClick(b: Boolean): Unit = sendMiddleClick = b
+        def setDraggedLock(b: Boolean): Unit = Scroll.draggedLock = b
+        def setExcludedPrograms(paths: Seq[String]): Unit = Context.setExcludedPrograms(paths)
+        // The mouse hook replaced after Windows removed the old one (reinstallHooks)
+        def mouseHookLost(): Unit = Context.mouseHookLost()
+        // The default values kept as at startup, before any setting is changed (the first load
+        // would keep the settings as they are then)
+        def saveDefaults(): Unit = saveDefaultsOnce()
+    }
 }

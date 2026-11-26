@@ -256,7 +256,8 @@ object Properties {
     val PROP_NAME = s".$PROGRAM_NAME"
     val PROP_EXT = "properties"
     val DEFAULT_PROP_NAME = s"$PROP_NAME.$PROP_EXT" 
-    val USER_DIR = System.getProperty("user.home")
+    // The folder of the properties files: the user's profile (the tests use a folder of their own)
+    @volatile var USER_DIR: String = System.getProperty("user.home")
     
     val DEFAULT_DEF = "Default"
     

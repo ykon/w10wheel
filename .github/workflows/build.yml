@@ -25,6 +25,13 @@ jobs:
       - name: Setup sbt
         uses: sbt/setup-sbt@v1
 
+      # A failed test stops the build (no zip). --server as the build script runs sbt.
+      - name: Run tests
+        shell: pwsh
+        run: |
+          sbt --server test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build portable zip
         shell: pwsh
         run: .\dist\build-portable-zip.ps1

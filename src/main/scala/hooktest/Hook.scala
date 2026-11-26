@@ -81,7 +81,8 @@ object Hook {
         }
     }
 
-    private def procMouse(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
+    // Also called by the tests, with Host replaced
+    private[hooktest] def procMouse(nCode: Int, wParam: WPARAM, info: HookInfo): LRESULT = {
         val buttonEvent = if (nCode < 0) None else buttonOf(wParam.intValue, info)
         var passed = false
 
@@ -90,7 +91,7 @@ object Hook {
             case Some((button, false)) if Windows.dropLoneUp(button, info) => new LRESULT(1)
             case _ =>
                 passed = true
-                Windows.callNextHook(mouseHhk, nCode, wParam, info.getPointer)
+                Host.callNextMouseHook(mouseHhk, nCode, wParam, info)
         }
 
         if (nCode < 0)
@@ -128,7 +129,7 @@ object Hook {
             catch {
                 case e: Exception =>
                     logger.warn(s"mouseProc: $e")
-                    Windows.callNextHook(mouseHhk, nCode, wParam, info.getPointer)
+                    Host.callNextMouseHook(mouseHhk, nCode, wParam, info)
             }
         }
     }
@@ -162,8 +163,9 @@ object Hook {
         }
     }
 
-    private def procKeyboard(nCode: Int, wParam: WPARAM, info: KHookInfo): LRESULT = {
-        val callNextHook = () => Windows.callNextHook(keyboardHhk, nCode, wParam, info.getPointer)
+    // Also called by the tests, with Host replaced
+    private[hooktest] def procKeyboard(nCode: Int, wParam: WPARAM, info: KHookInfo): LRESULT = {
+        val callNextHook = () => Host.callNextKeyboardHook(keyboardHhk, nCode, wParam, info)
         // Restored after, as for the mouse (see procMouse)
         val outer = KEventHandler.getCallNextHook
         KEventHandler.setCallNextHook(callNextHook)
@@ -183,7 +185,7 @@ object Hook {
             catch {
                 case e: Exception =>
                     logger.warn(s"keyboardProc: $e")
-                    Windows.callNextHook(keyboardHhk, nCode, wParam, info.getPointer)
+                    Host.callNextKeyboardHook(keyboardHhk, nCode, wParam, info)
             }
         }
     }

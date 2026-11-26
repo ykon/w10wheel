@@ -22,8 +22,15 @@ lazy val root = (project in file("."))
       "net.java.dev.jna" % "jna" % "5.19.1",
       "net.java.dev.jna" % "jna-platform" % "5.19.1",
       // Swing look and feel (light and dark themes, Windows 11 style)
-      "com.formdev" % "flatlaf" % "3.8"
+      "com.formdev" % "flatlaf" % "3.8",
+      "org.scalameta" %% "munit" % "1.2.1" % Test
     ),
+    // The tests call the hook procedures with the calls to Windows replaced (Host): the handlers'
+    // state is in objects, one of each, so the tests run one at a time, in a JVM of their own
+    Test / fork := true,
+    Test / parallelExecution := false,
+    // The lazy vals of Scala 3 call sun.misc.Unsafe: allowed, without the JDK 25 warning
+    Test / javaOptions ++= Seq("--enable-native-access=ALL-UNNAMED", "--sun-misc-unsafe-memory-access=allow"),
     dependencyOverrides += "org.slf4j" % "slf4j-api" % "2.0.20",
     stageJpackageInput := Def.uncached {
       val conv = fileConverter.value

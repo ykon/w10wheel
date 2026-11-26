@@ -8,8 +8,6 @@ package hooktest
 import java.util.concurrent.{ CountDownLatch, LinkedBlockingQueue, TimeUnit }
 import java.util.concurrent.locks.ReentrantLock
 
-import com.sun.jna.platform.win32.User32
-import com.sun.jna.platform.win32.WinDef.DWORD
 import com.sun.jna.platform.win32.WinUser.INPUT
 
 // Sends the inputs made by W10Wheel (wheel events, resent clicks, downs and ups) on its own
@@ -17,7 +15,6 @@ import com.sun.jna.platform.win32.WinUser.INPUT
 // Ported from Windows.fs of W10Wheel.NET (2.8.1 - 2.8.4).
 object InputSender {
     private val logger = Logger.getLogger()
-    private val u32 = User32.INSTANCE
 
     // What a queued input is for: decides whether and how it is sent (see sendNow)
     sealed trait Kind
@@ -84,7 +81,7 @@ object InputSender {
         queue.add(Batch(generation, kind, inputs))
 
     private def sendOne(input: INPUT): Boolean =
-        u32.SendInput(new DWORD(1), Array(input), input.size()).intValue() == 1
+        Host.sendInput(input)
 
     private def sendWithRetry(input: INPUT): Boolean = {
         def loop(n: Int): Boolean = {
