@@ -895,7 +895,7 @@ object Context {
                 loadRead(name, p)
                 true
             case Left(e) =>
-                loadError = Some(e)
+                propertiesFile.loadError = Some(e)
                 refreshSettingsLater()
                 Dialog.errorMessage(s"${convLang("The properties file could not be read")}: $name\n\n${messageOf(e)}")
                 false
@@ -1642,12 +1642,23 @@ object Context {
     private def getSelectedPropertiesPath =
         Properties.getPath(selectedProperties)
 
-    @volatile private var loaded = false
+    // What is known of a file of the properties (the settings, or their excluded programs): whether
+    // it has been read (loaded: its changes are stored), and why it could not be read, or written,
+    // the last time. Not one of loaded or not: a Reload that fails leaves the properties loaded
+    // (still stored) with its error, and the excluded programs not read at a Reload keep their
+    // store's error.
+    private class FileState {
+        @volatile var loaded = false
+        @volatile var loadError: Option[Throwable] = None
+        @volatile var storeError: Option[Throwable] = None
 
-    // Why the properties could not be read (the last load), or the settings stored (the last
-    // time): told in the settings dialog. Cleared by a load that succeeds.
-    @volatile private var loadError: Option[Throwable] = None
-    @volatile private var storeError: Option[Throwable] = None
+        // Why its changes are not stored: the store's error, else the load's
+        def unstoredReason: Option[Throwable] = storeError.orElse(loadError)
+    }
+
+    // The properties file: not loaded if it could not be read (e.g. locked), then its settings are
+    // not stored. Its errors are told in the settings dialog, and cleared by a load that succeeds.
+    private val propertiesFile = new FileState
 
     // The message of an error as shown (some have none)
     private def messageOf(e: Throwable): String =
@@ -1687,8 +1698,8 @@ object Context {
     // (settingsUnstored), else of the excluded programs (an error of the properties file may be
     // older, e.g. a Reload that failed). The store's error of a file, else its load's.
     private def unstoredReason(settingsUnstored: Boolean): Option[Throwable] = {
-        val ofSettings = storeError.orElse(loadError)
-        val ofExclusions = exclusionsStoreError.orElse(exclusionsLoadError)
+        val ofSettings = propertiesFile.unstoredReason
+        val ofExclusions = exclusionsFile.unstoredReason
         if (settingsUnstored) ofSettings.orElse(ofExclusions) else ofExclusions.orElse(ofSettings)
     }
 
@@ -1700,18 +1711,18 @@ object Context {
     // are stored: the properties could not be read (Reload again), or written (e.g. a read-only
     // file: tried again at the next change). None if all is stored.
     private def storeStatus: Option[String] = {
-        if (!loaded)
+        if (!propertiesFile.loaded)
             Some("The properties file could not be read: changes are not saved")
         // Before a Reload that failed: the changes made after it are not stored
-        else if (storeError.isDefined)
+        else if (propertiesFile.storeError.isDefined)
             Some("The changes could not be saved to the properties file")
         // The file of the excluded programs: also seen from the other pages (e.g. Reset to
         // defaults). Before a Reload that failed too: their changes are not stored.
-        else if (!exclusionsLoaded)
+        else if (!exclusionsFile.loaded)
             Some("The exclusions file could not be read: changes are not saved")
-        else if (exclusionsStoreError.isDefined)
+        else if (exclusionsFile.storeError.isDefined)
             Some("The changes could not be saved to the exclusions file")
-        else if (loadError.isDefined)
+        else if (propertiesFile.loadError.isDefined)
             // Reload: the settings are those before, still stored
             Some("The properties file could not be read")
         else
@@ -1720,13 +1731,11 @@ object Context {
 
     // The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
     // from it, or last stored: written when they differ (storeExclusions). If the file could not be
-    // read (exclusionsLoaded false, e.g. locked by another program): none (kept at a Reload, see
+    // read (not loaded, e.g. locked by another program): none (kept at a Reload, see
     // applyExclusions), and their changes are not stored (they would replace the file), which the
     // settings dialog tells. Under the lock of the stores (storeLock), as the settings.
-    @volatile private var exclusionsLoaded = false
+    private val exclusionsFile = new FileState
     @volatile private var storedExclusions = Vector.empty[String]
-    @volatile private var exclusionsLoadError: Option[Throwable] = None
-    @volatile private var exclusionsStoreError: Option[Throwable] = None
     // Set by Reset to defaults: the file is written (deleted) even if the list is as it was read, as
     // the properties file is: it may have been edited or made outside W10Wheel since. Reset when it
     // has been, or when other properties are loaded.
@@ -1757,19 +1766,19 @@ object Context {
     private def applyExclusions(name: String, read: Either[Throwable, Array[String]]): Unit = {
         read match {
             case Right(paths) =>
-                exclusionsStoreError = None
+                exclusionsFile.storeError = None
                 exclusionsRewrite = false
                 setExcludedPrograms(paths.toSeq)
-                exclusionsLoaded = true
-                exclusionsLoadError = None
+                exclusionsFile.loaded = true
+                exclusionsFile.loadError = None
                 // As they run (setExcludedPrograms drops the duplicates): not written again until
                 // changed
                 storedExclusions = getExcludedPrograms
             case Left(e) =>
-                exclusionsLoaded = false
-                exclusionsLoadError = Some(e)
+                exclusionsFile.loaded = false
+                exclusionsFile.loadError = Some(e)
                 if (!exclusionsName.contains(name)) {
-                    exclusionsStoreError = None
+                    exclusionsFile.storeError = None
                     exclusionsRewrite = false
                     setExcludedPrograms(Seq.empty)
                     storedExclusions = Vector.empty
@@ -1786,22 +1795,22 @@ object Context {
     // and have changed. The whole file written, or deleted if there is none.
     private def storeExclusions(name: String): Unit = {
         val current = getExcludedPrograms
-        if (exclusionsLoaded && exclusionsUnstored) {
+        if (exclusionsFile.loaded && exclusionsUnstored) {
             try {
                 Properties.writeExclusions(Properties.getExclusionsPath(name), current.toArray)
                 storedExclusions = current
                 exclusionsRewrite = false
-                exclusionsStoreError = None
+                exclusionsFile.storeError = None
             }
             catch {
                 case e: Exception =>
-                    exclusionsStoreError = Some(e)
+                    exclusionsFile.storeError = Some(e)
                     logger.warn(s"storeExclusions: $e")
             }
         }
-        else if (exclusionsLoaded)
+        else if (exclusionsFile.loaded)
             // As stored (e.g. a change that could not be stored, undone): nothing is left not stored
-            exclusionsStoreError = None
+            exclusionsFile.storeError = None
     }
 
     // Before leaving the selected properties (a switch, the restart as administrator), from the
@@ -1868,7 +1877,7 @@ object Context {
             case None =>
                 // At startup: the settings running (the default values), those changed from now on
                 // are not stored
-                if (!loaded) storedSettings = currentSettings
+                if (!propertiesFile.loaded) storedSettings = currentSettings
                 refreshSettingsLater()
                 false
             case Some(p) =>
@@ -1883,7 +1892,7 @@ object Context {
         readProperties(name) match {
             case Right(p) => Some(p)
             case Left(e) =>
-                loadError = Some(e)
+                propertiesFile.loadError = Some(e)
                 Dialog.errorMessage(s"${convLang("The properties file could not be read")}: $name\n\n${messageOf(e)}")
                 None
         }
@@ -1901,9 +1910,9 @@ object Context {
         // The keys of the previous file (Reload, switching properties) are not kept: they would be
         // applied. A missing or invalid value gets its default (setOrDefault).
         prop.copyFrom(p)
-        loaded = true
-        loadError = None
-        storeError = None
+        propertiesFile.loaded = true
+        propertiesFile.loadError = None
+        propertiesFile.storeError = None
 
         try {
             applyProperties()
@@ -2058,7 +2067,7 @@ object Context {
         // could be written or not; not for other properties whose file is not found (their list
         // would remain without them).
         try {
-            if (!loaded)
+            if (!propertiesFile.loaded)
                 logger.debug("Not loaded properties")
             else {
                 val name = selectedProperties
@@ -2076,7 +2085,7 @@ object Context {
                     // The excluded programs changed are not stored either (not for these
                     // properties): told as their error, also if only they have changed (none if
                     // they are as stored)
-                    exclusionsStoreError = if (exclusionsUnstored) Some(notFound()) else None
+                    exclusionsFile.storeError = if (exclusionsUnstored) Some(notFound()) else None
                     if (changed.nonEmpty)
                         throw notFound()
                     logger.debug("Properties file not found, not changed")
@@ -2091,12 +2100,12 @@ object Context {
                     current.update(path, changed)
 
                 storedSettings = current
-                storeError = None
+                propertiesFile.storeError = None
             }
         }
         catch {
             case e: Exception =>
-                storeError = Some(e)
+                propertiesFile.storeError = Some(e)
                 logger.warn(s"store: ${e.toString}")
         }
     }
@@ -2202,7 +2211,7 @@ object Context {
         // The properties files (in Properties.USER_DIR)
         def reloadProperties(): Boolean = tryReloadProperties()
         // As before the first load (at startup): the properties not loaded
-        def forgetLoaded(): Unit = storeLock.synchronized { loaded = false }
+        def forgetLoaded(): Unit = storeLock.synchronized { propertiesFile.loaded = false }
         def storeStatus: Option[String] = Context.storeStatus
         def unstoredReason(settingsUnstored: Boolean): Option[Throwable] = Context.unstoredReason(settingsUnstored)
         def defaultSetting(key: String): Option[String] = defaultProp.getOption(key)
