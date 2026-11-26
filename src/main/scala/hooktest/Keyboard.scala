@@ -70,7 +70,4 @@ object Keyboard {
     
     def getVKCode(name: String) = vkCodeMap(name)
     def getName(vkCode: Int) = revVKCodeMap(vkCode)
-
-    // A key that does not repeat and may send no up (the Pause key): each down is a new press
-    def isNoRepeatKey(vk: Int) = vk == 0x13 // VK_PAUSE
 }

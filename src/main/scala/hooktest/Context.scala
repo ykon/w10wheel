@@ -612,14 +612,6 @@ object Context {
         def getAndReset_PassedKey(vk: Int): Boolean =
             takeKey(vk, KeyState.Passed)
 
-        // A key that does not repeat (Pause): its down is always a new press, its state is reset
-        // (it may send only a down, the state of the previous press would remain). The state of the
-        // other keys is kept until their up (a repeat cannot be told from a new press for sure).
-        def newKeyDown(vk: Int): Unit = {
-            if (Keyboard.isNoRepeatKey(vk))
-                setKey(vk, KeyState.Idle)
-        }
-
         // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
         // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
         def resetKeys: Unit = {

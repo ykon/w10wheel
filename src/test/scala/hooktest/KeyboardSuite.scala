@@ -380,4 +380,39 @@ class KeyboardSuite extends munit.FunSuite {
         assertEquals(keyDown(VK_TAB, 600), Suppress)
         scrolling()
     }
+
+    test("the Pause key repeats as the other keys") {
+        reset(DataID.Middle, DataID.VK_PAUSE)
+        exclude()
+        addExcludedPoint(100, 100)
+
+        // Held (a USB keyboard repeats it): its repeats are suppressed and the scroll goes on (not
+        // ended and started again at each repeat, the cursor flickering); its up ends it
+        assertEquals(keyDown(VK_PAUSE, 100), Suppress)
+        for (time <- List(600, 633, 666, 700)) {
+            assertEquals(keyDown(VK_PAUSE, time), Suppress)
+            scrolling()
+        }
+        assertEquals(keyUp(VK_PAUSE, 1000), Suppress)
+        notScrolling()
+
+        // Passed over an excluded window: its repeats pass after moving out, no scroll starts
+        setCursor(100, 100)
+        assertEquals(keyDown(VK_PAUSE, 2000), Pass)
+        setCursor(20, 20)
+        assertEquals(keyDown(VK_PAUSE, 2500), Pass)
+        notScrolling()
+        assertEquals(keyUp(VK_PAUSE, 2600), Pass)
+
+        // Held when the keyboard hook is installed: its repeats and its up pass
+        setKeyDown(VK_PAUSE, true)
+        Context.ForTests.keyboardHookRemoved()
+        Context.ForTests.keyboardHookInstalled()
+        assertEquals(keyDown(VK_PAUSE, 3000), Pass)
+        notScrolling()
+        assertEquals(keyUp(VK_PAUSE, 3100), Pass)
+        setKeyDown(VK_PAUSE, false)
+        assertEquals(keyDown(VK_PAUSE, 3200), Suppress)
+        scrolling()
+    }
 }

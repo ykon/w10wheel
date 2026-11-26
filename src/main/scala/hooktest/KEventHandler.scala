@@ -243,20 +243,10 @@ object KEventHandler {
     def keyDown(info: KHookInfo): LRESULT = {
         //logger.debug(s"keyDown: ${info.vkCode}")
 
+        // The Pause key is a key as the others: held, it repeats too (a USB keyboard), and its up
+        // comes (with its down at once, a PS/2 one)
         val kd = KeyDown(info)
-        ctx.LastFlags.newKeyDown(kd.vkCode)
         ctx.LastFlags.resetLoneUpKey(kd.vkCode)
-
-        // The trigger key that does not repeat (Pause) may send no up: a down after its down was
-        // released, quickly. As its up would, lock the scroll it started (this down then ends it),
-        // and do not take the down for a repeat.
-        if (Keyboard.isNoRepeatKey(kd.vkCode) && ctx.isTriggerKey(kd) && kd.same(lastEvent)) {
-            debug("no up before (no repeat key)", kd)
-            if (ctx.isPressedKeyboardScrollMode)
-                ctx.setReleasedScrollMode
-
-            lastEvent = KeyUp(info)
-        }
 
         // A key whose down was suppressed (e.g. to leave scroll mode, or the old trigger key when
         // the trigger changed): its repeats are suppressed too, whatever the trigger is now
@@ -276,9 +266,8 @@ object KEventHandler {
         // resume, SessionEvents) was run: the hook's events are handled before the tasks posted,
         // and the reset forgot it. It passes as that press did, its up too: taken as a new press,
         // it would start a scroll (or end one) and be suppressed, its up too, the key left pressed
-        // in the application. Not the key that does not repeat (Pause): its down is always a new
-        // press.
-        else if (!Keyboard.isNoRepeatKey(kd.vkCode) && Windows.isKeyDown(kd.vkCode)) {
+        // in the application.
+        else if (Windows.isKeyDown(kd.vkCode)) {
             debug("pass (repeat of a down with no record)", kd)
             endPassDown(kd).get
         }
@@ -340,11 +329,10 @@ object KEventHandler {
     // the application with no hook to see it, so its repeats and its up pass (they would start
     // scroll mode, and the up of a down that reached the application be suppressed, the key left
     // pressed there), and its next press is the trigger. Not down also when the state cannot be
-    // read: a key taken as up is a new press. Not the key that does not repeat (Pause): its down is
-    // always a new press (LastFlags.newKeyDown). The other keys pass anyway.
+    // read: a key taken as up is a new press. The other keys pass anyway.
     private def passHeldTriggerKey(caller: String): Unit = {
         val vk = ctx.getTargetVKCode
-        if (vk != 0 && !Keyboard.isNoRepeatKey(vk) && Windows.isKeyDown(vk)) {
+        if (vk != 0 && Windows.isKeyDown(vk)) {
             logger.debug(s"$caller: the trigger key down, taken as passed: $vk")
             ctx.LastFlags.setPassedKey(vk)
         }
