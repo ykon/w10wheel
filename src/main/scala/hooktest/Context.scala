@@ -12,7 +12,7 @@ import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import java.util.NoSuchElementException
-import java.util.concurrent.atomic.{ AtomicBoolean, AtomicInteger }
+import java.util.concurrent.atomic.{ AtomicBoolean, AtomicInteger, AtomicReferenceArray }
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
@@ -476,6 +476,20 @@ object Context {
     def getPollTimeout = pollTimeout
     def isCursorChange = Scroll.cursorChange
 
+    // What is known of a key's press whose up has not come yet: one at a time, the last set kept.
+    // - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the old trigger key when
+    //   the trigger changed): its repeats and its up are suppressed too, whatever the trigger is now.
+    // - Passed: its down passed W10Wheel (to the application): its repeats and its up pass too, even
+    //   if it has become the trigger since.
+    // - LoneUp: its down was suppressed when the state was initialized (LastFlags.init): its up alone
+    //   is suppressed (the application did not get the down). Its next down ends it (a repeat cannot
+    //   be told from a new press, it is taken for one).
+    // The trigger key's own press (its down suppressed for its scroll) is not here: KEventHandler
+    // keeps it (lastEvent).
+    private enum KeyState {
+        case Idle, Suppressed, Passed, LoneUp
+    }
+
     object LastFlags {
         // R = Resent
         private val ldR = new AtomicBoolean(false)
@@ -492,24 +506,30 @@ object Context {
         private val x1S = new AtomicBoolean(false)
         private val x2S = new AtomicBoolean(false)
 
-        private val kdS = (0 until 256).map(_ => new AtomicBoolean(false));
-        // Keys whose down passed W10Wheel (to the application) and whose up has not come yet
-        private val kdP = (0 until 256).map(_ => new AtomicBoolean(false));
-        // Keys whose down was suppressed (kdS) when the state was initialized (init) and whose up
-        // has not come yet: their up alone is suppressed (the application did not get the down).
-        // Their next down resets them (a repeat cannot be told from a new press, it is taken for one).
-        private val kdL = (0 until 256).map(_ => new AtomicBoolean(false));
+        // What is known of each key's press whose up has not come yet (KeyState), by virtual-key
+        // code
+        private val keys = new AtomicReferenceArray[KeyState](Array.fill(256)(KeyState.Idle))
 
-        private def isKey(vk: Int) = vk >= 0 && vk < kdS.length
+        private def isKey(vk: Int) = vk >= 0 && vk < keys.length
 
-        // Not the keys passed (kdP), whose ups pass and reset them; reset, a key still pressed
+        private def keyIs(vk: Int, state: KeyState): Boolean =
+            isKey(vk) && keys.get(vk) == state
+
+        private def setKey(vk: Int, state: KeyState): Unit =
+            if (isKey(vk)) keys.set(vk, state)
+
+        // The key is in state, which it leaves (Idle)
+        private def takeKey(vk: Int, state: KeyState): Boolean =
+            isKey(vk) && keys.compareAndSet(vk, state, KeyState.Idle)
+
+        // Not the keys passed (Passed), whose ups pass and reset them; reset, a key still pressed
         // would lose it (e.g. pressed over an excluded program: its repeats would start scroll mode
         // if it is the trigger, and its up would be suppressed). Whether a key
         // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
         // suppressed is not pressed for it. A key whose up was missed passes its next down once.
-        // The keys suppressed (kdS) are reset too, so that a key whose up was missed is not
-        // suppressed again: only their up alone is (kdL), as the hook does for the buttons
-        // (Windows.dropLoneUp).
+        // The keys suppressed (Suppressed) are not kept either, so that a key whose up was missed
+        // is not suppressed again: only their up alone is (LoneUp), as the hook does for the
+        // buttons (Windows.dropLoneUp).
         def init: Unit = {
             initButtons
             suppressedKeysToLoneUp
@@ -519,22 +539,21 @@ object Context {
         def initButtons: Unit =
             Array(ldR, rdR, ldP, rdP, ldS, rdS, mdS, x1S, x2S).foreach(f => f.set(false))
 
-        // The keys suppressed (kdS) are suppressed for their up alone (kdL): a key whose up was
-        // missed is not suppressed again (see init)
+        // The keys suppressed are suppressed for their up alone (LoneUp): a key whose up was missed
+        // is not suppressed again (see init)
         def suppressedKeysToLoneUp: Unit = {
-            for (vk <- kdS.indices) {
-                if (kdS(vk).getAndSet(false))
-                    kdL(vk).set(true)
-            }
+            for (vk <- 0 until keys.length)
+                keys.compareAndSet(vk, KeyState.Suppressed, KeyState.LoneUp)
         }
 
-        // A down of a key (kdL): its up is not alone any more
+        // A down of a key (LoneUp): its up is not alone any more
         def resetLoneUpKey(vk: Int): Unit =
-            if (isKey(vk)) kdL(vk).set(false)
+            takeKey(vk, KeyState.LoneUp)
 
-        // The up of a key whose down was suppressed before init (kdL), with no down since; resets it
+        // The up of a key whose down was suppressed before init (LoneUp), with no down since;
+        // resets it
         def getAndReset_LoneUpKey(vk: Int): Boolean =
-            isKey(vk) && kdL(vk).getAndSet(false)
+            takeKey(vk, KeyState.LoneUp)
 
 
         def setResent(down: MouseEvent): Unit = down match {
@@ -571,44 +590,41 @@ object Context {
         }
 
         def setSuppressed(down: KeyboardEvent): Unit = down match {
-            case KeyDown(_) => if (isKey(down.vkCode)) kdS(down.vkCode).set(true)
+            case KeyDown(_) => setKey(down.vkCode, KeyState.Suppressed)
             case _ => throw new IllegalArgumentException()
         }
 
         // The key's down was suppressed and its up has not come yet: its repeats are suppressed too
         def isSuppressedKey(vk: Int): Boolean =
-            isKey(vk) && kdS(vk).get
+            keyIs(vk, KeyState.Suppressed)
 
         // The keyboard trigger changed while the old key was pressed (its down was suppressed)
         def setSuppressedKey(vk: Int): Unit =
-            if (isKey(vk)) kdS(vk).set(true)
+            setKey(vk, KeyState.Suppressed)
 
         def setPassedKey(vk: Int): Unit =
-            if (isKey(vk)) kdP(vk).set(true)
+            setKey(vk, KeyState.Passed)
 
         // The key's down passed: its repeats and its up pass too, even if it is the trigger now
         def isPassedKey(vk: Int): Boolean =
-            isKey(vk) && kdP(vk).get
+            keyIs(vk, KeyState.Passed)
 
         def getAndReset_PassedKey(vk: Int): Boolean =
-            isKey(vk) && kdP(vk).getAndSet(false)
+            takeKey(vk, KeyState.Passed)
 
-        // A key that does not repeat (Pause): its down is always a new press, its flags are reset
-        // (it may send only a down, the flags of the previous press would remain). The flags of the
-        // other keys are kept until their up (a repeat cannot be told from a new press for sure).
+        // A key that does not repeat (Pause): its down is always a new press, its state is reset
+        // (it may send only a down, the state of the previous press would remain). The state of the
+        // other keys is kept until their up (a repeat cannot be told from a new press for sure).
         def newKeyDown(vk: Int): Unit = {
-            if (Keyboard.isNoRepeatKey(vk) && isKey(vk)) {
-                kdS(vk).set(false)
-                kdP(vk).set(false)
-            }
+            if (Keyboard.isNoRepeatKey(vk))
+                setKey(vk, KeyState.Idle)
         }
 
         // The keyboard hook is removed, or keys were not seen (the session locked, or the old hook
         // removed by Windows: KEventHandler.hookLost): the ups will not be seen, or were missed
         def resetKeys: Unit = {
-            kdS.foreach(f => f.set(false))
-            kdP.foreach(f => f.set(false))
-            kdL.foreach(f => f.set(false))
+            for (vk <- 0 until keys.length)
+                keys.set(vk, KeyState.Idle)
         }
 
         // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
@@ -629,7 +645,7 @@ object Context {
         }
 
         def getAndReset_SuppressedDown(up: KeyboardEvent): Boolean = up match {
-            case KeyUp(_) => isKey(up.vkCode) && kdS(up.vkCode).getAndSet(false)
+            case KeyUp(_) => takeKey(up.vkCode, KeyState.Suppressed)
             case _ => throw new IllegalArgumentException()
         }
 
@@ -655,7 +671,7 @@ object Context {
 
         /*
         def reset(down: KeyboardEvent) = down match {
-            case KeyDown(_) => kdS(down.vkCode) = false
+            case KeyDown(_) => keys.set(down.vkCode, KeyState.Idle)
             case _ => {}
         }
         */
