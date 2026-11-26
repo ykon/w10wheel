@@ -754,7 +754,7 @@ object EventHandler {
             // Before the reset (see checkSameLastEvent)
             earlierDownSuppressed = ctx.LastFlags.isSuppressedDown(d)
 
-            // A new press: the flags of the earlier one (resent, suppressed, passed) are reset
+            // A new press: the state of the earlier one (resent, suppressed, passed) is reset
             // whatever the trigger, for all the buttons (only the LR trigger's handlers did, so
             // after changing the trigger they could take e.g. the next up for that of a resent or
             // suppressed down, and the missed up of a suppressed middle down would make the up of
@@ -801,9 +801,9 @@ object EventHandler {
     private def procUp(proc: MouseEvent => LRESULT, u: MouseEvent): LRESULT = {
         val res = procUpBody(proc, u)
 
-        // The press is over: its flags (resent, suppressed, passed) are not needed any more, reset
-        // them whatever handled the up (e.g. after changing the trigger, the handlers of the new
-        // one do not use them, and they would be taken for those of a later up whose down was not
+        // The press is over: its state (resent, suppressed, passed) is not needed any more, reset
+        // it whatever handled the up (e.g. after changing the trigger, the handlers of the new
+        // one do not use it, and it would be taken for that of a later up whose down was not
         // seen)
         if (!Windows.isInjectedEvent(u))
             ctx.LastFlags.resetFor(u)

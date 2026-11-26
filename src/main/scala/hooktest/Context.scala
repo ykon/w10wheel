@@ -12,7 +12,7 @@ import com.sun.jna.platform.win32.WinUser.{ MSLLHOOKSTRUCT => HookInfo }
 import com.sun.jna.platform.win32.WinUser.{ KBDLLHOOKSTRUCT => KHookInfo }
 
 import java.util.NoSuchElementException
-import java.util.concurrent.atomic.{ AtomicBoolean, AtomicInteger, AtomicReferenceArray }
+import java.util.concurrent.atomic.{ AtomicInteger, AtomicReferenceArray }
 
 object Context {
     val PROGRAM_NAME = "W10Wheel"
@@ -490,21 +490,50 @@ object Context {
         case Idle, Suppressed, Passed, LoneUp
     }
 
+    // What became of the down of a button's press, for its up (whose up has not come yet): one at a
+    // time, the last set kept. Reset at every physical down and up of the button
+    // (EventHandler.procDown, procUp): the press is new, or over.
+    // - Suppressed: its down was suppressed (e.g. to leave scroll mode, or the LR trigger's pair):
+    //   its up is suppressed too.
+    // - Resent: its down was resent alone (the LR trigger's wait timed out or was ended by a move or
+    //   the other button's up; left and right only): its up is resent.
+    // - Passed: its down passed (in the LR trigger's pressed scroll mode, or over an excluded window;
+    //   left and right only): its up passes.
+    private enum ButtonState {
+        case Idle, Suppressed, Resent, Passed
+    }
+
     object LastFlags {
-        // R = Resent
-        private val ldR = new AtomicBoolean(false)
-        private val rdR = new AtomicBoolean(false)
+        // What became of each button's down (ButtonState): left, right, middle, X1, X2. Also set on
+        // the EventWaiter thread (the LR trigger's wait).
+        private val buttons = new AtomicReferenceArray[ButtonState](Array.fill(5)(ButtonState.Idle))
 
-        // P = Passed
-        private val ldP = new AtomicBoolean(false)
-        private val rdP = new AtomicBoolean(false)
+        private def buttonIndex(me: MouseEvent): Int = me match {
+            case LeftEvent(_) => 0
+            case RightEvent(_) => 1
+            case MiddleEvent(_) => 2
+            case X1Event(_) => 3
+            case X2Event(_) => 4
+            case _ => throw new IllegalArgumentException(s"Not a button event: ${me.name}")
+        }
 
-        // S = Suppressed
-        private val ldS = new AtomicBoolean(false)
-        private val rdS = new AtomicBoolean(false)
-        private val mdS = new AtomicBoolean(false)
-        private val x1S = new AtomicBoolean(false)
-        private val x2S = new AtomicBoolean(false)
+        private def isLR(me: MouseEvent): Boolean = me match {
+            case LeftEvent(_) | RightEvent(_) => true
+            case _ => false
+        }
+
+        // The button of a down (set) or an up (take): the left or right one only for Resent and
+        // Passed
+        private def indexOf(me: MouseEvent, isDown: Boolean, lrOnly: Boolean): Int = {
+            val ok = if (isDown) me.isDown else me.isUp
+            if (!ok || (lrOnly && !isLR(me)))
+                throw new IllegalArgumentException(me.name)
+            buttonIndex(me)
+        }
+
+        // The button is in state, which it leaves (Idle)
+        private def takeButton(i: Int, state: ButtonState): Boolean =
+            buttons.compareAndSet(i, state, ButtonState.Idle)
 
         // What is known of each key's press whose up has not come yet (KeyState), by virtual-key
         // code
@@ -535,9 +564,9 @@ object Context {
             suppressedKeysToLoneUp
         }
 
-        // The flags of the buttons (resent, passed, suppressed): see init, and mouseHookLost
+        // The states of the buttons (ButtonState): see init, and mouseHookLost
         def initButtons: Unit =
-            Array(ldR, rdR, ldP, rdP, ldS, rdS, mdS, x1S, x2S).foreach(f => f.set(false))
+            for (i <- 0 until buttons.length) buttons.set(i, ButtonState.Idle)
 
         // The keys suppressed are suppressed for their up alone (LoneUp): a key whose up was missed
         // is not suppressed again (see init)
@@ -556,38 +585,20 @@ object Context {
             takeKey(vk, KeyState.LoneUp)
 
 
-        def setResent(down: MouseEvent): Unit = down match {
-            case LeftDown(_) => ldR.set(true)
-            case RightDown(_) => rdR.set(true)
-            case _ => throw new IllegalArgumentException()
-        }
+        def setResent(down: MouseEvent): Unit =
+            buttons.set(indexOf(down, true, true), ButtonState.Resent)
 
-        def getAndReset_ResentDown(up: MouseEvent): Boolean = up match {
-            case LeftUp(_) => ldR.getAndSet(false)
-            case RightUp(_) => rdR.getAndSet(false)
-            case _ => throw new IllegalArgumentException()
-        }
+        def getAndReset_ResentDown(up: MouseEvent): Boolean =
+            takeButton(indexOf(up, false, true), ButtonState.Resent)
 
-        def setPassed(down: MouseEvent): Unit = down match {
-            case LeftDown(_) => ldP.set(true)
-            case RightDown(_) => rdP.set(true)
-            case _ => throw new IllegalArgumentException()
-        }
+        def setPassed(down: MouseEvent): Unit =
+            buttons.set(indexOf(down, true, true), ButtonState.Passed)
 
-        def getAndReset_PassedDown(up: MouseEvent): Boolean = up match {
-            case LeftUp(_) => ldP.getAndSet(false)
-            case RightUp(_) => rdP.getAndSet(false)
-            case _ => throw new IllegalArgumentException()
-        }
+        def getAndReset_PassedDown(up: MouseEvent): Boolean =
+            takeButton(indexOf(up, false, true), ButtonState.Passed)
 
-        def setSuppressed(down: MouseEvent): Unit = down match {
-            case LeftDown(_) => ldS.set(true)
-            case RightDown(_) => rdS.set(true)
-            case MiddleDown(_) => mdS.set(true)
-            case X1Down(_) => x1S.set(true)
-            case X2Down(_) => x2S.set(true)
-            case _ => throw new IllegalArgumentException()
-        }
+        def setSuppressed(down: MouseEvent): Unit =
+            buttons.set(indexOf(down, true, false), ButtonState.Suppressed)
 
         def setSuppressed(down: KeyboardEvent): Unit = down match {
             case KeyDown(_) => setKey(down.vkCode, KeyState.Suppressed)
@@ -629,20 +640,14 @@ object Context {
 
         // The downs suppressed whose up has not come yet (left, right, middle, X1, X2); resets them
         def takeSuppressedDowns: Array[Boolean] =
-            Array(ldS, rdS, mdS, x1S, x2S).map(f => f.getAndSet(false))
+            Array.tabulate(5)(i => takeButton(i, ButtonState.Suppressed))
 
         // The downs resent alone whose up has not come yet (left, right); resets them
         def takeResentDowns: Array[Boolean] =
-            Array(ldR, rdR).map(f => f.getAndSet(false))
+            Array.tabulate(2)(i => takeButton(i, ButtonState.Resent))
 
-        def getAndReset_SuppressedDown(up: MouseEvent): Boolean = up match {
-            case LeftUp(_) => ldS.getAndSet(false)
-            case RightUp(_) => rdS.getAndSet(false)
-            case MiddleUp(_) => mdS.getAndSet(false)
-            case X1Up(_) => x1S.getAndSet(false)
-            case X2Up(_) => x2S.getAndSet(false)
-            case _ => throw new IllegalArgumentException()
-        }
+        def getAndReset_SuppressedDown(up: MouseEvent): Boolean =
+            takeButton(indexOf(up, false, false), ButtonState.Suppressed)
 
         def getAndReset_SuppressedDown(up: KeyboardEvent): Boolean = up match {
             case KeyUp(_) => takeKey(up.vkCode, KeyState.Suppressed)
@@ -651,21 +656,15 @@ object Context {
 
         // The down of the button of an event was suppressed and its up has not come yet
         def isSuppressedDown(me: MouseEvent): Boolean = me match {
-            case LeftEvent(_) => ldS.get
-            case RightEvent(_) => rdS.get
-            case MiddleEvent(_) => mdS.get
-            case X1Event(_) => x1S.get
-            case X2Event(_) => x2S.get
+            case LeftEvent(_) | RightEvent(_) | MiddleEvent(_) | X1Event(_) | X2Event(_) =>
+                buttons.get(buttonIndex(me)) == ButtonState.Suppressed
             case _ => false
         }
 
-        // The flags of the press of the button of an event (resent, suppressed, passed)
+        // The state of the press of the button of an event (ButtonState)
         def resetFor(me: MouseEvent): Unit = me match {
-            case LeftEvent(_) => ldR.set(false); ldS.set(false); ldP.set(false)
-            case RightEvent(_) => rdR.set(false); rdS.set(false); rdP.set(false)
-            case MiddleEvent(_) => mdS.set(false)
-            case X1Event(_) => x1S.set(false)
-            case X2Event(_) => x2S.set(false)
+            case LeftEvent(_) | RightEvent(_) | MiddleEvent(_) | X1Event(_) | X2Event(_) =>
+                buttons.set(buttonIndex(me), ButtonState.Idle)
             case _ => ()
         }
 
