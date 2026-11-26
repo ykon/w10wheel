@@ -10,7 +10,8 @@ package hooktest
 // objects, one of each: the tests run one at a time (build.sbt), each from a reset (Harness.reset).
 // As W10Wheel.NET's W10Wheel.Tests.
 
-import java.nio.file.{ Files, Paths }
+import java.io.File
+import java.nio.file.{ Files, Path }
 import java.util.concurrent.{ ConcurrentHashMap, ConcurrentLinkedQueue, CountDownLatch }
 
 import scala.collection.mutable.ListBuffer
@@ -88,14 +89,26 @@ object Harness {
         Dialog.showErrorMessage = (_, _) => ()
     }
 
-    // The folder of the properties files: one of the tests, not the user's profile
-    val USER_DIR: String = Paths.get(System.getProperty("java.io.tmpdir"), "W10Wheel.Tests").toString
+    // The folder of the properties files: one of this run of the tests (in the temp folder), not
+    // the user's profile, nor another run's (the tests empty it, StoreSuite). Deleted at the end.
+    lazy val USER_DIR: String = {
+        val dir = Files.createTempDirectory("W10Wheel.Tests-")
+        Runtime.getRuntime.addShutdownHook(new Thread(() => deleteFolder(dir)))
+        dir.toString
+    }
+
+    private def deleteFolder(dir: Path): Unit = {
+        Option(dir.toFile.listFiles()).getOrElse(Array.empty[File]).foreach { f =>
+            f.setWritable(true)
+            f.delete()
+        }
+        dir.toFile.delete()
+    }
 
     private lazy val initialized: Unit = {
         // Context first, as the program does: Properties first would initialize Context while it is
         // initialized itself (PROGRAM_NAME), and Context would read its DEFAULT_DEF as null
         Context.PROGRAM_NAME
-        Files.createDirectories(Paths.get(USER_DIR))
         Properties.USER_DIR = USER_DIR
         // Before any test changes a setting: the defaults (Reset to defaults) are those of a start
         Context.ForTests.saveDefaults()
