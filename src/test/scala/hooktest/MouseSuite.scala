@@ -55,6 +55,26 @@ class MouseSuite extends munit.FunSuite {
         }
     }
 
+    test("a single or drag trigger whose scroll cannot start passes its down and up") {
+        // RawInput refused: the button works as if it were not the trigger, its click not lost
+        for ((trigger, b) <- List((DataID.Middle, Middle), (DataID.RightDrag, Right))) {
+            reset(trigger, DataID.None)
+            rawInputFails = true
+            try {
+                assertEquals(down(b, 10, 10, 100), Pass)
+                notScrolling()
+                assertEquals(up(b, 10, 10, 150), Pass)
+                assert(noneSent(50))
+            }
+            finally {
+                rawInputFails = false
+            }
+            // RawInput registered again: the trigger
+            assertEquals(down(b, 10, 10, 200), Suppress)
+            scrolling()
+        }
+    }
+
     test("a button of the LR pair pressed again with its up missed ends the scroll") {
         reset(DataID.LR, DataID.None)
         assertEquals(down(Left, 0, 0, 100), Suppress)

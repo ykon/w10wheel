@@ -415,4 +415,63 @@ class KeyboardSuite extends munit.FunSuite {
         assertEquals(keyDown(VK_PAUSE, 3200), Suppress)
         scrolling()
     }
+
+    test("the trigger key whose scroll cannot start passes its down, repeats and up") {
+        val vk = kb()
+        rawInputFails = true
+        try {
+            assertEquals(keyDown(vk, 100), Pass)
+            notScrolling()
+            assertEquals(keyDown(vk, 130), Pass)
+            assertEquals(keyUp(vk, 500), Pass)
+        }
+        finally {
+            rawInputFails = false
+        }
+        // Its next down is a press of its own: the trigger
+        assertEquals(keyDown(vk, 600), Suppress)
+        scrolling()
+    }
+
+    // The trigger key in its scroll, ended by a mouse trigger, its up missed, and pressed again
+    // with its down missed too (e.g. over a window of a higher integrity level): down in the
+    // system, its repeat passes with no record of the down
+    private def passedWithNoRecord(vk: Int): Unit = {
+        assertEquals(keyDown(vk, 100), Suppress)
+        down(Middle, 0, 0, 200)
+        up(Middle, 0, 0, 250)
+        notScrolling()
+        setKeyDown(vk, true)
+        assertEquals(keyDown(vk, 600), Pass)
+    }
+
+    test("the trigger key's next press after a passed press with no record is the trigger") {
+        val vk = kb()
+        passedWithNoRecord(vk)
+        assertEquals(keyUp(vk, 700), Pass)
+        setKeyDown(vk, false)
+        // Its next press is the trigger, not taken for a repeat of the old one
+        assertEquals(keyDown(vk, 800), Suppress)
+        scrolling()
+    }
+
+    test("a reset while a press passed with no record is held: its up passes") {
+        val vk = kb()
+        passedWithNoRecord(vk)
+        Context.initState
+        // Released before its next repeat: its up as its down
+        assertEquals(keyUp(vk, 700), Pass)
+        setKeyDown(vk, false)
+        assertEquals(keyDown(vk, 800), Suppress)
+        scrolling()
+    }
+
+    test("the trigger changed while a press passed with no record is held: its repeats and up pass") {
+        val vk = kb()
+        passedWithNoRecord(vk)
+        Context.ForTests.setTargetVKCode(DataID.VK_TAB)
+        assertEquals(keyDown(vk, 630), Pass)
+        assertEquals(keyUp(vk, 700), Pass)
+        setKeyDown(vk, false)
+    }
 }

@@ -269,6 +269,11 @@ object KEventHandler {
         // in the application.
         else if (Windows.isKeyDown(kd.vkCode)) {
             debug("pass (repeat of a down with no record)", kd)
+            // The last event may be the down of an earlier press of the trigger key whose up was
+            // missed: not of this press. Kept, a reset (initState) or a change of the trigger while
+            // this press is held would take this press for that one, suppressed (its up too: the
+            // key left pressed in the application). As passExcludedWindow does.
+            if (kd.same(lastEvent)) lastEvent = KNonEvent(null)
             endPassDown(kd).get
         }
         else if (ctx.isTriggerKey(kd)) singleDown(kd) else noneDown(kd)
@@ -293,6 +298,10 @@ object KEventHandler {
         }
         else if (ctx.LastFlags.getAndReset_PassedKey(ku.vkCode)) {
             debug("pass (up of a passed down)", ku)
+            // As above: the last event may be the down of an earlier press of the trigger key whose
+            // up was missed (this press passed with no record of it, keyDown), and the next press
+            // would be taken for its repeat, suppressed with no scroll
+            if (ctx.isTriggerKey(ku)) lastEvent = ku
             __callNextHook()
         }
         else if (ctx.isTriggerKey(ku)) singleUp(ku) else noneUp(ku)
