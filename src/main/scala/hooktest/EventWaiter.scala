@@ -85,9 +85,10 @@ object EventWaiter {
         if (offer(Cancel(null))) Some(down) else None
     }
 
-    // Whether a wait is in progress for a down of another button than up's (on the hook thread)
-    def isWaitingOtherThan(up: MouseEvent): Boolean =
-        waiting.get && !waitingEvent.sameButton(up)
+    // Whether a wait is in progress for a down of another button than me's, a down or an up (on the
+    // hook thread)
+    def isWaitingOtherThan(me: MouseEvent): Boolean =
+        waiting.get && !waitingEvent.ofSameButton(me)
 
     // Whether a wait is in progress for a down of the same button as down's (on the hook thread)
     def isWaitingFor(down: MouseEvent): Boolean =
@@ -151,7 +152,7 @@ object EventWaiter {
 
         def resendUD = {
             logger.debug(s"wait Trigger (${down.name} -->> ${up.name}): resend ${down.name}, ${up.name}")
-            Windows.resendDownUp(w.generation, w.press, down, up)
+            Windows.resendDownUp(w.generation, down, up)
         }
 
         (down, up) match {

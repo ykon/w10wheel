@@ -55,6 +55,10 @@ sealed trait MouseEvent {
             case _ => false
         }
     }
+
+    // Of the same button, whether each is a down or an up (sameButton: a down and an up only)
+    def ofSameButton(me2: MouseEvent): Boolean =
+        sameEvent(me2) || sameButton(me2)
 }
 case class LeftDown (info: HookInfo) extends MouseEvent
 case class LeftUp (info: HookInfo) extends MouseEvent

@@ -200,7 +200,15 @@ object Windows {
     private def decodeKind(extra: Long): Option[(ResendKind, Int)] = {
         val upper = extra >>> 32
         val press = (upper & PRESS_ID_MASK).toInt
-        ResendKind.values.find(_.bits == upper >>> 24).map(k => (k, press))
+        // The bits of each kind (ResendKind.bits), matched: not looked up in ResendKind.values (a
+        // new array at each call), in the hook
+        val kind = (upper >>> 24) match {
+            case 0L => Some(ResendKind.Plain)
+            case 1L => Some(ResendKind.Down)
+            case 2L => Some(ResendKind.Release)
+            case _ => None
+        }
+        kind.map(k => (k, press))
     }
 
     // dwExtraInfo is pointer-sized: compare all of it (the tag in the lower half for resends)
@@ -774,7 +782,7 @@ object Windows {
 
     // Resends a down and an up (at different points). The same button's down and up are sent as
     // one batch, like resendClick: 10 ms apart, the up with retries.
-    def resendDownUp(generation: Int, press: Int, down: MouseEvent, up: MouseEvent): Unit = {
+    def resendDownUp(generation: Int, down: MouseEvent, up: MouseEvent): Unit = {
         val plain = resendExtra(ResendKind.Plain, NO_PRESS)
         (down, up) match {
             case (LeftDown(_), LeftUp(_)) | (RightDown(_), RightUp(_)) =>
