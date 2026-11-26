@@ -400,4 +400,102 @@ class MouseSuite extends munit.FunSuite {
         assertEquals(keyUp(VK_LMENU, 650), Pass)
         Context.exitScrollMode
     }
+
+    test("another button's down ends the LR wait: the waiting down is resent, and the up for it") {
+        // As the Rust version: the waiting down is resent at once (not after the timeout, nor after
+        // the other button's whole click), and its up is resent for it
+        for (b <- List(Middle, X1, X2)) {
+            reset(DataID.LR, DataID.None)
+            // Longer than the waits below: the timeout does not resend the down
+            Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+            assertEquals(down(Left, 10, 10, 100), Suppress)
+            assertEquals(down(b, 10, 10, 120), Pass)
+            val downs = sentInputs(1)
+            assertEquals(buttonsOf(downs), List((Left, true)))
+            assertEquals(receive(downs.head), Pass)
+            assertEquals(up(b, 10, 10, 150), Pass)
+            assertEquals(up(Left, 10, 10, 200), Suppress)
+            val ups = sentInputs(1)
+            assertEquals(buttonsOf(ups), List((Left, false)))
+            assertEquals(receive(ups.head), Pass)
+            assert(noneSent(300))
+            notScrolling()
+        }
+    }
+
+    test("another button's up ends the LR wait, and passes") {
+        // Pressed before the wait (passed), released while it goes on: its up passes as it is, and
+        // the waiting down is resent
+        for (b <- List(Middle, X1)) {
+            reset(DataID.LR, DataID.None)
+            Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+            assertEquals(down(b, 10, 10, 50), Pass)
+            assertEquals(down(Left, 10, 10, 100), Suppress)
+            assertEquals(up(b, 10, 10, 150), Pass)
+            val inputs = sentInputs(1)
+            assertEquals(buttonsOf(inputs), List((Left, true)))
+            assertEquals(receive(inputs.head), Pass)
+            assertEquals(up(Left, 10, 10, 200), Suppress)
+            val ups = sentInputs(1)
+            assertEquals(buttonsOf(ups), List((Left, false)))
+            notScrolling()
+        }
+    }
+
+    test("the up of another button's suppressed down does not end the LR wait") {
+        // The middle button ends a released scroll (its down suppressed), then Left waits: the
+        // middle's up is suppressed, and the wait goes on (Right makes the pair)
+        reset(DataID.LR, DataID.None)
+        down(Left, 0, 0, 100)
+        down(Right, 0, 0, 150)
+        scrolling()
+        up(Left, 0, 0, 200)
+        up(Right, 0, 0, 250)
+        assertEquals(down(Middle, 0, 0, 1000), Suppress)
+        notScrolling()
+        assertEquals(down(Left, 0, 0, 1050), Suppress)
+        assertEquals(up(Middle, 0, 0, 1100), Suppress)
+        assert(takeSent(0, 0).isEmpty)
+        assertEquals(down(Right, 0, 0, 1150), Suppress)
+        scrolling()
+    }
+
+    test("another button released and pressed again while the sender is slow keeps its order") {
+        // X1 held, Left waits; X1 released (it ends the wait) and pressed again before the sender
+        // has sent what the wait queued: the application gets X1's down, up, down and up in their
+        // order
+        reset(DataID.LR, DataID.None)
+        Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+        assertEquals(down(X1, 10, 10, 50), Pass)
+        assertEquals(down(Left, 10, 10, 100), Suppress)
+        holdSender()
+        up(X1, 10, 10, 150)
+        down(X1, 10, 10, 160)
+        releaseSender()
+        // The sender sends what was queued
+        Thread.sleep(200)
+        up(X1, 10, 10, 300)
+        val x1 = takeAppLog().filter(_._1 == X1)
+        assertEquals(x1, List((X1, true), (X1, false), (X1, true), (X1, false)))
+    }
+
+    test("another button ending a released scroll ends the LR wait too") {
+        // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the
+        // middle button ends the scroll (suppressed), and the wait (its down resent at once)
+        reset(DataID.LR, DataID.VK_LMENU)
+        Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+        assertEquals(keyDown(VK_LMENU, 100), Suppress)
+        assertEquals(down(Left, 10, 10, 150), Suppress)
+        assertEquals(keyUp(VK_LMENU, 200), Suppress)
+        assert(isScrolling)
+        assertEquals(down(Middle, 10, 10, 300), Suppress)
+        notScrolling()
+        val downs = sentInputs(1)
+        assertEquals(buttonsOf(downs), List((Left, true)))
+        assertEquals(receive(downs.head), Pass)
+        assertEquals(up(Middle, 10, 10, 350), Suppress)
+        assertEquals(up(Left, 10, 10, 400), Suppress)
+        val ups = sentInputs(1)
+        assertEquals(buttonsOf(ups), List((Left, false)))
+    }
 }

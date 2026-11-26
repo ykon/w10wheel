@@ -345,6 +345,21 @@ object Windows {
         }
     }
 
+    // Whether an up would be dropped as an up without its down (as dropLoneUp tells, without ending
+    // its press): before it is offered to the LR trigger's wait (on the hook thread)
+    def isLoneUp(up: MouseEvent): Boolean = {
+        val button = up match {
+            case LeftUp(_) => 0
+            case RightUp(_) => 1
+            case MiddleUp(_) => 2
+            case X1Up(_) => 3
+            case X2Up(_) => 4
+            case _ => throw new IllegalArgumentException(s"Not an up: ${up.name}")
+        }
+        val p = presses(button)
+        !isInjected(up.info) && p.downSuppressed && p.downPassedId != p.id
+    }
+
     // dropLoneUp for a left or right up (on the hook thread)
     def dropLoneUpOf(up: MouseEvent): Boolean = up match {
         case LeftUp(info) => dropLoneUp(0, info)

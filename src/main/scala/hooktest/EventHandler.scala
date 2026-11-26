@@ -687,12 +687,34 @@ object EventHandler {
         getResult(cs, me)
     }
 
+    // While the LR trigger waits (a down of the pair), another button (middle, X1, X2) ends the
+    // wait, as the Rust version does: the waiting down is resent at once (EventWaiter), not after
+    // the timeout nor after the other button's whole click, and its up is resent at its physical up
+    // (checkResentDown). The other button's down and up pass as they are (as the hook returns: the
+    // application gets them just before the resent down). Not resent after the waiting down: the
+    // button pressed again before the sender has sent its up would have its down before that up
+    // (X1 down, down, up). Not an up whose down reached no application (Windows.isLoneUp): dropped
+    // (Hook), and the wait goes on, as for the other button of the pair (offerEventWaiter). Then
+    // the event is handled as when no wait is in progress: a down before the end of a released
+    // scroll (it ends the wait too, as in the Rust version, and the scroll, suppressed).
+    private def endWaitByOtherButton(me: MouseEvent): Option[LRESULT] = {
+        val isOther = me match {
+            case MiddleEvent(_) | X1Event(_) | X2Event(_) => true
+            case _ => false
+        }
+        if (isOther && EventWaiter.isWaitingOtherThan(me) && !(me.isUp && Windows.isLoneUp(me)) &&
+            EventWaiter.endByResend(me))
+            debug("the LR wait ended (its down resent)", me)
+        None
+    }
+
     // As the other handlers, the injected events (of other software, or resent by W10Wheel) pass
     // first: they neither end the locked scroll mode nor initialize the state (Escape)
     private def noneDown(me: MouseEvent): LRESULT = {
         //logger.debug("noneDown")
         val cs: Checkers = List(
             skipResendEventSingle,
+            endWaitByOtherButton,
             //resetLastFlags,
             checkExitScrollDown,
             endPass
@@ -707,6 +729,7 @@ object EventHandler {
             skipResendEventSingle,
             checkEscape,
             checkSuppressedDown,
+            endWaitByOtherButton,
             endPass
         )
 
