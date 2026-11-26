@@ -67,12 +67,7 @@ object Context {
             // is on (e.g. the LR trigger wait would resend a down after its up has passed), and
             // scroll mode could not be left: leave it, cancel the wait and reset their state
             Scroll.setPassMode(b)
-            if (b) {
-                EventWaiter.offer(Cancel(null))
-                EventHandler.initState
-                KEventHandler.initState()
-                LastFlags.init
-            }
+            if (b) onPassModeOn()
 
             // The icon and the menu of the tray
             Tray.update()
@@ -83,6 +78,14 @@ object Context {
         def toggleMode: Unit = {
             mode = !mode
         }
+    }
+
+    // The handlers' state reset as Pass Mode is turned on (its scroll ended by Scroll.setPassMode)
+    private def onPassModeOn(): Unit = {
+        EventWaiter.offer(Cancel(null))
+        EventHandler.initState
+        KEventHandler.initState()
+        LastFlags.init
     }
 
     def isPassMode = Pass.mode
@@ -1248,26 +1251,8 @@ object Context {
         dialog.addPropertiesButton("Reload", () => if (!reloadFromDialog()) dialog.restorePending(),
                                    dropPending = true)
         dialog.addBottomButton("Reset to defaults", () => resetSettings(owner))
-        // Instead of the hint that the changes are stored: the properties could not be read (Reload
-        // again), or written (e.g. a read-only file: tried again at the next change)
-        dialog.status = () => {
-            if (!loaded)
-                Some((NoteKind.Warning, convLang("The properties file could not be read: changes are not saved")))
-            // Before a Reload that failed: the changes made after it are not stored
-            else if (storeError.isDefined)
-                Some((NoteKind.Warning, convLang("The changes could not be saved to the properties file")))
-            // The file of the excluded programs: also seen from the other pages (e.g. Reset to
-            // defaults). Before a Reload that failed too: their changes are not stored.
-            else if (!exclusionsLoaded)
-                Some((NoteKind.Warning, convLang("The exclusions file could not be read: changes are not saved")))
-            else if (exclusionsStoreError.isDefined)
-                Some((NoteKind.Warning, convLang("The changes could not be saved to the exclusions file")))
-            else if (loadError.isDefined)
-                // Reload: the settings are those before, still stored
-                Some((NoteKind.Warning, convLang("The properties file could not be read")))
-            else
-                None
-        }
+        // Instead of the hint that the changes are stored (storeStatus)
+        dialog.status = () => storeStatus.map(text => (NoteKind.Warning, convLang(text)))
 
         val general = dialog.addPage("General")
         general.addComboBox("Language", Seq(DataID.English -> "English", DataID.Japanese -> "Japanese"),
@@ -1697,14 +1682,39 @@ object Context {
     private def hasUnstoredChanges: Boolean =
         hasUnstoredSettings || exclusionsUnstored
 
-    // Why the changes left are not stored (a line, empty if not known): of the settings first if
-    // some are left, else of the excluded programs (an error of the properties file may be older,
-    // e.g. a Reload that failed)
-    private def whyUnstored: String = {
+    // Why the changes left are not stored: of the settings first if some are left
+    // (settingsUnstored), else of the excluded programs (an error of the properties file may be
+    // older, e.g. a Reload that failed). The store's error of a file, else its load's.
+    private def unstoredReason(settingsUnstored: Boolean): Option[Throwable] = {
         val ofSettings = storeError.orElse(loadError)
         val ofExclusions = exclusionsStoreError.orElse(exclusionsLoadError)
-        val why = if (hasUnstoredSettings) ofSettings.orElse(ofExclusions) else ofExclusions.orElse(ofSettings)
-        why.map(e => s"${messageOf(e)}\n").getOrElse("")
+        if (settingsUnstored) ofSettings.orElse(ofExclusions) else ofExclusions.orElse(ofSettings)
+    }
+
+    // unstoredReason as a line, empty if not known
+    private def whyUnstored: String =
+        unstoredReason(hasUnstoredSettings).map(e => s"${messageOf(e)}\n").getOrElse("")
+
+    // What the settings dialog tells (a warning, in English) instead of the hint that the changes
+    // are stored: the properties could not be read (Reload again), or written (e.g. a read-only
+    // file: tried again at the next change). None if all is stored.
+    private def storeStatus: Option[String] = {
+        if (!loaded)
+            Some("The properties file could not be read: changes are not saved")
+        // Before a Reload that failed: the changes made after it are not stored
+        else if (storeError.isDefined)
+            Some("The changes could not be saved to the properties file")
+        // The file of the excluded programs: also seen from the other pages (e.g. Reset to
+        // defaults). Before a Reload that failed too: their changes are not stored.
+        else if (!exclusionsLoaded)
+            Some("The exclusions file could not be read: changes are not saved")
+        else if (exclusionsStoreError.isDefined)
+            Some("The changes could not be saved to the exclusions file")
+        else if (loadError.isDefined)
+            // Reload: the settings are those before, still stored
+            Some("The properties file could not be read")
+        else
+            None
     }
 
     // The excluded programs, in a file of their own (Properties.getExclusionsPath), as they were read
@@ -2117,6 +2127,24 @@ object Context {
         def setExcludedPrograms(paths: Seq[String]): Unit = Context.setExcludedPrograms(paths)
         // The mouse hook replaced after Windows removed the old one (reinstallHooks)
         def mouseHookLost(): Unit = Context.mouseHookLost()
+        // The keyboard hook removed (setKeyboardHookOf), replaced after Windows removed the old
+        // one, or installed where there was none
+        def keyboardHookRemoved(): Unit = KEventHandler.changeTrigger(targetVKCode, false)
+        def keyboardHookLost(): Unit = KEventHandler.hookLost()
+        def keyboardHookInstalled(): Unit = KEventHandler.hookInstalled()
+        // The handlers' state reset as Pass Mode is turned on, without the hooks and the tray (its
+        // generation advanced, as it is)
+        def passModeOn(): Unit = {
+            newPassModeGeneration()
+            onPassModeOn()
+        }
+        // The properties files (in Properties.USER_DIR)
+        def reloadProperties(): Boolean = tryReloadProperties()
+        // As before the first load (at startup): the properties not loaded
+        def forgetLoaded(): Unit = storeLock.synchronized { loaded = false }
+        def storeStatus: Option[String] = Context.storeStatus
+        def unstoredReason(settingsUnstored: Boolean): Option[Throwable] = Context.unstoredReason(settingsUnstored)
+        def defaultSetting(key: String): Option[String] = defaultProp.getOption(key)
         // The default values kept as at startup, before any setting is changed (the first load
         // would keep the settings as they are then)
         def saveDefaults(): Unit = saveDefaultsOnce()

@@ -59,9 +59,14 @@ object Dialog {
         pane
     }
 
+    // The box of errorMessage (the message, its title translated): the tests replace it, so that
+    // no box waits for a click (e.g. a load of a file they lock)
+    @volatile private[hooktest] var showErrorMessage: (String, String) => Unit = (msg, title) =>
+        onUI(() => show(None, messagePane(msg, JOptionPane.ERROR_MESSAGE), title))
+
     def errorMessage(msg: String, title: String = "Error"): Unit = {
         logger.debug(s"errorMessage: $msg")
-        onUI(() => show(None, messagePane(msg, JOptionPane.ERROR_MESSAGE), convLang(title)))
+        showErrorMessage(msg, convLang(title))
     }
 
     def errorMessageE(e: Exception): Unit =

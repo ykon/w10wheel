@@ -84,12 +84,17 @@ object Harness {
         Host.rootWindow = hWnd => hWnd
         Host.processIdOfWindow = hWnd => Pointer.nativeValue(hWnd.getPointer).toInt
         Host.fullPathOfProcess = pid => Some(if (pid == EXCLUDED_WINDOW) EXCLUDED_PROGRAM else OTHER_PROGRAM)
+        // No box waiting for a click (e.g. a load of a file a test locks): the message is logged
+        Dialog.showErrorMessage = (_, _) => ()
     }
 
     // The folder of the properties files: one of the tests, not the user's profile
     val USER_DIR: String = Paths.get(System.getProperty("java.io.tmpdir"), "W10Wheel.Tests").toString
 
     private lazy val initialized: Unit = {
+        // Context first, as the program does: Properties first would initialize Context while it is
+        // initialized itself (PROGRAM_NAME), and Context would read its DEFAULT_DEF as null
+        Context.PROGRAM_NAME
         Files.createDirectories(Paths.get(USER_DIR))
         Properties.USER_DIR = USER_DIR
         // Before any test changes a setting: the defaults (Reset to defaults) are those of a start
@@ -267,4 +272,5 @@ object Harness {
     val VK_PAUSE = 0x13
     val VK_LMENU = 0xA4
     val VK_A = 0x41
+    val VK_TAB = 0x09
 }
