@@ -501,6 +501,30 @@ class MouseSuite extends munit.FunSuite {
         assertEquals(x1, List((X1, true), (X1, false), (X1, true), (X1, false)))
     }
 
+    test("the other button of the Left or Right trigger released and pressed again keeps its order") {
+        // Left: Right held (passed, not the trigger's button: no record of it), Left waits; Right
+        // released (it ends the wait) and pressed again before the sender has sent what the wait
+        // queued: the application gets Right's down, up, down and up in their order. Right: the
+        // same, the buttons the other way.
+        for ((trigger, first, other) <- List((DataID.Left, Left, Right), (DataID.Right, Right, Left))) {
+            reset(trigger, DataID.None)
+            Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+            assertEquals(down(other, 10, 10, 50), Pass)
+            assertEquals(down(first, 10, 10, 100), Suppress)
+            holdSender()
+            up(other, 10, 10, 150)
+            down(other, 10, 10, 160)
+            releaseSender()
+            // The sender sends what was queued
+            Thread.sleep(200)
+            up(other, 10, 10, 300)
+            val all = takeAppLog()
+            assertEquals(all.filter(_._1 == other), List((other, true), (other, false), (other, true), (other, false)))
+            // The waiting down resent (not lost)
+            assert(all.contains((first, true)), all)
+        }
+    }
+
     test("another button ending a released scroll ends the LR wait too") {
         // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the
         // middle button ends the scroll (suppressed), and the wait (its down resent at once)

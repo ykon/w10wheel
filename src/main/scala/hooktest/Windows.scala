@@ -780,12 +780,10 @@ object Windows {
             case (LeftDown(_), LeftUp(_)) | (RightDown(_), RightUp(_)) =>
                 InputSender.enqueue(generation, InputSender.Click,
                     Array(createResendDown(down, plain), createResendUp(up, plain)))
+            // Not of different buttons: the other button's up passes as it is (EventHandler.
+            // offerEventWaiter)
             case _ =>
-                // Different buttons: not a pair. The other button's down was not resent alone (the
-                // up of such a down is resent by checkResentDown before the wait is offered): it
-                // passed W10Wheel (e.g. pressed in Pass Mode), so its up is always passed.
-                resendDown(generation, press, down)
-                InputSender.enqueue(generation, InputSender.Up, Array(createResendUp(up, plain)))
+                throw new IllegalArgumentException(s"Not a pair: ${down.name}, ${up.name}")
         }
     }
 

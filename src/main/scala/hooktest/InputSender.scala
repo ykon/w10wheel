@@ -33,8 +33,6 @@ object InputSender {
     // The up for that down: sent only if that down was sent, or it would be an up without a down
     // (e.g. a right up opens a context menu)
     case class Release(button: Int, press: Int) extends Kind
-    // An up whose down reached the application by itself (e.g. the other button's up)
-    case object Up extends Kind
 
     // What the sender thread takes from the queue
     private sealed trait Item
@@ -176,8 +174,6 @@ object InputSender {
                     logger.debug("InputSender: dropped a wheel event (Pass Mode)")
                 else
                     sendOne(b.inputs(0))
-            case Up =>
-                sendUps(b.inputs.toSeq)
             case Down(button, press) =>
                 sendDown(b, button, press)
             case Release(button, press) =>
@@ -209,7 +205,6 @@ object InputSender {
     // The hooks are removed (or about to be), and nothing drops the up of a down resent alone that
     // was not sent: it is sent only if that down was, or it would be an up without a down.
     private def upsAtExit(b: Batch): Seq[INPUT] = b.kind match {
-        case Up => b.inputs.toSeq
         case Release(button, press) if press != 0 && sentPress(button) == press =>
             sentPress(button) = 0
             b.inputs.toSeq

@@ -32,15 +32,10 @@ object EventWaiter {
                 ctx.LastFlags.setResent(waitingEvent)
                 //Thread.sleep(1)
             }
-            case LeftUp(_) | RightUp(_) => {
-                // Only for the up of the other button: the waiting down is resent and its physical
-                // up comes later. The up of the same button is resent with the down (the click is
-                // done).
-                if (!waitingEvent.sameButton(me)) {
-                    logger.debug(s"setFlagsOffer - setResent (Up): ${waitingEvent.name}")
-                    ctx.LastFlags.setResent(waitingEvent)
-                }
-            }
+            case LeftUp(_) | RightUp(_) =>
+                // The up of the same button (the other's ends the wait as a move: EventHandler.
+                // offerEventWaiter): resent with the down, the click is done
+                logger.debug(s"setFlagsOffer - click (Up): ${waitingEvent.name}")
             case LeftDown(_) | RightDown(_) => {
                 logger.debug(s"setFlagsOffer - setSuppressed: ${waitingEvent.name}")
                 ctx.LastFlags.setSuppressed(waitingEvent)
@@ -78,8 +73,8 @@ object EventWaiter {
     // Ends the wait in progress as a move does (on the hook thread): its down is resent now, its up
     // at its physical up (EventHandler.checkResentDown). For an event that passes as it is (me, at
     // whose point): another button's down or up, or the up of the other button of the pair whose
-    // down passed (EventHandler.endWaitByOtherButton, checkPassedDown). False if no wait got it
-    // (none, or it has timed out meanwhile: its down resent).
+    // down passed (EventHandler.endWaitByOtherButton, checkPassedDown, offerEventWaiter). False if
+    // no wait got it (none, or it has timed out meanwhile: its down resent).
     def endByResend(me: MouseEvent): Boolean =
         offer(Move(me.info))
 
@@ -160,20 +155,19 @@ object EventWaiter {
         }
 
         (down, up) match {
+            // The same button's up (the other's is not offered: EventHandler.offerEventWaiter)
             case (LeftDown(_), LeftUp(_)) => {
                 if (Mouse.samePoint(down, up))
                     resendC(LeftClick(down.info))
                 else
                     resendUD
             }
-            case (LeftDown(_), RightUp(_)) => resendUD
             case (RightDown(_), RightUp(_)) => {
                 if (Mouse.samePoint(down, up))
                     resendC(RightClick(down.info))
                 else
                     resendUD
             }
-            case (RightDown(_), LeftUp(_)) => resendUD
             case x => {
                 throw new IllegalStateException("Not matched: " + x);
             }

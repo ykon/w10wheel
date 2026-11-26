@@ -324,11 +324,23 @@ object EventHandler {
 
     private def offerEventWaiter(me: MouseEvent): Option[LRESULT] = {
         // The up of the other button than the waiting down, whose own down did not reach the
-        // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): resent
-        // with the waiting down, it would be an up without a down. Suppress it, the wait goes on.
+        // application (e.g. suppressed by a wait canceled when Pass Mode was turned on): an up
+        // without a down, dropped (Windows.dropLoneUpOf, as the hook would drop it passed).
+        // Suppressed here, before the next case, which would end the wait: the wait goes on.
         if (me.isUp && EventWaiter.isWaitingOtherThan(me) && Windows.dropLoneUpOf(me)) {
             debug("suppress (up without its down, other button)", me)
             suppress
+        }
+        // The up of the other button than the waiting down, whose down passed with no record of it
+        // (the other button of the Left or Right trigger, not the trigger's; or pressed in Pass
+        // Mode): the wait ends, the waiting down resent at once, and the up passes as it is (as
+        // checkPassedDown, endNotTrigger). Not resent after that down: pressed again at once
+        // (passed, not the trigger's), the button would have its down before that up (down, down,
+        // up).
+        else if (me.isUp && EventWaiter.isWaitingOtherThan(me)) {
+            if (EventWaiter.endByResend(me))
+                debug("the LR wait ended (its down resent)", me)
+            None
         }
         // A down of the button whose down is waiting (the up was missed, or of another mouse): not
         // the second down of the trigger (the same button would start scroll mode). A new press,
