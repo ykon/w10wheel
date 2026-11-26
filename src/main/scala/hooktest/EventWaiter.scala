@@ -77,8 +77,9 @@ object EventWaiter {
 
     // Ends the wait in progress as a move does (on the hook thread): its down is resent now, its up
     // at its physical up (EventHandler.checkResentDown). For an event that passes as it is (me, at
-    // whose point): another button's down or up (EventHandler.endWaitByOtherButton). False if no
-    // wait got it (none, or it has timed out meanwhile: its down resent).
+    // whose point): another button's down or up, or the up of the other button of the pair whose
+    // down passed (EventHandler.endWaitByOtherButton, checkPassedDown). False if no wait got it
+    // (none, or it has timed out meanwhile: its down resent).
     def endByResend(me: MouseEvent): Boolean =
         offer(Move(me.info))
 

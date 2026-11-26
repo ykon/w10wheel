@@ -377,8 +377,15 @@ object EventHandler {
             None
     }
 
+    // The other button of the pair waiting (a down passed, e.g. over an excluded window, then the
+    // other pressed out of it): its wait ends, the waiting down resent at once, as the Rust version
+    // does (it would wait for the timeout, and the button pressed again within it make the pair).
+    // The up passes as it is, not resent after that down (pressed again, passed over the excluded
+    // window, the button would have its down before that up).
     private def checkPassedDown(up: MouseEvent): Option[LRESULT] = {
         if (ctx.LastFlags.getAndReset_PassedDown(up)) {
+            if (EventWaiter.isWaitingOtherThan(up) && EventWaiter.endByResend(up))
+                debug("the LR wait ended (its down resent)", up)
             debug("pass (checkPassedDown)", up)
             callNextHook
         }

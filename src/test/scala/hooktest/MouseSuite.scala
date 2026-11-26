@@ -257,19 +257,41 @@ class MouseSuite extends munit.FunSuite {
     test("a new press forgets a resent down whose up was missed") {
         // LR: the wait of Left timed out (resent), its up missed, another button between; Left
         // pressed again over an excluded window (passed), then Right waits: Left's up passes as
-        // that of the passed press, not resent as the up of the old resent down
+        // that of the passed press, not resent as the up of the old resent down, and ends the wait
+        // (Right's down resent, as the Rust version does)
         reset(DataID.LR, DataID.None)
         exclude()
         addExcludedPoint(100, 100)
         down(Left, 10, 10, 100)
         val downs = sentInputs(1)
         assertEquals(receive(downs.head), Pass)
+        // Longer from now: only Left's up can end Right's wait
+        Context.ForTests.setNumber(DataID.pollTimeout, 3000)
         assertEquals(down(Middle, 10, 10, 400), Pass)
         assertEquals(up(Middle, 10, 10, 450), Pass)
         assertEquals(down(Left, 100, 100, 500), Pass)
         assertEquals(down(Right, 20, 20, 600), Suppress)
         assertEquals(up(Left, 20, 20, 650), Pass)
-        assert(takeSent(0, 0).isEmpty)
+        assertEquals(buttonsOf(sentInputs(1)), List((Right, true)))
+        assert(noneSent(300))
+    }
+
+    test("the passed up of the other button of the pair ends the LR wait") {
+        // Right passed over an excluded window, Left waits out of it: Right's up passes and ends
+        // the wait (Left's down resent at once); Right pressed again is not taken for the pair
+        reset(DataID.LR, DataID.None)
+        Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+        exclude()
+        addExcludedPoint(100, 100)
+        assertEquals(down(Right, 100, 100, 50), Pass)
+        assertEquals(down(Left, 10, 10, 100), Suppress)
+        assertEquals(up(Right, 100, 100, 150), Pass)
+        val downs = sentInputs(1)
+        assertEquals(buttonsOf(downs), List((Left, true)))
+        assertEquals(receive(downs.head), Pass)
+        down(Right, 10, 10, 200)
+        Thread.sleep(50)
+        notScrolling()
     }
 
     test("the drag trigger: a click is resent unless it was dragged") {
