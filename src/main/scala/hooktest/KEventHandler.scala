@@ -20,8 +20,8 @@ object KEventHandler {
     def getCallNextHook: () => LRESULT = __callNextHook
 
     // The trigger key pressed (its down suppressed, as the scroll it started) is suppressed like the
-    // other keys whose down was (LastFlags.init): its up alone is suppressed, or it would pass
-    // (e.g. the Alt key would activate the menu bar)
+    // other keys whose down was (LastFlags.suppressedKeysToLoneUp): its up alone is suppressed, or
+    // it would pass (e.g. the Alt key would activate the menu bar)
     def initState(): Unit = {
         lastEvent match {
             case KeyDown(_) => ctx.LastFlags.setSuppressedKey(lastEvent.vkCode)
@@ -319,16 +319,20 @@ object KEventHandler {
             case _ => false
         }
 
-        if (!keyChanged)
-            ctx.LastFlags.resetKeys
-        else if (pressed)
-            ctx.LastFlags.setSuppressedKey(oldVK)
+        if (!keyChanged) {
+            logger.debug("changeTrigger (keyboard): the hook removed")
+            ctx.keyboardHookGone()
+        }
+        else {
+            if (pressed)
+                ctx.LastFlags.setSuppressedKey(oldVK)
 
-        lastEvent = KNonEvent(null)
+            lastEvent = KNonEvent(null)
 
-        if (ctx.isKeyboardScrollMode) {
-            logger.debug("changeTrigger (keyboard): exit scroll mode")
-            ctx.exitScrollMode
+            if (ctx.isKeyboardScrollMode) {
+                logger.debug("changeTrigger (keyboard): exit scroll mode")
+                ctx.exitScrollMode
+            }
         }
     }
 
@@ -357,13 +361,8 @@ object KEventHandler {
     // A hook replaced while the old one was still installed missed nothing: this is not called then
     // (Context.setKeyboardHookOf).
     def hookLost(): Unit = {
-        if (ctx.isKeyboardScrollMode) {
-            logger.debug("hookLost: exit keyboard scroll mode")
-            ctx.exitScrollMode
-        }
-
-        ctx.LastFlags.resetKeys
-        lastEvent = KNonEvent(null)
+        logger.debug("hookLost (keyboard)")
+        ctx.keyboardHookGone()
         passHeldTriggerKey("hookLost")
     }
 

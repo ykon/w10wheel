@@ -81,12 +81,8 @@ object Context {
     }
 
     // The handlers' state reset as Pass Mode is turned on (its scroll ended by Scroll.setPassMode)
-    private def onPassModeOn(): Unit = {
-        EventWaiter.offer(Cancel(null))
-        EventHandler.initState
-        KEventHandler.initState()
-        LastFlags.init
-    }
+    private def onPassModeOn(): Unit =
+        resetState(RESET_PASS_MODE_ON)
 
     def isPassMode = Pass.mode
     def setPassMode(b: Boolean) = Pass.mode = b
@@ -481,7 +477,7 @@ object Context {
     //   the trigger changed): its repeats and its up are suppressed too, whatever the trigger is now.
     // - Passed: its down passed W10Wheel (to the application): its repeats and its up pass too, even
     //   if it has become the trigger since.
-    // - LoneUp: its down was suppressed when the state was initialized (LastFlags.init): its up alone
+    // - LoneUp: its down was suppressed when the state was initialized (resetState): its up alone
     //   is suppressed (the application did not get the down). Its next down ends it (a repeat cannot
     //   be told from a new press, it is taken for one).
     // The trigger key's own press (its down suppressed for its scroll) is not here: KEventHandler
@@ -551,25 +547,18 @@ object Context {
         private def takeKey(vk: Int, state: KeyState): Boolean =
             isKey(vk) && keys.compareAndSet(vk, state, KeyState.Idle)
 
-        // Not the keys passed (Passed), whose ups pass and reset them; reset, a key still pressed
-        // would lose it (e.g. pressed over an excluded program: its repeats would start scroll mode
-        // if it is the trigger, and its up would be suppressed). Whether a key
-        // is still pressed cannot be told: GetAsyncKeyState may fail, and a key whose down was
-        // suppressed is not pressed for it. A key whose up was missed passes its next down once.
-        // The keys suppressed (Suppressed) are not kept either, so that a key whose up was missed
-        // is not suppressed again: only their up alone is (LoneUp), as the hook does for the
-        // buttons (Windows.dropLoneUp).
-        def init: Unit = {
-            initButtons
-            suppressedKeysToLoneUp
-        }
-
-        // The states of the buttons (ButtonState): see init, and mouseHookLost
+        // The states of the buttons (ButtonState), at a reset (resetState)
         def initButtons: Unit =
             for (i <- 0 until buttons.length) buttons.set(i, ButtonState.Idle)
 
-        // The keys suppressed are suppressed for their up alone (LoneUp): a key whose up was missed
-        // is not suppressed again (see init)
+        // At a reset (resetState, KeysReset.LoneUp): the keys suppressed are suppressed for their
+        // up alone (LoneUp), so that a key whose up was missed is not suppressed again, as the hook
+        // does for the buttons (Windows.dropLoneUp). Not the keys passed (Passed), whose ups pass
+        // and reset them; reset, a key still pressed would lose it (e.g. pressed over an excluded
+        // program: its repeats would start scroll mode if it is the trigger, and its up would be
+        // suppressed). Whether a key is still pressed cannot be told: GetAsyncKeyState may fail,
+        // and a key whose down was suppressed is not pressed for it. A key whose up was missed
+        // passes its next down once.
         def suppressedKeysToLoneUp: Unit = {
             for (vk <- 0 until keys.length)
                 keys.compareAndSet(vk, KeyState.Suppressed, KeyState.LoneUp)
@@ -805,14 +794,14 @@ object Context {
     private def mouseHookLost(): Unit = {
         logger.debug("mouseHookLost")
         // As initState: a wait timing out meanwhile does not resend its down, nor start scroll mode
-        newPassModeGeneration()
-        EventWaiter.offer(Cancel(null))
-        EventHandler.initState
-        LastFlags.initButtons
-        Windows.forgetPresses()
-        if ((Scroll.isMode && !Scroll.isByKeyboard) || Scroll.isStarting)
-            exitScrollMode
+        resetState(RESET_MOUSE_HOOK_LOST)
     }
+
+    // The keyboard hook has been removed, or replaced after Windows had removed the old one
+    // (KEventHandler.changeTrigger, hookLost): the scroll mode of the trigger key (which would not
+    // end) is ended, and the keys' records are forgotten
+    def keyboardHookGone(): Unit =
+        resetState(RESET_KEYBOARD_HOOK_GONE)
 
     // The session was locked or unlocked, or the system suspended or resumed (SessionEvents): the
     // hooks saw none of the input meanwhile (it went to the secure desktop, or was lost), so a
@@ -824,11 +813,8 @@ object Context {
     // the hooks have been removed for the exit. On the hook thread.
     def inputLost(): Unit = {
         logger.debug("inputLost")
-        if (!Hook.isClosed) {
-            initState
-            Windows.forgetPresses()
-            LastFlags.resetKeys
-        }
+        if (!Hook.isClosed)
+            resetState(RESET_INPUT_LOST)
     }
 
     private val DEFAULT_DEF = Properties.DEFAULT_DEF
@@ -2115,21 +2101,85 @@ object Context {
         }
     }
 
-    def initState: Unit = {
-        // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a down
-        // received before, and the wheel events queued are not sent. A down resent before and
-        // sent after its physical up is dropped by the hook (Windows.dropResent).
-        // First, as Pass Mode does: a wait timing out while it is canceled below sees the new
-        // generation and does not resend its down (its flag would be reset by init, and its up
-        // not resent).
-        newPassModeGeneration()
-        // Cancel the LR trigger wait before init: its timeout could set the flags again after it
-        EventWaiter.offer(Cancel(null))
-        EventHandler.initState
-        KEventHandler.initState()
-        LastFlags.init
-        exitScrollMode
+    // What a reset ends of the triggers' state (resetState): each event ends what it may have left
+    // behind, the table below (RESET_...)
+    // The scroll it ends: none, a mouse trigger's (or a pending LR trigger start), the keyboard
+    // trigger's, or any
+    private enum ScrollReset {
+        case Keep, Mouse, Keyboard, Any
     }
+
+    // What it does with the buttons' records: keeps them; resets those of the mouse handlers (the
+    // LR trigger's wait canceled, LastFlags' buttons); or also forgets the presses of the hook
+    // (Windows.forgetPresses: their ups may have been missed)
+    private enum ButtonsReset {
+        case Keep, Reset, Forget
+    }
+
+    // What it does with the keys' records: keeps them; resets the keyboard handler's, the keys
+    // suppressed having their up suppressed alone (LastFlags.suppressedKeysToLoneUp); or forgets
+    // them all (their ups may have been missed, or will not be seen)
+    private enum KeysReset {
+        case Keep, LoneUp, Clear
+    }
+
+    private case class Reset(scroll: ScrollReset, buttons: ButtonsReset, keys: KeysReset)
+
+    // initState (Esc, --sendInitState): the scroll ended, the triggers' state reset
+    private val RESET_INIT_STATE = Reset(ScrollReset.Any, ButtonsReset.Reset, KeysReset.LoneUp)
+    // Pass Mode turned on: as initState, its scroll ended by Scroll.setPassMode (under its lock)
+    private val RESET_PASS_MODE_ON = RESET_INIT_STATE.copy(scroll = ScrollReset.Keep)
+    // The mouse hook lost (see mouseHookLost): the mouse triggers' only
+    private val RESET_MOUSE_HOOK_LOST =
+        Reset(ScrollReset.Mouse, ButtonsReset.Forget, KeysReset.Keep)
+    // The keyboard hook lost or removed (see keyboardHookGone): the keyboard trigger's only
+    private val RESET_KEYBOARD_HOOK_GONE =
+        Reset(ScrollReset.Keyboard, ButtonsReset.Keep, KeysReset.Clear)
+    // The input lost (see inputLost): all
+    private val RESET_INPUT_LOST = Reset(ScrollReset.Any, ButtonsReset.Forget, KeysReset.Clear)
+
+    private def resetState(r: Reset): Unit = {
+        if (r.buttons != ButtonsReset.Keep) {
+            // The physical ups now pass W10Wheel: the LR trigger neither resends nor starts for a
+            // down received before, and the wheel events queued are not sent. A down resent before
+            // and sent after its physical up is dropped by the hook (Windows.dropResent). First, as
+            // Pass Mode does (again for it: as it is): a wait timing out while it is canceled below
+            // sees the new generation and does not resend its down (its state would be reset below,
+            // and its up not resent).
+            newPassModeGeneration()
+            // Cancel the LR trigger wait before the buttons are reset: its timeout could set their
+            // state again after it
+            EventWaiter.offer(Cancel(null))
+            EventHandler.initState
+        }
+
+        if (r.keys != KeysReset.Keep)
+            KEventHandler.initState()
+
+        if (r.buttons != ButtonsReset.Keep)
+            LastFlags.initButtons
+
+        r.keys match {
+            case KeysReset.LoneUp => LastFlags.suppressedKeysToLoneUp
+            case KeysReset.Clear => LastFlags.resetKeys
+            case KeysReset.Keep => ()
+        }
+
+        if (r.buttons == ButtonsReset.Forget)
+            Windows.forgetPresses()
+
+        r.scroll match {
+            case ScrollReset.Any => exitScrollMode
+            case ScrollReset.Mouse =>
+                if ((Scroll.isMode && !Scroll.isByKeyboard) || Scroll.isStarting) exitScrollMode
+            case ScrollReset.Keyboard =>
+                if (Scroll.isMode && Scroll.isByKeyboard) exitScrollMode
+            case ScrollReset.Keep => ()
+        }
+    }
+
+    def initState: Unit =
+        resetState(RESET_INIT_STATE)
 
     // For the tests (src/test): the settings set and the events of the hooks called as the program
     // does, without the dialogs and the files of a load
@@ -2147,12 +2197,8 @@ object Context {
         def keyboardHookRemoved(): Unit = KEventHandler.changeTrigger(targetVKCode, false)
         def keyboardHookLost(): Unit = KEventHandler.hookLost()
         def keyboardHookInstalled(): Unit = KEventHandler.hookInstalled()
-        // The handlers' state reset as Pass Mode is turned on, without the hooks and the tray (its
-        // generation advanced, as it is)
-        def passModeOn(): Unit = {
-            newPassModeGeneration()
-            onPassModeOn()
-        }
+        // The handlers' state reset as Pass Mode is turned on, without the hooks and the tray
+        def passModeOn(): Unit = onPassModeOn()
         // The properties files (in Properties.USER_DIR)
         def reloadProperties(): Boolean = tryReloadProperties()
         // As before the first load (at startup): the properties not loaded
