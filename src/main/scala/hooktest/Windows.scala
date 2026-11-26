@@ -221,26 +221,33 @@ object Windows {
             None
     }
 
-    // The physical presses and the downs resent alone (LR trigger) by button (0: left, 1: right,
-    // 2: middle, 3: X1, 4: X2; only left and right are resent alone), as the hook sees them: in
-    // the order the target application gets the inputs, whenever SendInput returns. Used on the
-    // hook thread only.
-    // pressId: the ID of the last physical down (see handlingButton); the waits and resends for it
-    // carry it (pressIdOf).
-    // upPassed: the physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after
-    // initState reset the flags).
-    // downPassedId: the press whose down resent alone has reached the application, with no up
-    // since (NO_PRESS if none).
-    // downSuppressed: the physical down of that press did not pass (W10Wheel suppressed it).
     private val NO_PRESS = 0 // the IDs are 1 to PRESS_ID_MASK - 1
-    private val pressId = Array.fill(5)(NO_PRESS)
-    private val upPassed = Array.fill(5)(false)
-    private val downPassedId = Array.fill(5)(NO_PRESS)
-    private val downSuppressed = Array.fill(5)(false)
-    // releaseQueuedId: the last press whose up has been resent (queued, see resendUp) for its down
-    // resent alone: that down is not dropped if a later press has started before it is sent (e.g.
-    // the sender busy with a click), it is released by that up
-    private val releaseQueuedId = Array.fill(5)(NO_PRESS)
+
+    // The latest physical press of a button and the downs resent alone for it (LR trigger), as the
+    // hook sees them: in the order the target application gets the inputs, whenever SendInput
+    // returns. What reached the application, not what the triggers do with the up
+    // (Context.LastFlags).
+    private class Press {
+        // The ID of the last physical down (see handlingButton); the waits and resends for it carry
+        // it (pressIdOf)
+        var id = NO_PRESS
+        // The physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after initState
+        // reset the flags)
+        var upPassed = false
+        // The press whose down resent alone has reached the application, with no up since
+        // (NO_PRESS if none)
+        var downPassedId = NO_PRESS
+        // The physical down of that press did not pass (W10Wheel suppressed it)
+        var downSuppressed = false
+        // The last press whose up has been resent (queued, see resendUp) for its down resent alone:
+        // that down is not dropped if a later press has started before it is sent (e.g. the sender
+        // busy with a click), it is released by that up
+        var releaseQueuedId = NO_PRESS
+    }
+
+    // By button (0: left, 1: right, 2: middle, 3: X1, 4: X2; only left and right are resent alone).
+    // Used on the hook thread only.
+    private val presses = Array.fill(5)(new Press)
     private var lastPressId = 0
 
     // Called by the mouse hook for a button down or up before it is handled, also in Pass Mode:
@@ -250,45 +257,50 @@ object Windows {
     //   after, and the press would be lost.
     // - The up resent for a down resent alone that did not reach the application (dropped above,
     //   or not sent) would be an up without a down (e.g. a right up opens a context menu).
-    def dropResent(button: Int, isDown: Boolean, info: HookInfo): Boolean = resendKind(info) match {
-        case Some((ResendKind.Down, id)) if isDown && (id != pressId(button) || upPassed(button)) &&
-                                             id != releaseQueuedId(button) =>
-            logger.debug("dropResent: a down after its physical up")
-            true
-        case Some((ResendKind.Release, id)) if !isDown && id != downPassedId(button) =>
-            logger.debug("dropResent: an up for a down not passed")
-            true
-        case _ =>
-            false
+    def dropResent(button: Int, isDown: Boolean, info: HookInfo): Boolean = {
+        val p = presses(button)
+        resendKind(info) match {
+            case Some((ResendKind.Down, id))
+                    if isDown && (id != p.id || p.upPassed) && id != p.releaseQueuedId =>
+                logger.debug("dropResent: a down after its physical up")
+                true
+            case Some((ResendKind.Release, id)) if !isDown && id != p.downPassedId =>
+                logger.debug("dropResent: an up for a down not passed")
+                true
+            case _ =>
+                false
+        }
     }
 
     // Called by the mouse hook before handling a button down or up that is not dropped: a physical
     // down starts a new press
     def handlingButton(button: Int, isDown: Boolean, info: HookInfo): Unit = {
         if (isDown && !isInjected(info)) {
+            val p = presses(button)
             lastPressId = lastPressId % (PRESS_ID_MASK - 1) + 1
-            pressId(button) = lastPressId
-            upPassed(button) = false
-            downSuppressed(button) = false
+            p.id = lastPressId
+            p.upPassed = false
+            p.downSuppressed = false
         }
     }
 
     // Called by the mouse hook after handling a button down or up (passed: passed on)
     def handledButton(button: Int, isDown: Boolean, info: HookInfo, passed: Boolean): Unit = {
+        val p = presses(button)
         if (isDown && !passed && !isInjected(info))
-            downSuppressed(button) = true
+            p.downSuppressed = true
 
         if (passed) {
             if (isDown) {
                 resendKind(info) match {
-                    case Some((ResendKind.Down, id)) => downPassedId(button) = id
+                    case Some((ResendKind.Down, id)) => p.downPassedId = id
                     case _ => ()
                 }
             }
             else {
-                downPassedId(button) = NO_PRESS
+                p.downPassedId = NO_PRESS
                 if (!isInjected(info))
-                    upPassed(button) = true
+                    p.upPassed = true
             }
         }
 
@@ -296,7 +308,7 @@ object Windows {
         // later up whose down the hook did not see (e.g. pressed on another desktop) is not taken
         // for an up without its down (dropLoneUp).
         if (!isDown && !isInjected(info))
-            downSuppressed(button) = false
+            p.downSuppressed = false
     }
 
     // Called by the mouse hook when a button up is about to be passed on (by the handlers, or in
@@ -306,9 +318,10 @@ object Windows {
     // right up opens a context menu). The press is ended then: a down resent late for it is
     // dropped (dropResent).
     def dropLoneUp(button: Int, info: HookInfo): Boolean = {
-        if (!isInjected(info) && downSuppressed(button) && downPassedId(button) != pressId(button)) {
+        val p = presses(button)
+        if (!isInjected(info) && p.downSuppressed && p.downPassedId != p.id) {
             logger.debug("dropLoneUp: an up whose down did not reach the application")
-            upPassed(button) = true
+            p.upPassed = true
             true
         }
         else
@@ -325,10 +338,10 @@ object Windows {
     // out, then the up missed); one whose up is queued passes with it (the click is whole). The
     // press IDs are kept (resent events in flight are still told). On the hook thread.
     def forgetPresses(): Unit = {
-        for (i <- downSuppressed.indices) {
-            downSuppressed(i) = false
-            if (releaseQueuedId(i) != pressId(i))
-                upPassed(i) = true
+        for (p <- presses) {
+            p.downSuppressed = false
+            if (p.releaseQueuedId != p.id)
+                p.upPassed = true
         }
     }
 
@@ -341,7 +354,7 @@ object Windows {
 
     // The ID of the current press of the button of a left or right event (on the hook thread)
     def pressIdOf(me: MouseEvent): Int =
-        pressId(getButton(me))
+        presses(getButton(me)).id
 
     def setInput(msg: INPUT, pt: POINT, data: Int, flags: Int, time: Int, extra: Long): Unit = {
         msg.`type` = new DWORD(INPUT.INPUT_MOUSE)
@@ -739,7 +752,7 @@ object Windows {
     // only if it reached the application (dropResent).
     def resendUp(me: MouseEvent): Unit = {
         val press = pressIdOf(me)
-        releaseQueuedId(getButton(me)) = press
+        presses(getButton(me)).releaseQueuedId = press
         val input = createResendUp(me, resendExtra(ResendKind.Release, press))
         InputSender.enqueue(InputSender.Release(getButton(me), press), Array(input))
     }
