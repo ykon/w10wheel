@@ -242,8 +242,8 @@ object Windows {
         // The physical up of that press has passed W10Wheel (e.g. in Pass Mode, or after initState
         // reset the flags)
         var upPassed = false
-        // The press whose down resent alone has reached the application, with no up since
-        // (NO_PRESS if none)
+        // The press whose down (physical, or resent alone) has reached the application, with no up
+        // since (NO_PRESS if none)
         var downPassedId = NO_PRESS
         // The physical down of that press did not pass (W10Wheel suppressed it)
         var downSuppressed = false
@@ -254,6 +254,8 @@ object Windows {
         // (e.g. slow, while each LR trigger's wait is ended by another button). The oldest are
         // forgotten past MAX_RELEASES_QUEUED (an up that never comes: its down was not sent either,
         // InputSender).
+        // Cleared if a later physical down passes directly to the application, so a stale resent
+        // click cannot break a held press or fire out of order after it.
         val releasesQueued = scala.collection.mutable.LinkedHashSet.empty[Int]
 
         def queueRelease(id: Int): Unit = {
@@ -322,6 +324,9 @@ object Windows {
             if (isDown) {
                 resendKind(info) match {
                     case Some((ResendKind.Down, id)) => p.downPassedId = id
+                    case _ if !isInjected(info) =>
+                        p.downPassedId = p.id
+                        p.releasesQueued.clear()
                     case _ => ()
                 }
             }

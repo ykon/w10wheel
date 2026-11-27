@@ -544,6 +544,46 @@ class MouseSuite extends munit.FunSuite {
         assertEquals(inputs.map(receive), List(Pass, Pass, Pass, Pass))
     }
 
+    test("a passed physical down drops earlier queued releases so a hold is not broken") {
+        def setup(): List[INPUT] = {
+            reset(DataID.LR, DataID.None)
+            Context.ForTests.setNumber(DataID.pollTimeout, 3000)
+            exclude()
+            addExcludedPoint(100, 100)
+            holdSender()
+            assertEquals(down(Left, 10, 10, 100), Suppress)
+            assertEquals(down(X1, 10, 10, 120), Pass)
+            assertEquals(up(Left, 10, 10, 140), Suppress)
+            assertEquals(up(X1, 10, 10, 160), Pass)
+            releaseSender()
+            val inputs = sentInputs(2)
+            assertEquals(buttonsOf(inputs), List((Left, true), (Left, false)))
+            inputs
+        }
+
+        // 1. Resent Down and Release arrive while a later physical press on an excluded window is
+        // still held: both are dropped so the hold/drag is not released early.
+        val inputs1 = setup()
+        assertEquals(down(Left, 100, 100, 200), Pass)
+        assertEquals(inputs1.map(receive), List(Suppress, Suppress))
+        assertEquals(up(Left, 100, 100, 300), Pass)
+
+        // 2. Resent Down passed before the later physical press, then Release arrives while that
+        // press is still held: Release is dropped so the hold stays intact until the physical Up.
+        val inputs2 = setup()
+        assertEquals(receive(inputs2.head), Pass)
+        assertEquals(down(Left, 100, 100, 200), Pass)
+        assertEquals(receive(inputs2(1)), Suppress)
+        assertEquals(up(Left, 100, 100, 300), Pass)
+
+        // 3. The later physical press already completed before the earlier resent Down and Release
+        // arrive: both are dropped rather than replayed out of order.
+        val inputs3 = setup()
+        assertEquals(down(Left, 100, 100, 200), Pass)
+        assertEquals(up(Left, 100, 100, 220), Pass)
+        assertEquals(inputs3.map(receive), List(Suppress, Suppress))
+    }
+
     test("another button ending a released scroll ends the LR wait too") {
         // Left waits in the keyboard trigger's scroll, the key released (the scroll locked): the
         // middle button ends the scroll (suppressed), and the wait (its down resent at once)
