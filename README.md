@@ -62,7 +62,7 @@ pwsh dist/build-portable-zip.ps1
 ```
 ## Release
 1. Update the version in `build.sbt` and `dist/Readme.ja.txt` (the version and the history line: the build checks that they match), and write the release notes in `dist/release-notes/v<version>.md`.
-2. Commit, then push a tag that matches the version: `git tag v2.10.2` and `git push origin v2.10.2`.
+2. Commit, then push a tag that matches the version: `git tag v2.10.3` and `git push origin v2.10.3`.
 3. GitHub Actions runs the tests, builds the zip and creates a draft release with it. Review and publish the draft on GitHub.
 
 ## License
